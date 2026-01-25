@@ -11,6 +11,7 @@
 <body>
 <header>
 <h1 id="site-title">Мой перевод — Novel</h1>
+<button id="theme-toggle" class="theme-toggle" aria-label="Toggle theme">🌙</button>
 </header>
 <main>
 <aside id="chapters-list">
@@ -22,6 +23,13 @@
 <article id="chapter-body">Загрузка...</article>
 </section>
 </main>
+
+
+<!-- Floating prev/next buttons -->
+<div class="nav-buttons" aria-hidden="false">
+<button id="prev-btn" class="nav-btn" aria-label="Previous chapter">◀</button>
+<button id="next-btn" class="nav-btn" aria-label="Next chapter">▶</button>
+</div>
 
 
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
