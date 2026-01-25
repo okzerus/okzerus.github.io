@@ -1,4 +1,5 @@
-// script.js - DOM-ready loader, defensive, theme toggle, tippy init, prev/next nav
+// script.js - DOM-ready loader, defensive, theme toggle, tippy init, prev/next nav,
+// plus chapters show/hide toggle with smooth transitions and persisting state.
 
 document.addEventListener('DOMContentLoaded', () => {
   const chaptersListEl = document.getElementById('chapters');
@@ -7,6 +8,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const prevBtn = document.getElementById('prev-btn');
   const nextBtn = document.getElementById('next-btn');
   const themeToggle = document.getElementById('theme-toggle');
+  const chaptersToggle = document.getElementById('chapters-toggle');
 
   // If essential elements missing, write a clear message and stop
   if(!chaptersListEl || !chapterBodyEl || !chapterTitleEl){
@@ -25,8 +27,6 @@ document.addEventListener('DOMContentLoaded', () => {
     setThemeIcon(theme);
   }
   function setThemeIcon(theme){
-    // user requested: moon symbol in white mode, sun symbol in dark mode
-    // show sun (☼) when in dark mode; show moon (☾) when in light mode
     if(!themeToggle) return;
     themeToggle.textContent = (theme === 'dark') ? '☼' : '☾';
     themeToggle.setAttribute('aria-pressed', theme === 'dark' ? 'true' : 'false');
@@ -42,6 +42,28 @@ document.addEventListener('DOMContentLoaded', () => {
   })();
   if(themeToggle){
     themeToggle.addEventListener('click', toggleTheme);
+  }
+
+  /* CHAPTERS LIST SHOW/HIDE (persisted) */
+  const bodyEl = document.body;
+  function applyChaptersVisibility(hidden){
+    if(hidden) bodyEl.classList.add('chapters-hidden');
+    else bodyEl.classList.remove('chapters-hidden');
+    if(chaptersToggle) {
+      chaptersToggle.setAttribute('aria-expanded', hidden ? 'false' : 'true');
+    }
+    localStorage.setItem('chapters-hidden', hidden ? '1' : '0');
+  }
+  function toggleChapters(){
+    const isHidden = bodyEl.classList.contains('chapters-hidden');
+    applyChaptersVisibility(!isHidden);
+  }
+  (function initChaptersVisibility(){
+    const saved = localStorage.getItem('chapters-hidden');
+    applyChaptersVisibility(saved === '1'); // default: visible (no class)
+  })();
+  if(chaptersToggle){
+    chaptersToggle.addEventListener('click', toggleChapters);
   }
 
   /* NAV BUTTONS */
@@ -96,7 +118,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }catch(err){
       chapterBodyEl.textContent = 'Ошибка загрузки chapters.json: ' + err.message + '\nПроверьте, что файл chapters.json существует в корне репозитория и содержит корректный JSON.';
       console.error('loadChapters error:', err);
-      // Make nav buttons disabled if present
       if(prevBtn) prevBtn.disabled = true;
       if(nextBtn) nextBtn.disabled = true;
     }
@@ -128,6 +149,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const c = chapters[index];
     loadChapter(c.file, c.title);
     updateNavButtons();
+    // Ensure chapter list remains visible or keep previous hidden state; nothing else to do.
   }
 
   // start
