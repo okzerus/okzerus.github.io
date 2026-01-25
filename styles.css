@@ -1,6 +1,9 @@
 :root{
   --bg-dark:#0b0f13; --card-dark:#0f1520; --accent-dark:#e6eef6; --muted-dark:#9aa6b2; --btn-bg-dark:#182029;
   --bg-light:#f9f9fb; --card-light:#ffffff; --accent-light:#132029; --muted-light:#66707a; --btn-bg-light:#eef3f6;
+
+  /* tooltip link color (adjust here if you want a different pale blue) */
+  --tooltip-link: #bfe8ff;
 }
 
 /* theme-aware variables */
@@ -83,7 +86,7 @@ body.chapters-open #chapters-list{ transform:translateX(0); }
 
 /* chapter text */
 #chapter-title{font-size:40px; font-weight:700; margin-bottom:8px}
-#chapter-body img{max-width:100%; height:auto}
+#chapter-body img{max-width:100%; height:auto; cursor:zoom-in}
 
 /* Chapter navigation buttons (shared style) */
 .chapter-nav{ display:flex; gap:12px; align-items:center; }
@@ -100,13 +103,12 @@ body.chapters-open #chapters-list{ transform:translateX(0); }
   transition: opacity 180ms ease;
 }
 
-/* Top navigation: centered below header, invisible by default, fades in/out.
-   Centered horizontally using transform(-50%, Y).
-*/
+/* Top navigation: centered horizontally; vertical position will be set by JS to align with header's top line.
+   invisible by default, fades in/out; pointer events disabled when hidden. */
 #top-nav{
   position:fixed;
-  top:100px;
   left:50%;
+  transform: translateX(-50%) translateY(-6px);
   z-index:1300;
   opacity:0;
   transition: opacity 260ms ease, transform 260ms ease;
@@ -129,3 +131,56 @@ body.chapters-open main > *:not(#chapters-list) {
 
 /* Gloss styling for clickable appearance */
 .gloss{ text-decoration:underline dotted; cursor:help; }
+
+/* --- Tippy tooltip link color override --- */
+/* This changes the color of links inside tooltips (pale light blue). */
+.tippy-box a,
+.tippy-content a {
+  color: var(--tooltip-link);
+  text-decoration: underline;
+}
+
+/* --- Image viewer (lightbox) styles --- */
+#image-viewer-overlay{
+  position: fixed;
+  z-index: 2000;
+  inset: 0;
+  background: rgba(6,8,12,0.88);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  cursor: default;
+}
+#image-viewer-overlay.visible{ display:flex; }
+#image-viewer-wrap{
+  position: relative;
+  max-width: 95%;
+  max-height: 95%;
+  overflow: hidden;
+  touch-action: none;
+}
+#image-viewer-img{
+  display:block;
+  max-width: 100%;
+  max-height: 100%;
+  user-select: none;
+  -webkit-user-drag: none;
+  transform-origin: 50% 50%;
+  transition: transform 120ms ease;
+  cursor: grab;
+}
+#image-viewer-img.dragging{ cursor: grabbing; }
+
+/* caption area */
+#image-viewer-caption{
+  position: absolute;
+  left: 50%;
+  bottom: 8px;
+  transform: translateX(-50%);
+  color: var(--muted);
+  font-size: 13px;
+  background: rgba(0,0,0,0.25);
+  padding: 6px 10px;
+  border-radius: 6px;
+  backdrop-filter: blur(4px);
+}
