@@ -1,4 +1,4 @@
-// script.js - enhanced center layout + centered top nav behavior + slide-back upon chapter clic
+// script.js - top-nav positioning, delayed hide behavior, tooltip color, image viewer, slide-back chapters
 document.addEventListener('DOMContentLoaded', () => {
   const chaptersListEl = document.getElementById('chapters');
   const chapterBodyEl = document.getElementById('chapter-body');
@@ -14,6 +14,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const topNav = document.getElementById('top-nav');
 
   const chaptersAside = document.getElementById('chapters-list');
+  const headerEl = document.querySelector('header');
 
   if(!chaptersListEl || !chapterBodyEl || !chapterTitleEl){
     console.error('Essential DOM elements missing. Check index.html IDs.');
@@ -71,7 +72,8 @@ document.addEventListener('DOMContentLoaded', () => {
     } else {
       [bottomPrev, bottomNext, topPrev, topNext].forEach(btn => { if(btn){ btn.removeAttribute('data-index'); btn.removeAttribute('data-title'); }});
     }
-    // refresh tooltip content if present
+
+    // refresh nav tooltips
     refreshTippyContents();
   }
 
@@ -84,7 +86,7 @@ document.addEventListener('DOMContentLoaded', () => {
     updateNavButtons();
     // move viewport to top of content area
     window.scrollTo({ top: 0 });
-    // close chapters list when user navigates via the chapter list (satisfies request #4)
+    // close chapters list when user navigates via the chapter list
     closeChapters();
   }
 
@@ -99,6 +101,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if(active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) return;
     if(e.key === 'ArrowLeft' && currentIndex > 0) goToChapter(currentIndex - 1);
     if(e.key === 'ArrowRight' && currentIndex < chapters.length - 1) goToChapter(currentIndex + 1);
+    if(e.key === 'Escape') closeImageViewer();
   });
 
   /* Load chapters.json and build list */
@@ -122,8 +125,9 @@ document.addEventListener('DOMContentLoaded', () => {
         chaptersListEl.appendChild(li);
       });
 
-      if(chapters.length) goToChapter(0);
-      else {
+      if(chapters.length) {
+        goToChapter(0);
+      } else {
         chapterBodyEl.textContent = 'В репозитории нет глав (chapters.json пуст).';
         updateNavButtons();
       }
@@ -131,6 +135,10 @@ document.addEventListener('DOMContentLoaded', () => {
       chapterBodyEl.textContent = 'Ошибка загрузки chapters.json: ' + err.message + '\nПроверьте, что файл chapters.json существует в корне репозитория и содержит корректный JSON.';
       console.error('loadChapters error:', err);
       [bottomPrev, bottomNext, topPrev, topNext].forEach(b => { if(b) b.disabled = true; });
+    } finally {
+      // ensure top nav is positioned and visibility correct after chapters load (addresses issue #2)
+      positionTopNav();
+      onScrollCheckImmediate();
     }
   }
 
@@ -149,6 +157,9 @@ document.addEventListener('DOMContentLoaded', () => {
         tippy('.gloss', { allowHTML: true, interactive: true, delay: [100, 100] });
       }
       updateNavButtons();
+      // ensure top nav is placed correctly after content changes
+      positionTopNav();
+      onScrollCheckImmediate();
     }catch(err){
       chapterBodyEl.textContent = 'Ошибка загрузки главы: ' + err.message + '\nПроверьте, что файл chapters/' + filename + ' существует.';
       console.error('loadChapter error:', err);
@@ -207,10 +218,15 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   /* Scroll behaviour for top nav:
-     Show top nav when user scrolls UP or is at top; hide when user scrolls DOWN.
-     No idle auto-hide — it stays visible after an upward scroll until user scrolls down.
+     - Show top nav when user scrolls UP or is at top.
+     - When user scrolls DOWN, schedule hiding after HIDE_DELAY ms (2.5s).
+     - If user scrolls up during the delay, cancel hide.
+     - If bottom nav becomes visible, hide immediately and cancel timer.
+     - When at top on load, top nav will be shown immediately.
   */
   let lastScrollY = window.scrollY;
+  const HIDE_DELAY = 2500; // 2.5 seconds
+  let hideTimer = null;
 
   function bottomNavIsVisible(){
     if(!bottomNav) return false;
@@ -232,23 +248,46 @@ document.addEventListener('DOMContentLoaded', () => {
     topNav.setAttribute('aria-hidden', 'true');
   }
 
+  function scheduleHideTopNav(){
+    if(hideTimer) clearTimeout(hideTimer);
+    hideTimer = setTimeout(() => {
+      hideTimer = null;
+      // hide only if bottom nav isn't visible and user hasn't scrolled up since scheduling
+      if(!bottomNavIsVisible()) hideTopNav();
+    }, HIDE_DELAY);
+  }
+
+  function cancelScheduledHide(){
+    if(hideTimer){ clearTimeout(hideTimer); hideTimer = null; }
+  }
+
   function onScrollCheck(){
     const curY = window.scrollY;
     const scrollingUp = curY < lastScrollY;
     const atTop = curY <= 10;
 
     if(bottomNavIsVisible()){
+      cancelScheduledHide();
       hideTopNav();
     } else if(atTop || scrollingUp){
+      // cancel any pending hide and show immediately
+      cancelScheduledHide();
       showTopNav();
     } else {
-      // scrolling down
-      hideTopNav();
+      // scrolling down -> schedule hide after delay
+      scheduleHideTopNav();
     }
 
     lastScrollY = curY;
   }
 
+  // immediate check (no rAF) used when we need to evaluate on load
+  function onScrollCheckImmediate(){
+    lastScrollY = window.scrollY;
+    onScrollCheck();
+  }
+
+  // throttled scroll handler
   let scheduled = false;
   window.addEventListener('scroll', () => {
     if(scheduled) return;
@@ -257,21 +296,217 @@ document.addEventListener('DOMContentLoaded', () => {
   }, { passive: true });
 
   window.addEventListener('resize', () => {
+    positionTopNav();
     onScrollCheck();
   });
 
   // Intersection observer to hide top nav when bottom nav intersects viewport
   const observer = new IntersectionObserver((entries) => {
     const anyVisible = entries.some(en => en.isIntersecting);
-    if(anyVisible) hideTopNav();
+    if(anyVisible){
+      cancelScheduledHide();
+      hideTopNav();
+    }
   }, { root: null, threshold: 0.01 });
 
   if(bottomNav) observer.observe(bottomNav);
 
-  /* Start: load chapters list */
+  /* positionTopNav: set top-nav y coordinate to align with header's "top line"
+     We compute header's vertical center and set topNav.style.top accordingly.
+  */
+  function positionTopNav(){
+    if(!headerEl || !topNav) return;
+    const rect = headerEl.getBoundingClientRect();
+    // pick a vertical position that aligns the nav vertically centered with the header's content area
+    const headerCenter = rect.top + (rect.height / 2);
+    // apply top as px so the fixed element lines up correctly
+    topNav.style.top = `${Math.round(headerCenter)}px`;
+  }
+
+  /* TIPPY init for nav buttons (and gloss) */
+  function refreshTippyContents(){
+    if(!window.tippy) return;
+    [bottomPrev, bottomNext, topPrev, topNext].forEach(btn => {
+      if(!btn) return;
+      try{ if(btn._tippy) btn._tippy.destroy(); }catch(e){}
+    });
+    if(bottomPrev) tippy(bottomPrev, { content: () => bottomPrev.dataset.title || '', placement: 'top', delay: [80,40], offset: [0,8] });
+    if(bottomNext) tippy(bottomNext, { content: () => bottomNext.dataset.title || '', placement: 'top', delay: [80,40], offset: [0,8] });
+    if(topPrev) tippy(topPrev, { content: () => topPrev.dataset.title || '', placement: 'bottom', delay: [80,40], offset: [0,8] });
+    if(topNext) tippy(topNext, { content: () => topNext.dataset.title || '', placement: 'bottom', delay: [80,40], offset: [0,8] });
+  }
+
+  /* --- Image viewer (lightbox) implementation --- */
+  // Create overlay DOM once
+  const overlay = document.createElement('div');
+  overlay.id = 'image-viewer-overlay';
+  overlay.innerHTML = `
+    <div id="image-viewer-wrap">
+      <img id="image-viewer-img" src="" alt="">
+      <div id="image-viewer-caption"></div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const viewerWrap = document.getElementById('image-viewer-wrap');
+  const viewerImg = document.getElementById('image-viewer-img');
+  const viewerCaption = document.getElementById('image-viewer-caption');
+
+  let viewerState = {
+    scale: 1,
+    minScale: 0.5,
+    maxScale: 6,
+    offsetX: 0,
+    offsetY: 0,
+    startX: 0,
+    startY: 0,
+    dragging: false,
+    pointerId: null
+  };
+
+  function openImageViewer(src, alt){
+    viewerImg.src = src;
+    viewerImg.alt = alt || '';
+    viewerCaption.textContent = alt || '';
+    viewerState.scale = 1;
+    viewerState.offsetX = 0;
+    viewerState.offsetY = 0;
+    updateViewerTransform();
+    overlay.classList.add('visible');
+    document.body.style.overscrollBehavior = 'none';
+    document.documentElement.style.overflow = 'hidden';
+  }
+
+  function closeImageViewer(){
+    overlay.classList.remove('visible');
+    viewerImg.src = '';
+    document.body.style.overscrollBehavior = '';
+    document.documentElement.style.overflow = '';
+  }
+
+  function updateViewerTransform(){
+    viewerImg.style.transform = `translate(${viewerState.offsetX}px, ${viewerState.offsetY}px) scale(${viewerState.scale})`;
+  }
+
+  // wheel to zoom (desktop)
+  overlay.addEventListener('wheel', (ev) => {
+    ev.preventDefault();
+    const delta = -ev.deltaY;
+    // zoom factor
+    const factor = 1 + (delta > 0 ? 0.12 : -0.12);
+    const newScale = Math.max(viewerState.minScale, Math.min(viewerState.maxScale, viewerState.scale * factor));
+    // compute focus point to zoom towards mouse (optional enhancement)
+    const rect = viewerImg.getBoundingClientRect();
+    const mx = ev.clientX - rect.left;
+    const my = ev.clientY - rect.top;
+    const px = (mx - rect.width / 2) / rect.width;
+    const py = (my - rect.height / 2) / rect.height;
+
+    // adjust offsets slightly so zoom appears toward cursor
+    viewerState.offsetX -= px * rect.width * (newScale - viewerState.scale);
+    viewerState.offsetY -= py * rect.height * (newScale - viewerState.scale);
+
+    viewerState.scale = newScale;
+    updateViewerTransform();
+  }, { passive: false });
+
+  // mouse drag to pan
+  viewerImg.addEventListener('mousedown', (ev) => {
+    ev.preventDefault();
+    viewerState.dragging = true;
+    viewerImg.classList.add('dragging');
+    viewerState.startX = ev.clientX - viewerState.offsetX;
+    viewerState.startY = ev.clientY - viewerState.offsetY;
+    viewerState.pointerId = 'mouse';
+  });
+
+  window.addEventListener('mousemove', (ev) => {
+    if(!viewerState.dragging) return;
+    viewerState.offsetX = ev.clientX - viewerState.startX;
+    viewerState.offsetY = ev.clientY - viewerState.startY;
+    updateViewerTransform();
+  });
+
+  window.addEventListener('mouseup', () => {
+    if(!viewerState.dragging) return;
+    viewerState.dragging = false;
+    viewerImg.classList.remove('dragging');
+    viewerState.pointerId = null;
+  });
+
+  // touch pan (single finger)
+  viewerImg.addEventListener('touchstart', (ev) => {
+    if(ev.touches.length === 1){
+      const t = ev.touches[0];
+      viewerState.dragging = true;
+      viewerState.startX = t.clientX - viewerState.offsetX;
+      viewerState.startY = t.clientY - viewerState.offsetY;
+      viewerState.pointerId = t.identifier;
+    }
+  }, { passive: true });
+
+  viewerImg.addEventListener('touchmove', (ev) => {
+    if(!viewerState.dragging) return;
+    const t = ev.touches[0];
+    viewerState.offsetX = t.clientX - viewerState.startX;
+    viewerState.offsetY = t.clientY - viewerState.startY;
+    updateViewerTransform();
+  }, { passive: true });
+
+  viewerImg.addEventListener('touchend', (ev) => {
+    viewerState.dragging = false;
+    viewerState.pointerId = null;
+  });
+
+  // double click/double tap to reset zoom
+  viewerImg.addEventListener('dblclick', (ev) => {
+    viewerState.scale = 1;
+    viewerState.offsetX = 0;
+    viewerState.offsetY = 0;
+    updateViewerTransform();
+  });
+
+  // click overlay outside image to close
+  overlay.addEventListener('click', (ev) => {
+    if(ev.target === overlay) closeImageViewer();
+  });
+
+  // close on Esc (handled in keydown above)
+
+  /* Delegate clicks on chapter images to open viewer */
+  chapterBodyEl.addEventListener('click', (ev) => {
+    const t = ev.target;
+    if(t && t.tagName === 'IMG'){
+      const src = t.getAttribute('src') || t.currentSrc;
+      const alt = t.getAttribute('alt') || '';
+      if(src){
+        openImageViewer(src, alt);
+      }
+    }
+  });
+
+  /* Helper to initialize tippy-gloss and top/bottom nav tippies */
+  function initTippyGlossAndNav(){
+    // gloss spans
+    if(window.tippy){
+      try{ tippy('.gloss', { allowHTML: true, interactive: true, delay: [100, 100] }); }catch(e){}
+    }
+    refreshTippyContents();
+  }
+
+  /* --- Top nav position & initial visibility --- */
+  function positionTopNav(){
+    if(!headerEl || !topNav) return;
+    const rect = headerEl.getBoundingClientRect();
+    const headerCenter = rect.top + (rect.height / 2);
+    topNav.style.top = `${Math.round(headerCenter)}px`;
+  }
+
+  /* Start: load chapters and initialize UI */
   loadChapters();
 
-  // initial update
-  updateNavButtons();
-  onScrollCheck();
+  // after DOM ready set top nav position and tippy
+  positionTopNav();
+  initTippyGlossAndNav();
+  onScrollCheckImmediate();
 });
