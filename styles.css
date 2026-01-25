@@ -1,57 +1,162 @@
 :root{
   --bg-dark:#0b0f13; --card-dark:#0f1520; --accent-dark:#e6eef6; --muted-dark:#9aa6b2; --btn-bg-dark:#182029;
   --bg-light:#f9f9fb; --card-light:#ffffff; --accent-light:#132029; --muted-light:#66707a; --btn-bg-light:#eef3f6;
+
+  /* link hover colors (theme-aware mapping below) */
+  --link-hover-dark: #bcdffb;   /* pale light blue for dark theme */
+  --link-hover-light:#9fc8ff;   /* pale light blue for light theme */
 }
 
 /* theme-aware variables */
 html[data-theme="dark"]{
   --bg:var(--bg-dark); --card:var(--card-dark); --accent:var(--accent-dark); --muted:var(--muted-dark); --btn-bg:var(--btn-bg-dark); --btn-fg:var(--accent-dark);
+  --link-hover: var(--link-hover-dark);
 }
 html[data-theme="light"]{
   --bg:var(--bg-light); --card:var(--card-light); --accent:var(--accent-light); --muted:var(--muted-light); --btn-bg:var(--btn-bg-light); --btn-fg:var(--accent-light);
+  --link-hover: var(--link-hover-light);
 }
+
+*{box-sizing:border-box}
 
 body{
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
   margin:0; background:var(--bg); color:var(--accent);
 }
+
+/* Header / title / chapter toggle */
 header{
   background:var(--card); padding:10px 16px; box-shadow:0 1px 0 rgba(0,0,0,0.06);
-  display:flex; align-items:center; gap:12px;
+  display:flex; align-items:center; gap:12px; justify-content:space-between;
+  position:relative;
 }
-header h1{margin:0; font-size:18px; font-weight:700; flex:1}
-.header-controls{display:flex;gap:8px}
+.title-block{
+  display:flex; flex-direction:column; gap:6px;
+}
+header h1{margin:0; font-size:18px; font-weight:700}
+.header-controls{display:flex;gap:8px; align-items:center}
 
 /* Theme toggle styled like nav button */
 #theme-toggle{
   width:40px; height:40px; border-radius:10px; border:0; background:var(--btn-bg); color:var(--btn-fg);
   font-size:16px; cursor:pointer; box-shadow:0 6px 12px rgba(0,0,0,0.12); display:flex; align-items:center; justify-content:center;
 }
-
-/* Hover/active feedback */
 #theme-toggle:hover{ transform:translateY(-1px); }
 #theme-toggle:active{ transform:translateY(0); }
 
-/* Layout */
-main{display:flex; gap:18px; padding:18px}
-#chapters-list{width:220px; background:var(--card); padding:12px; border-radius:8px; box-shadow:0 2px 6px rgba(0,0,0,0.06)}
+/* Chapters toggle (small button under title) */
+.chap-toggle{
+  width:44px; height:34px; border-radius:8px; border:0; background:transparent; color:var(--accent);
+  font-size:16px; cursor:pointer; display:inline-flex; align-items:center; justify-content:center;
+}
+.chap-toggle:hover{ background: rgba(255,255,255,0.02); transform:translateY(-1px) }
+
+/* Layout: main + fixed aside approach for smooth sliding */
+main{ padding:18px; /* keep page padding */ min-height:calc(100vh - 72px); }
+
+/* Chapters list - fixed to the left and animated in/out */
+#chapters-list{
+  position:fixed;
+  left:18px;
+  top:72px; /* below header (approx) */
+  width:220px;
+  background:var(--card);
+  padding:12px;
+  border-radius:8px;
+  box-shadow:0 2px 6px rgba(0,0,0,0.06);
+  transition: transform 320ms cubic-bezier(.2,.9,.2,1), opacity 240ms;
+  z-index:900;
+}
+
+/* Hidden state: translate left and hide */
+body.chapters-hidden #chapters-list{
+  transform: translateX(-260px);
+  opacity:0;
+  pointer-events:none;
+}
+
+/* Chapter list items: single-line ellipsis */
 #chapters-list ul{list-style:none;padding:0;margin:0}
 #chapters-list li{margin:8px 0}
-#chapters-list a{color:var(--accent); text-decoration:none}
-#content{flex:1; background:var(--card); padding:18px; border-radius:8px; box-shadow:0 2px 6px rgba(0,0,0,0.06)}
+#chapters-list a{
+  color:var(--accent);
+  text-decoration:none;
+  display:block;
+  white-space:nowrap;        /* keep single line */
+  overflow:hidden;           /* clip overflow */
+  text-overflow:ellipsis;    /* show "..." */
+  max-width:100%;
+  padding-right:6px;         /* breathing room for ellipsis */
+}
+
+/* content area: smoothly shifts when chapters appear/disappear */
+#content{
+  background:var(--card);
+  padding:18px;
+  border-radius:8px;
+  box-shadow:0 2px 6px rgba(0,0,0,0.06);
+  transition: transform 320ms cubic-bezier(.2,.9,.2,1), max-width 320ms, margin 320ms, padding 320ms;
+  /* Initially, when chapters are visible, visually shift content to the right to make space */
+  transform: translateX(240px);
+  margin-left:18px;
+  margin-right:18px;
+}
+
+/* When chapters hidden: content centered & compact */
+body.chapters-hidden #content{
+  transform: translateX(0);
+  max-width:980px;    /* make text column narrower and centered */
+  margin-left:auto;
+  margin-right:auto;
+  padding:18px;
+}
+
+/* Chapter title and body */
 #chapter-title{font-size:40px; font-weight:700; margin-bottom:8px}
 #chapter-body img{max-width:100%; height:auto}
 
-/* Floating navigation buttons */
-.nav-buttons{position:fixed; right:20px; top:50%; transform:translateY(-50%); display:flex; flex-direction:column; gap:10px; z-index:1000}
-.nav-btn{width:48px; height:48px; border-radius:10px; border:0; background:var(--btn-bg); color:var(--btn-fg); font-size:18px; cursor:pointer; box-shadow:0 6px 12px rgba(0,0,0,0.12)}
+/* Floating navigation buttons: bottom center, horizontal row */
+.nav-buttons{
+  position:fixed;
+  left:50%;
+  transform:translateX(-50%);
+  bottom:20px;
+  display:flex;
+  flex-direction:row;
+  gap:10px;
+  z-index:1000;
+}
+.nav-btn{
+  width:56px; height:48px; border-radius:10px; border:0; background:var(--btn-bg); color:var(--btn-fg);
+  font-size:20px; cursor:pointer; box-shadow:0 6px 12px rgba(0,0,0,0.12);
+  display:inline-flex; align-items:center; justify-content:center;
+}
 .nav-btn:disabled{opacity:0.35; pointer-events:none}
 
-/* Gloss styling for clickable appearance */
+/* Gloss styling for tippy / tooltipable spans */
 .gloss{ text-decoration:underline dotted; cursor:help; }
 
-/* mobile */
+/* Override link hover color inside chapter body to pale light blue */
+#chapter-body a{
+  color:inherit; /* keep default text color, unless you want a specific color */
+  text-decoration:underline;
+}
+#chapter-body a:hover,
+#chapter-body a:focus{
+  color: var(--link-hover);
+  text-decoration:underline;
+  outline: none;
+}
+
+/* Small screens: hide chapter list completely */
 @media(max-width:700px){
-  #chapters-list{display:none}
-  .nav-buttons{right:10px}
+  #chapters-list{ display:none !important; } /* keep original behavior for phones */
+  .nav-buttons{ bottom:12px }
+  #content{ transform:translateX(0); margin:12px }
+}
+
+/* Ensure the fixed aside doesn't block the content on very small widths when visible */
+@media(max-width:980px){
+  #content{ transform: translateX(0); margin-left:12px; margin-right:12px }
+  body:not(.chapters-hidden) #content{ transform: translateX(220px); }
 }
