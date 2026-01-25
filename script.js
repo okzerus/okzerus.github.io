@@ -1,4 +1,4 @@
-// script.js - enhanced center layout + centered top nav behavior + slide-back upon chapter click
+// script.js - enhanced center layout + centered top nav behavior + slide-back upon chapter clic
 document.addEventListener('DOMContentLoaded', () => {
   const chaptersListEl = document.getElementById('chapters');
   const chapterBodyEl = document.getElementById('chapter-body');
