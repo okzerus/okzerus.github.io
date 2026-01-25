@@ -1,25 +1,4 @@
-// Enhanced script: theme toggle + persistent chapter navigation + floating buttons
-}
-
-
-prevBtn.addEventListener('click', ()=>{
-if(currentIndex > 0) goToChapter(currentIndex - 1);
-});
-nextBtn.addEventListener('click', ()=>{
-if(currentIndex < chapters.length - 1) goToChapter(currentIndex + 1);
-});
-
-
-// Keyboard navigation (optional but convenient)
-document.addEventListener('keydown', (e)=>{
-if(e.key === 'ArrowLeft'){
-if(currentIndex > 0) goToChapter(currentIndex - 1);
-}else if(e.key === 'ArrowRight'){
-if(currentIndex < chapters.length - 1) goToChapter(currentIndex + 1);
-}
-});
-
-
+// Script: persistent chapter navigation + floating buttons
 // LOADING CHAPTERS
 async function loadChapters(){
 chapterBodyEl.textContent = 'Загрузка...';
@@ -73,5 +52,4 @@ updateNavButtons();
 
 
 // Init
-initTheme();
 loadChapters();
