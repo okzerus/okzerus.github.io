@@ -33,7 +33,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   function setThemeIcon(theme){
     if(!themeToggle) return;
-    themeToggle.textContent = (theme === 'dark') ? '☼' : '☾';
+    themeToggle.textContent = (theme === 'dark') ? '☀︎' : '☾';
     themeToggle.setAttribute('aria-pressed', theme === 'dark' ? 'true' : 'false');
   }
   function toggleTheme(){
