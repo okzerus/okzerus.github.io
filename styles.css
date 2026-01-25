@@ -21,8 +21,18 @@ header{
 }
 header h1{margin:0; font-size:18px; font-weight:700; flex:1}
 .header-controls{display:flex;gap:8px}
-#theme-toggle{background:transparent;border:1px solid rgba(255,255,255,0.06); padding:6px 8px; border-radius:8px; cursor:pointer; color:var(--accent)}
 
+/* Theme toggle styled like nav button */
+#theme-toggle{
+  width:40px; height:40px; border-radius:10px; border:0; background:var(--btn-bg); color:var(--btn-fg);
+  font-size:16px; cursor:pointer; box-shadow:0 6px 12px rgba(0,0,0,0.12); display:flex; align-items:center; justify-content:center;
+}
+
+/* Hover/active feedback */
+#theme-toggle:hover{ transform:translateY(-1px); }
+#theme-toggle:active{ transform:translateY(0); }
+
+/* Layout */
 main{display:flex; gap:18px; padding:18px}
 #chapters-list{width:220px; background:var(--card); padding:12px; border-radius:8px; box-shadow:0 2px 6px rgba(0,0,0,0.06)}
 #chapters-list ul{list-style:none;padding:0;margin:0}
