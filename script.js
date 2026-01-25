@@ -1,4 +1,35 @@
 // Script: persistent chapter navigation + floating buttons
+let currentIndex = -1;
+
+
+// NAV BUTTONS
+function updateNavButtons(){
+if(!chapters || chapters.length === 0){
+prevBtn.disabled = true; nextBtn.disabled = true; return;
+}
+prevBtn.disabled = currentIndex <= 0;
+nextBtn.disabled = currentIndex >= chapters.length - 1;
+}
+
+
+prevBtn.addEventListener('click', ()=>{
+if(currentIndex > 0) goToChapter(currentIndex - 1);
+});
+nextBtn.addEventListener('click', ()=>{
+if(currentIndex < chapters.length - 1) goToChapter(currentIndex + 1);
+});
+
+
+// Keyboard navigation (optional but convenient)
+document.addEventListener('keydown', (e)=>{
+if(e.key === 'ArrowLeft'){
+if(currentIndex > 0) goToChapter(currentIndex - 1);
+}else if(e.key === 'ArrowRight'){
+if(currentIndex < chapters.length - 1) goToChapter(currentIndex + 1);
+}
+});
+
+
 // LOADING CHAPTERS
 async function loadChapters(){
 chapterBodyEl.textContent = 'Загрузка...';
