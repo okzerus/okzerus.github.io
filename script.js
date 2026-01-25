@@ -1,4 +1,4 @@
-// script.js - enhanced chapter UI: slide-out chapters list, ellipsis, top/bottom nav
+// script.js - enhanced center layout + centered top nav behavior + slide-back upon chapter click
 document.addEventListener('DOMContentLoaded', () => {
   const chaptersListEl = document.getElementById('chapters');
   const chapterBodyEl = document.getElementById('chapter-body');
@@ -57,7 +57,6 @@ document.addEventListener('DOMContentLoaded', () => {
     [bottomPrev, topPrev].forEach(btn => { if(btn) btn.disabled = prevDisabled; });
     [bottomNext, topNext].forEach(btn => { if(btn) btn.disabled = nextDisabled; });
 
-    // store target indices & titles as data attributes for tooltips & click handlers
     if(hasChapters && currentIndex >= 0){
       const prevIndex = Math.max(0, currentIndex - 1);
       const nextIndex = Math.min(chapters.length - 1, currentIndex + 1);
@@ -72,6 +71,8 @@ document.addEventListener('DOMContentLoaded', () => {
     } else {
       [bottomPrev, bottomNext, topPrev, topNext].forEach(btn => { if(btn){ btn.removeAttribute('data-index'); btn.removeAttribute('data-title'); }});
     }
+    // refresh tooltip content if present
+    refreshTippyContents();
   }
 
   // Click handlers
@@ -81,10 +82,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const c = chapters[index];
     loadChapter(c.file, c.title);
     updateNavButtons();
-    // update tippy contents if present
-    refreshTippyContents();
-    // if chapter is long, scroll to top when navigating
+    // move viewport to top of content area
     window.scrollTo({ top: 0 });
+    // close chapters list when user navigates via the chapter list (satisfies request #4)
+    closeChapters();
   }
 
   if(bottomPrev) bottomPrev.addEventListener('click', ()=> { const i = Number(bottomPrev.dataset.index); if(!Number.isNaN(i)) goToChapter(i); });
@@ -116,7 +117,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const a = document.createElement('a');
         a.href = '#';
         a.textContent = c.title || `Глава ${i+1}`;
-        // ellipsis styling is handled in CSS; keep anchor as block
         a.addEventListener('click', (e)=>{ e.preventDefault(); goToChapter(i); });
         li.appendChild(a);
         chaptersListEl.appendChild(li);
@@ -130,7 +130,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }catch(err){
       chapterBodyEl.textContent = 'Ошибка загрузки chapters.json: ' + err.message + '\nПроверьте, что файл chapters.json существует в корне репозитория и содержит корректный JSON.';
       console.error('loadChapters error:', err);
-      // disable nav buttons
       [bottomPrev, bottomNext, topPrev, topNext].forEach(b => { if(b) b.disabled = true; });
     }
   }
@@ -149,58 +148,29 @@ document.addEventListener('DOMContentLoaded', () => {
       if(window.tippy) {
         tippy('.gloss', { allowHTML: true, interactive: true, delay: [100, 100] });
       }
-      // After loading a chapter, update nav button titles & tippy
       updateNavButtons();
-      refreshTippyContents();
     }catch(err){
       chapterBodyEl.textContent = 'Ошибка загрузки главы: ' + err.message + '\nПроверьте, что файл chapters/' + filename + ' существует.';
       console.error('loadChapter error:', err);
     }
   }
 
-  /* TIPPY tooltips for nav buttons */
-  let tooltipInstances = [];
+  /* TIPPY tooltips for nav buttons (bottom: top placement, top: bottom placement) */
   function refreshTippyContents(){
-    // destroy any existing nav tippies to avoid duplicates
-    tooltipInstances.forEach(inst => { try{ inst.destroy(); }catch(e){} });
-    tooltipInstances = [];
-
     if(!window.tippy) return;
+    // destroy existing _tippy instances to avoid duplicates
+    [bottomPrev, bottomNext, topPrev, topNext].forEach(btn => {
+      if(!btn) return;
+      try{ if(btn._tippy) btn._tippy.destroy(); }catch(e){}
+    });
 
-    // bottom buttons: tooltip above the button
-    if(bottomPrev) tooltipInstances.push( tippy(bottomPrev, {
-      content: () => bottomPrev.dataset.title || '',
-      placement: 'top',
-      delay: [80, 40],
-      offset: [0, 8],
-      allowHTML: false,
-    }) );
-    if(bottomNext) tooltipInstances.push( tippy(bottomNext, {
-      content: () => bottomNext.dataset.title || '',
-      placement: 'top',
-      delay: [80, 40],
-      offset: [0, 8],
-      allowHTML: false,
-    }) );
-
-    // top buttons: tooltip below the button
-    if(topPrev) tooltipInstances.push( tippy(topPrev, {
-      content: () => topPrev.dataset.title || '',
-      placement: 'bottom',
-      delay: [80, 40],
-      offset: [0, 8],
-      allowHTML: false,
-    }) );
-    if(topNext) tooltipInstances.push( tippy(topNext, {
-      content: () => topNext.dataset.title || '',
-      placement: 'bottom',
-      delay: [80, 40],
-      offset: [0, 8],
-      allowHTML: false,
-    }) );
+    if(bottomPrev) tippy(bottomPrev, { content: () => bottomPrev.dataset.title || '', placement: 'top', delay: [80,40], offset: [0,8] });
+    if(bottomNext) tippy(bottomNext, { content: () => bottomNext.dataset.title || '', placement: 'top', delay: [80,40], offset: [0,8] });
+    if(topPrev) tippy(topPrev, { content: () => topPrev.dataset.title || '', placement: 'bottom', delay: [80,40], offset: [0,8] });
+    if(topNext) tippy(topNext, { content: () => topNext.dataset.title || '', placement: 'bottom', delay: [80,40], offset: [0,8] });
   }
 
-  /* Chapters aside slide-in/out behavior when mouse near left edge */
+  /* Chapters aside slide-in/out behavior */
   let chaptersOpen = false;
   const EDGE_TRIGGER_PX = 12;
 
@@ -215,38 +185,32 @@ document.addEventListener('DOMContentLoaded', () => {
     document.body.classList.remove('chapters-open');
   }
 
-  // Open when mouse near left edge
+  // Open when mouse near left edge (desktop only)
   document.addEventListener('mousemove', (e) => {
-    // do not trigger on narrow screens (mobile)
     if(window.innerWidth <= 700) return;
     if(e.clientX <= EDGE_TRIGGER_PX) openChapters();
   });
 
-  // Keep open while hovering the aside; close when leaving aside
   if(chaptersAside){
     chaptersAside.addEventListener('mouseenter', openChapters);
     chaptersAside.addEventListener('mouseleave', (ev) => {
-      // If mouse still at edge, keep open else close
       if(ev.clientX <= EDGE_TRIGGER_PX) return;
       closeChapters();
     });
   }
 
-  // Also close chapters if user clicks outside and mouse is far from edge (optional usability)
   document.addEventListener('click', (e) => {
     if(!chaptersOpen) return;
-    // If click is inside aside, do nothing
     if(chaptersAside && chaptersAside.contains(e.target)) return;
-    // If click was on the small handle area (edge), keep open
     if(e.clientX <= EDGE_TRIGGER_PX) return;
     closeChapters();
   });
 
-  /* Scroll behaviour for top nav: appear when scrolling up, disappear when scrolling down or idle.
-     Top nav must remain hidden if bottom nav is visible on screen. */
+  /* Scroll behaviour for top nav:
+     Show top nav when user scrolls UP or is at top; hide when user scrolls DOWN.
+     No idle auto-hide — it stays visible after an upward scroll until user scrolls down.
+  */
   let lastScrollY = window.scrollY;
-  let scrollTimer = null;
-  const IDLE_TIMEOUT = 1100; // ms to consider "not scrolling" -> hide top nav
 
   function bottomNavIsVisible(){
     if(!bottomNav) return false;
@@ -255,8 +219,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function showTopNav(){
-    // don't show if bottom nav is visible
-    if(bottomNavIsVisible()) {
+    if(bottomNavIsVisible()){
       hideTopNav();
       return;
     }
@@ -274,29 +237,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const scrollingUp = curY < lastScrollY;
     const atTop = curY <= 10;
 
-    // if bottom nav visible, ensure top nav is hidden
     if(bottomNavIsVisible()){
       hideTopNav();
-    } else if(atTop) {
-      // always show when at the very top of the page
-      showTopNav();
-    } else if(scrollingUp) {
+    } else if(atTop || scrollingUp){
       showTopNav();
     } else {
-      // scrolling down -> hide top nav
+      // scrolling down
       hideTopNav();
     }
 
     lastScrollY = curY;
-
-    // idle timer: hide top nav after IDLE_TIMEOUT ms of no scrolling
-    if(scrollTimer) clearTimeout(scrollTimer);
-    scrollTimer = setTimeout(() => {
-      hideTopNav();
-    }, IDLE_TIMEOUT);
   }
 
-  // Attach scroll listener with requestAnimationFrame throttle
   let scheduled = false;
   window.addEventListener('scroll', () => {
     if(scheduled) return;
@@ -304,69 +256,22 @@ document.addEventListener('DOMContentLoaded', () => {
     requestAnimationFrame(()=>{ onScrollCheck(); scheduled = false; });
   }, { passive: true });
 
-  // Also check on resize (bottomNav visibility can change)
   window.addEventListener('resize', () => {
-    // immediate check for bottom/top nav visibility
     onScrollCheck();
   });
 
-  // When bottom nav enters/leaves viewport due to content load or resize, we should update top nav visibility
+  // Intersection observer to hide top nav when bottom nav intersects viewport
   const observer = new IntersectionObserver((entries) => {
-    // If bottom nav intersects viewport, hide top nav
     const anyVisible = entries.some(en => en.isIntersecting);
     if(anyVisible) hideTopNav();
   }, { root: null, threshold: 0.01 });
 
   if(bottomNav) observer.observe(bottomNav);
 
-  /* Ensure top/bottom tooltips are created when the page loads and whenever nav data changes */
-  refreshTippyContents();
-
-  /* Helper to update tippy tooltips content live when chapters change */
-  function updateTooltipTextForButton(btn){
-    const inst = (btn && btn._tippy) ? btn._tippy : null;
-    if(inst && btn.dataset && btn.dataset.title !== undefined){
-      inst.setContent(btn.dataset.title || '');
-    }
-  }
-
-  function refreshAllTooltipTexts(){
-    [bottomPrev, bottomNext, topPrev, topNext].forEach(updateTooltipTextForButton);
-  }
-
-  function refreshTippyContentsDeferred(){
-    // small delay to ensure DOM updated before initializing tooltips
-    setTimeout(() => { refreshTippyContents(); }, 10);
-  }
-
-  // update tippy contents helper
-  function refreshTippyContents(){
-    // re-create tooltip instances
-    if(window.tippy) {
-      // destroy existing nav tippies stored in button._tippy by tippy library if necessary
-      [bottomPrev, bottomNext, topPrev, topNext].forEach(btn => {
-        if(!btn) return;
-        try{
-          if(btn._tippy) btn._tippy.destroy();
-        }catch(e){}
-      });
-
-      // bottom: placement top
-      if(bottomPrev) tippy(bottomPrev, { content: () => bottomPrev.dataset.title || '', placement: 'top', delay: [80,40], offset: [0,8] });
-      if(bottomNext) tippy(bottomNext, { content: () => bottomNext.dataset.title || '', placement: 'top', delay: [80,40], offset: [0,8] });
-
-      // top: placement bottom
-      if(topPrev) tippy(topPrev, { content: () => topPrev.dataset.title || '', placement: 'bottom', delay: [80,40], offset: [0,8] });
-      if(topNext) tippy(topNext, { content: () => topNext.dataset.title || '', placement: 'bottom', delay: [80,40], offset: [0,8] });
-    }
-  }
-
   /* Start: load chapters list */
   loadChapters();
 
-  // initial nav button update
+  // initial update
   updateNavButtons();
-
-  // ensure top nav visibility state is correct at load
   onScrollCheck();
 });
