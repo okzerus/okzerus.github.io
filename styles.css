@@ -44,7 +44,7 @@ main{ display:block; padding:18px; }
 /* Chapters aside (fixed, slides in/out from left; small 12px handle visible) */
 #chapters-list{
   width:220px; background:var(--card); padding:12px; border-radius:8px; box-shadow:0 2px 6px rgba(0,0,0,0.06);
-  position:fixed; left:0; top:72px; bottom:18px; overflow:auto; z-index:1200;
+  position:fixed; left:0; top:100px; bottom:18px; overflow:auto; z-index:1200;
   transform:translateX(calc(-100% + 12px));
   transition: transform 220ms cubic-bezier(.2,.9,.3,1);
   will-change: transform;
@@ -108,8 +108,8 @@ body.chapters-open #chapters-list{ transform:translateX(0); }
 #top-nav{
   position:fixed;
   left:50%;
-  transform: translateX(-50%) translateY(-6px);
-  z-index:1300;
+  transform: translateX(-50%) translateY(0);
+  z-index:1400;
   opacity:0;
   transition: opacity 260ms ease, transform 260ms ease;
   pointer-events:none; /* disable when hidden */
