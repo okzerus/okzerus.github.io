@@ -35,17 +35,17 @@ header h1{margin:0; font-size:18px; font-weight:700; flex:1}
 #theme-toggle:hover{ transform:translateY(-1px); }
 #theme-toggle:active{ transform:translateY(0); }
 
-/* Layout */
-main{display:flex; gap:18px; padding:18px}
+/* Layout - keep main padding but aside is fixed so content can center */
+main{ display:block; padding:18px; }
+
+/* Chapters aside (fixed, slides in/out from left; small 12px handle visible) */
 #chapters-list{
   width:220px; background:var(--card); padding:12px; border-radius:8px; box-shadow:0 2px 6px rgba(0,0,0,0.06);
   position:fixed; left:0; top:72px; bottom:18px; overflow:auto; z-index:1200;
-  /* hide off-screen leaving a small visible handle (12px) to detect edge hover */
   transform:translateX(calc(-100% + 12px));
   transition: transform 220ms cubic-bezier(.2,.9,.3,1);
   will-change: transform;
 }
-/* when open, translate back to 0 */
 body.chapters-open #chapters-list{ transform:translateX(0); }
 
 /* chapter list items - single-line ellipsis */
@@ -62,13 +62,26 @@ body.chapters-open #chapters-list{ transform:translateX(0); }
   padding-right:6px;
 }
 
-/* content area */
-#content{margin-left:0; flex:1; background:var(--card); padding:18px; border-radius:8px; box-shadow:0 2px 6px rgba(0,0,0,0.06); margin-left: 240px;}
-/* if chapters-list is hidden (mobile), remove left margin */
-@media (max-width:700px){
-  #content{ margin-left: 0; }
+/* content area centered with max-width (produces blank sides) */
+#content{
+  max-width: 960px;
+  margin: 18px auto;
+  background:var(--card);
+  padding:24px;
+  border-radius:8px;
+  box-shadow:0 2px 6px rgba(0,0,0,0.06);
 }
 
+/* smaller screens: reduce max-width */
+@media (max-width:1100px){
+  #content{ max-width:760px; padding:20px; }
+}
+@media (max-width:700px){
+  #content{ max-width: calc(100% - 20px); margin: 12px auto; }
+  #chapters-list{ display:none; }
+}
+
+/* chapter text */
 #chapter-title{font-size:40px; font-weight:700; margin-bottom:8px}
 #chapter-body img{max-width:100%; height:auto}
 
@@ -80,41 +93,40 @@ body.chapters-open #chapters-list{ transform:translateX(0); }
 }
 .nav-btn:disabled{opacity:0.35; pointer-events:none}
 
-/* Bottom navigation: sits inline after chapter-body so it appears at end of chapter */
+/* Bottom navigation: sits inline after chapter-body so it appears at the end of each chapter */
 #bottom-nav{
   margin-top:24px;
   justify-content:center;
   transition: opacity 180ms ease;
 }
 
-/* Top navigation: fixed, invisible by default, fades in/out.
-   Positioned near the right-side but below the header so it doesn't overlap the title */
+/* Top navigation: centered below header, invisible by default, fades in/out.
+   Centered horizontally using transform(-50%, Y).
+*/
 #top-nav{
   position:fixed;
   top:84px;
-  right:20px;
+  left:50%;
+  transform: translateX(-50%) translateY(-6px);
   z-index:1300;
   opacity:0;
-  transform: translateY(-6px);
   transition: opacity 260ms ease, transform 260ms ease;
   pointer-events:none; /* disable when hidden */
+  display:flex;
+  gap:12px;
 }
-/* when visible, add class 'visible-top' on #top-nav (managed by JS) */
-#top-nav.visible-top{ opacity:1; transform: translateY(0); pointer-events:auto; }
+#top-nav.visible-top{
+  opacity:1;
+  transform: translateX(-50%) translateY(0);
+  pointer-events:auto;
+}
 
 /* blur effect when chapters open */
 body.chapters-open header,
-body.chapters-open main > *:not(#chapters-list) { /* blur header and other main children but not the aside */
+body.chapters-open main > *:not(#chapters-list) {
   filter: blur(4px);
   transition: filter 220ms ease;
 }
 
 /* Gloss styling for clickable appearance */
 .gloss{ text-decoration:underline dotted; cursor:help; }
-
-/* mobile specific */
-@media(max-width:700px){
-  #chapters-list{display:none}
-  /* ensure top-nav doesn't block mobile UI too much */
-  #top-nav{ right:10px; top:68px; }
-}
