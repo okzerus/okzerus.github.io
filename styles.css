@@ -39,7 +39,7 @@ main{display:flex; gap:18px; padding:18px}
 #chapters-list li{margin:8px 0}
 #chapters-list a{color:var(--accent); text-decoration:none}
 #content{flex:1; background:var(--card); padding:18px; border-radius:8px; box-shadow:0 2px 6px rgba(0,0,0,0.06)}
-#chapter-title{font-size:20px; font-weight:700; margin-bottom:8px}
+#chapter-title{font-size:40px; font-weight:700; margin-bottom:8px}
 #chapter-body img{max-width:100%; height:auto}
 
 /* Floating navigation buttons */
