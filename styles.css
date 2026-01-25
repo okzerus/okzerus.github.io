@@ -1,13 +1,9 @@
 :root{
---bg:#f9f9fb; --accent:#263238; --muted:#666; --card:#ffffff; --btn-bg:#efefef; --btn-fg:#222;
-}
-[data-theme="dark"]{
 --bg:#0b0f13; --accent:#e6eef6; --muted:#9aa6b2; --card:#0f1520; --btn-bg:#182029; --btn-fg:#e6eef6;
 }
 body{font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; margin:0; background:var(--bg); color:var(--accent)}
 header{background:var(--card);padding:12px 20px;box-shadow:0 1px 0 rgba(0,0,0,0.05);display:flex;align-items:center;gap:12px}
 header h1{margin:0;flex:1}
-.theme-toggle{background:var(--btn-bg);color:var(--btn-fg);border:0;padding:6px 10px;border-radius:8px;cursor:pointer}
 main{display:flex;gap:20px;padding:20px}
 #chapters-list{width:220px;background:var(--card);padding:12px;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.04)}
 #chapters-list ul{list-style:none;padding:0;margin:0}
