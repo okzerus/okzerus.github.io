@@ -10,12 +10,7 @@
 </head>
 <body>
 <header>
-  <div class="title-block">
-    <h1 id="site-title">Distortion Detective [RU]</h1>
-    <!-- chapters toggle button (below title, top-left) -->
-    <button id="chapters-toggle" class="chap-toggle" aria-expanded="true" aria-label="Показать или скрыть список глав" title="Показать/скрыть список глав">☰</button>
-  </div>
-
+  <h1 id="site-title">Distortion Detective [RU]</h1>
   <div class="header-controls">
     <!-- theme toggle (styled like nav button) -->
     <button id="theme-toggle" aria-label="Переключить тему" title="Переключить тему">☼</button>
@@ -23,8 +18,8 @@
 </header>
 
 <main>
-  <!-- aside remains in DOM but is positioned/fixed by CSS for smooth sliding -->
-  <aside id="chapters-list">
+  <!-- Chapters list (hidden off-screen until mouse near left edge) -->
+  <aside id="chapters-list" aria-hidden="false">
     <h2>Главы</h2>
     <ul id="chapters"></ul>
   </aside>
@@ -32,13 +27,19 @@
   <section id="content">
     <div id="chapter-title"></div>
     <article id="chapter-body">Загрузка...</article>
+
+    <!-- Bottom navigation pair: placed here so it's at the very end of chapter content -->
+    <div id="bottom-nav" class="chapter-nav bottom" aria-hidden="false">
+      <button id="bottom-prev" class="nav-btn" aria-label="Назад" disabled>◀</button>
+      <button id="bottom-next" class="nav-btn" aria-label="Вперёд" disabled>▶</button>
+    </div>
   </section>
 </main>
 
-<!-- Floating prev/next buttons (bottom-centered, horizontal) -->
-<div class="nav-buttons" aria-hidden="false">
-  <button id="prev-btn" class="nav-btn" aria-label="Назад" disabled>◀</button>
-  <button id="next-btn" class="nav-btn" aria-label="Вперёд" disabled>▶</button>
+<!-- Top navigation pair (fixed, invisible by default, fades in when scrolling up) -->
+<div id="top-nav" class="chapter-nav top" aria-hidden="true">
+  <button id="top-prev" class="nav-btn" aria-label="Назад" disabled>◀</button>
+  <button id="top-next" class="nav-btn" aria-label="Вперёд" disabled>▶</button>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
