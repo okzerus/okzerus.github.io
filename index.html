@@ -10,34 +10,36 @@
 </head>
 <body>
 <header>
-<h1 id="site-title">Distortion Detective [RU]</h1>
-<div class="header-controls">
-<!-- theme toggle (styled like nav button) -->
-<button id="theme-toggle" aria-label="Переключить тему" title="Переключить тему">☼</button>
-</div>
+  <div class="title-block">
+    <h1 id="site-title">Distortion Detective [RU]</h1>
+    <!-- chapters toggle button (below title, top-left) -->
+    <button id="chapters-toggle" class="chap-toggle" aria-expanded="true" aria-label="Показать или скрыть список глав" title="Показать/скрыть список глав">☰</button>
+  </div>
+
+  <div class="header-controls">
+    <!-- theme toggle (styled like nav button) -->
+    <button id="theme-toggle" aria-label="Переключить тему" title="Переключить тему">☼</button>
+  </div>
 </header>
 
-
 <main>
-<aside id="chapters-list">
-<h2>Главы</h2>
-<ul id="chapters"></ul>
-</aside>
+  <!-- aside remains in DOM but is positioned/fixed by CSS for smooth sliding -->
+  <aside id="chapters-list">
+    <h2>Главы</h2>
+    <ul id="chapters"></ul>
+  </aside>
 
-
-<section id="content">
-<div id="chapter-title"></div>
-<article id="chapter-body">Загрузка...</article>
-</section>
+  <section id="content">
+    <div id="chapter-title"></div>
+    <article id="chapter-body">Загрузка...</article>
+  </section>
 </main>
 
-
-<!-- Floating prev/next buttons (start disabled) -->
+<!-- Floating prev/next buttons (bottom-centered, horizontal) -->
 <div class="nav-buttons" aria-hidden="false">
-<button id="prev-btn" class="nav-btn" aria-label="Назад" disabled>▲</button>
-<button id="next-btn" class="nav-btn" aria-label="Вперёд" disabled>▼</button>
+  <button id="prev-btn" class="nav-btn" aria-label="Назад" disabled>◀</button>
+  <button id="next-btn" class="nav-btn" aria-label="Вперёд" disabled>▶</button>
 </div>
-
 
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script src="https://unpkg.com/@popperjs/core@2"></script>
