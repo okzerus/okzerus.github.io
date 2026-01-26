@@ -1,5 +1,5 @@
-// script.js - final adjustments: header-aligned top-nav, delayed hide on scroll-down,
-// tooltip link color available through CSS var, and simple image viewer/lightbox
+// script.js - fixes: prevent click-toggle after drag, remove smoothing by CSS, favicon already added,
+// and change sun glyph to ☀︎
 
 document.addEventListener('DOMContentLoaded', () => {
   const chaptersListEl = document.getElementById('chapters');
@@ -35,7 +35,8 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   function setThemeIcon(theme){
     if(!themeToggle) return;
-    themeToggle.textContent = (theme === 'dark') ? '☼' : '☾';
+    // Light-mode glyph changed to '☀︎'
+    themeToggle.textContent = (theme === 'dark') ? '☀︎' : '☾';
     themeToggle.setAttribute('aria-pressed', theme === 'dark' ? 'true' : 'false');
   }
   function toggleTheme(){
@@ -212,18 +213,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
   /* --- Top nav position & visibility logic --- */
 
-  // Place topNav vertically centered to header line (header center)
   function positionTopNav(){
     if(!topNav || !headerEl) return;
     const hRect = headerEl.getBoundingClientRect();
     const topNavRect = topNav.getBoundingClientRect();
-    // center topNav vertically inside header
     const top = Math.max(6, hRect.top + (hRect.height / 2) - (topNavRect.height / 2));
     topNav.style.top = `${top}px`;
   }
 
-  // Visibility logic: top nav visible when user scrolls up or is at top.
-  // When scrolling down: start a 2500ms delay then hide (unless user scrolls up or bottom nav appears).
   let lastScrollY = window.scrollY;
   let scheduled = false;
   let hideDelayTimer = null;
@@ -245,17 +242,14 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function hideTopNav(){
-    // Cancel any pending hide timers
     if(hideDelayTimer){ clearTimeout(hideDelayTimer); hideDelayTimer = null; }
     topNav.classList.remove('visible-top');
     topNav.setAttribute('aria-hidden', 'true');
   }
 
   function scheduleHideTopNavWithDelay(){
-    // If already scheduled, leave it
     if(hideDelayTimer) return;
     hideDelayTimer = setTimeout(() => {
-      // hide only if bottom nav is not visible and the user didn't scroll up meanwhile
       if(!bottomNavIsVisible()) hideTopNav();
       hideDelayTimer = null;
     }, HIDE_DELAY_MS);
@@ -267,35 +261,29 @@ document.addEventListener('DOMContentLoaded', () => {
     const atTop = curY <= 10;
 
     if(bottomNavIsVisible()){
-      // if bottom nav visible — hide top nav immediately
       hideTopNav();
       if(hideDelayTimer){ clearTimeout(hideDelayTimer); hideDelayTimer = null; }
     } else if(atTop || scrollingUp){
-      // Immediately show top nav and cancel any scheduled hide
       if(hideDelayTimer){ clearTimeout(hideDelayTimer); hideDelayTimer = null; }
       showTopNav();
     } else {
-      // scrolling down: schedule hide after delay
       scheduleHideTopNavWithDelay();
     }
 
     lastScrollY = curY;
   }
 
-  // throttle via rAF
   window.addEventListener('scroll', () => {
     if(scheduled) return;
     scheduled = true;
-    requestAnimationFrame(() => { onScrollCheck(); scheduled = false; });
+    requestAnimationFrame(()=>{ onScrollCheck(); scheduled = false; });
   }, { passive: true });
 
   window.addEventListener('resize', () => {
-    // reposition top nav and re-evaluate visibility
     positionTopNav();
     onScrollCheck();
   });
 
-  // Intersection observer: if bottom nav enters viewport, hide top nav immediately
   const observer = new IntersectionObserver((entries) => {
     const anyVisible = entries.some(en => en.isIntersecting);
     if(anyVisible) {
@@ -308,7 +296,6 @@ document.addEventListener('DOMContentLoaded', () => {
   /* Ensure top nav is positioned and visibility checked after load */
   function initialTopNavSetup(){
     positionTopNav();
-    // Show top nav if page at top
     if(window.scrollY <= 10 && !bottomNavIsVisible()){
       showTopNav();
     } else {
@@ -316,12 +303,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Run initial setup after a small delay to allow layout to settle (fixes the refresh issue)
   setTimeout(initialTopNavSetup, 40);
 
-  /* --- Image viewer (simple lightbox with click-to-zoom and drag) --- */
+  /* --- Image viewer (click-to-zoom + drag) --- */
 
-  // Create overlay DOM and append to body (so user doesn't need to add HTML)
   const overlay = document.createElement('div');
   overlay.id = 'image-overlay';
   overlay.innerHTML = `<div class="viewer" role="dialog" aria-modal="true"><img class="viewer-img" src="" alt=""></div>`;
@@ -331,8 +316,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
   let isZoomed = false;
   let dragging = false;
-  let dragStart = { x: 0, y: 0 };
+  let pointerDown = false;
+  let pointerStart = { x: 0, y: 0 };
   let imgPos = { x: 0, y: 0 };
+  let dragMoved = false;
+  let suppressClick = false;
+  const DRAG_THRESHOLD = 4; // pixels
 
   function openImageViewer(src, alt = ''){
     overlayImg.src = src;
@@ -343,7 +332,6 @@ document.addEventListener('DOMContentLoaded', () => {
     applyImageTransform();
     overlayImg.classList.remove('zoomed');
     overlay.style.cursor = 'default';
-    // prevent page scroll while open
     document.body.style.overflow = 'hidden';
   }
 
@@ -352,54 +340,74 @@ document.addEventListener('DOMContentLoaded', () => {
     overlayImg.src = '';
     isZoomed = false;
     dragging = false;
+    pointerDown = false;
+    dragMoved = false;
+    suppressClick = false;
     document.body.style.overflow = '';
   }
 
   function applyImageTransform(){
-    // Use translate + scale
     const scale = isZoomed ? 2 : 1;
     overlayImg.style.transform = `translate(${imgPos.x}px, ${imgPos.y}px) scale(${scale})`;
     if(isZoomed) overlayImg.classList.add('zoomed'); else overlayImg.classList.remove('zoomed');
   }
 
-  /* Toggle zoom on single left-click of the image */
+  // Click toggles zoom but only if not suppressed by a drag
   overlayImg.addEventListener('click', (ev) => {
-    // toggle zoom
+    if(suppressClick) {
+      // reset suppress flag and ignore click
+      suppressClick = false;
+      return;
+    }
+    // toggle zoom on true click
     isZoomed = !isZoomed;
     if(!isZoomed){
-      // reset position on zoom out
       imgPos = { x: 0, y: 0 };
     }
     applyImageTransform();
   });
 
-  // Dragging when zoomed
+  // pointer handling for drag (mouse)
   overlayImg.addEventListener('mousedown', (ev) => {
-    if(!isZoomed) return;
+    if(!isZoomed) return; // only allow dragging when zoomed
     ev.preventDefault();
-    dragging = true;
+    pointerDown = true;
+    dragging = false;
+    dragMoved = false;
+    pointerStart = { x: ev.clientX, y: ev.clientY };
     overlayImg.style.cursor = 'grabbing';
-    dragStart = { x: ev.clientX, y: ev.clientY };
   });
 
   window.addEventListener('mousemove', (ev) => {
-    if(!dragging) return;
-    const dx = ev.clientX - dragStart.x;
-    const dy = ev.clientY - dragStart.y;
-    dragStart = { x: ev.clientX, y: ev.clientY };
-    imgPos.x += dx;
-    imgPos.y += dy;
-    applyImageTransform();
-  });
-
-  window.addEventListener('mouseup', () => {
-    if(dragging){
-      dragging = false;
-      overlayImg.style.cursor = 'grab';
+    if(!pointerDown || !isZoomed) return;
+    const dx = ev.clientX - pointerStart.x;
+    const dy = ev.clientY - pointerStart.y;
+    if(!dragMoved && (Math.abs(dx) + Math.abs(dy) >= DRAG_THRESHOLD)) {
+      dragMoved = true;
+      dragging = true;
+    }
+    if(dragMoved) {
+      // update start point to current for smoother immediate dragging
+      pointerStart = { x: ev.clientX, y: ev.clientY };
+      imgPos.x += dx;
+      imgPos.y += dy;
+      applyImageTransform();
     }
   });
 
-  // Close on clicking outside the image (overlay background) or on Escape
+  window.addEventListener('mouseup', (ev) => {
+    if(pointerDown && dragMoved){
+      // if there was a drag, suppress the immediately-following click
+      suppressClick = true;
+      // clear it shortly after to avoid interfering with subsequent clicks
+      setTimeout(() => { suppressClick = false; }, 0);
+    }
+    pointerDown = false;
+    dragging = false;
+    overlayImg.style.cursor = isZoomed ? 'grab' : 'zoom-in';
+  });
+
+  // Close on clicking outside the image or Escape
   overlay.addEventListener('click', (ev) => {
     if(ev.target === overlay) closeImageViewer();
   });
@@ -407,14 +415,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if(ev.key === 'Escape' && overlay.classList.contains('visible')) closeImageViewer();
   });
 
-  // Bind all images inside #chapter-body to open the viewer
+  // Bind images inside chapter-body
   function bindImagesToViewer(){
-    // select images in chapter-body
     const imgs = chapterBodyEl.querySelectorAll('img');
     imgs.forEach(img => {
-      // ensure cursor hint
-      img.style.cursor = 'zoom-in';
-      // remove previous listeners by cloning (avoid duplicate binding)
+      // replace node to remove duplicate listeners if any
       const clone = img.cloneNode(true);
       clone.style.cursor = 'zoom-in';
       img.parentNode.replaceChild(clone, img);
@@ -431,10 +436,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // initial nav update & positioning
   updateNavButtons();
-  // positionTopNav again after initial DOM operations (ensure correct vertical placement)
   setTimeout(() => {
     positionTopNav();
-    // show top nav if at top on load (additional guarantee)
     if(window.scrollY <= 10 && !bottomNavIsVisible()){
       showTopNav();
     }
