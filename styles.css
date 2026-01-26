@@ -63,6 +63,15 @@ body.chapters-open #chapters-list{ transform:translateX(0); }
   padding-right:6px;
 }
 
+/* style for undone chapters (grayed, strikethrough, unclickable) */
+#chapters-list a.undone {
+  color: var(--muted);
+  text-decoration: line-through;
+  pointer-events: none;
+  cursor: default;
+  opacity: 0.75;
+}
+
 /* content area centered with max-width (produces blank sides) */
 #content{
   max-width: 960px;
@@ -71,6 +80,15 @@ body.chapters-open #chapters-list{ transform:translateX(0); }
   padding:24px;
   border-radius:8px;
   box-shadow:0 2px 6px rgba(0,0,0,0.06);
+}
+
+/* ensure images in chapter body are centered */
+#chapter-body img{
+  display: block;
+  margin: 18px auto;
+  max-width: 100%;
+  height: auto;
+  cursor: zoom-in;
 }
 
 /* smaller screens: reduce max-width */
@@ -84,7 +102,6 @@ body.chapters-open #chapters-list{ transform:translateX(0); }
 
 /* chapter text */
 #chapter-title{font-size:40px; font-weight:700; margin-bottom:8px}
-#chapter-body img{max-width:100%; height:auto; cursor:zoom-in;}
 
 /* Chapter navigation buttons (shared style) */
 .chapter-nav{ display:flex; gap:12px; align-items:center; }
@@ -102,7 +119,7 @@ body.chapters-open #chapters-list{ transform:translateX(0); }
 }
 
 /* Top navigation: centered and aligned with header center;
-   initial hidden state; will be positioned precisely by JS for the header line
+   will be positioned precisely by JS for the header line
 */
 #top-nav{
   position:fixed;
@@ -131,19 +148,19 @@ body.chapters-open main > *:not(#chapters-list) {
 /* Gloss styling for clickable appearance */
 .gloss{ text-decoration:underline dotted; cursor:help; }
 
-/* Tippy tooltip link color override (applies to any link inside a tippy tooltip) */
+/* Tippy tooltip link color override */
 .tippy-box .tippy-content a,
 .tippy-box a {
   color: var(--tooltip-link-color) !important;
   text-decoration: underline;
 }
 
-/* --- Simple image viewer (lightbox) styles --- */
+/* --- Image viewer (lightbox) styles --- */
 #image-overlay {
   position: fixed;
   inset: 0;
   background: rgba(0,0,0,0.85);
-  display: none; /* toggled by JS */
+  display: none;
   align-items: center;
   justify-content: center;
   z-index: 2000;
@@ -165,14 +182,11 @@ body.chapters-open main > *:not(#chapters-list) {
   user-select: none;
   -webkit-user-drag: none;
   transform-origin: center center;
-  /* removed transition so dragging is immediate (no smoothing) */
   transition: none;
   cursor: zoom-in;
 }
-
-/* when zoomed we'll change cursor via JS, but add fallback */
 #image-overlay img.zoomed { cursor: grab; }
 
 @media (max-width:700px){
-  #top-nav{ right:10px; left:auto; transform:none; } /* on mobile, keep it reasonable */
+  #top-nav{ right:10px; left:auto; transform:none; }
 }
