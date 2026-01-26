@@ -33,7 +33,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   function setThemeIcon(theme){
     if(!themeToggle) return;
-    themeToggle.textContent = (theme === 'dark') ? '☀︎' : '☾';
+    themeToggle.textContent = (theme === 'dark') ? '☼' : '☾';
     themeToggle.setAttribute('aria-pressed', theme === 'dark' ? 'true' : 'false');
   }
   function toggleTheme(){
@@ -317,9 +317,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function positionTopNav(){
     if(!headerEl || !topNav) return;
     const rect = headerEl.getBoundingClientRect();
-    // pick a vertical position that aligns the nav vertically centered with the header's content area
     const headerCenter = rect.top + (rect.height / 2);
-    // apply top as px so the fixed element lines up correctly
     topNav.style.top = `${Math.round(headerCenter)}px`;
   }
 
@@ -388,25 +386,54 @@ document.addEventListener('DOMContentLoaded', () => {
     viewerImg.style.transform = `translate(${viewerState.offsetX}px, ${viewerState.offsetY}px) scale(${viewerState.scale})`;
   }
 
-  // wheel to zoom (desktop)
+  // wheel to zoom (desktop) — corrected math so the point under the cursor remains fixed.
   overlay.addEventListener('wheel', (ev) => {
     ev.preventDefault();
-    const delta = -ev.deltaY;
-    // zoom factor
-    const factor = 1 + (delta > 0 ? 0.12 : -0.12);
-    const newScale = Math.max(viewerState.minScale, Math.min(viewerState.maxScale, viewerState.scale * factor));
-    // compute focus point to zoom towards mouse (optional enhancement)
+
+    // compute zoom factor based on wheel delta (smooth, device-friendly)
+    // smaller multiplier -> slower zoom; adjust if you want faster/slower
+    const factor = Math.exp(-ev.deltaY * 0.002);
+    const s = viewerState.scale;
+    let newScale = s * factor;
+
+    // clamp
+    newScale = Math.max(viewerState.minScale, Math.min(viewerState.maxScale, newScale));
+
+    // if no effective change, exit
+    if(Math.abs(newScale - s) < 1e-6) return;
+
+    // get current bounding rect (which includes current transforms)
     const rect = viewerImg.getBoundingClientRect();
-    const mx = ev.clientX - rect.left;
-    const my = ev.clientY - rect.top;
-    const px = (mx - rect.width / 2) / rect.width;
-    const py = (my - rect.height / 2) / rect.height;
 
-    // adjust offsets slightly so zoom appears toward cursor
-    viewerState.offsetX -= px * rect.width * (newScale - viewerState.scale);
-    viewerState.offsetY -= py * rect.height * (newScale - viewerState.scale);
+    // Derivation:
+    // visibleLeft = baseLeft + offsetX * scale
+    // baseLeft = rect.left - offsetX * scale
+    // To keep the cursor point visible position unchanged:
+    // offsetX' = offsetX + (cursorX - baseLeft) * (1/newScale - 1/scale)
+    // Using baseLeft = rect.left - offsetX * scale we get:
+    // deltaX = (cursorX - rect.left + offsetX * scale) * (1/newScale - 1/scale)
+    const sInv = 1 / s, sNewInv = 1 / newScale;
+    const cx = ev.clientX;
+    const cy = ev.clientY;
 
+    const deltaX = (cx - rect.left + viewerState.offsetX * s) * (sNewInv - sInv);
+    const deltaY = (cy - rect.top + viewerState.offsetY * s) * (sNewInv - sInv);
+
+    // apply changes
+    viewerState.offsetX += deltaX;
+    viewerState.offsetY += deltaY;
     viewerState.scale = newScale;
+
+    // optional: clamp offsets to reasonable bounds so image doesn't run infinitely far away
+    // compute approximate visible size
+    const visibleW = rect.width; // current visible width
+    const visibleH = rect.height;
+
+    // limit offsets (soft clamp) so image center cannot be more than 3x viewport away — prevents runaway on very large zoom
+    const MAX_OFF = Math.max(window.innerWidth, window.innerHeight) * 3;
+    viewerState.offsetX = Math.max(-MAX_OFF, Math.min(MAX_OFF, viewerState.offsetX));
+    viewerState.offsetY = Math.max(-MAX_OFF, Math.min(MAX_OFF, viewerState.offsetY));
+
     updateViewerTransform();
   }, { passive: false });
 
@@ -472,6 +499,26 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // close on Esc (handled in keydown above)
+  function closeImageViewer(){
+    overlay.classList.remove('visible');
+    viewerImg.src = '';
+    document.body.style.overscrollBehavior = '';
+    document.documentElement.style.overflow = '';
+  }
+
+  // open viewer function
+  function openImageViewer(src, alt){
+    viewerImg.src = src;
+    viewerImg.alt = alt || '';
+    viewerCaption.textContent = alt || '';
+    viewerState.scale = 1;
+    viewerState.offsetX = 0;
+    viewerState.offsetY = 0;
+    updateViewerTransform();
+    overlay.classList.add('visible');
+    document.body.style.overscrollBehavior = 'none';
+    document.documentElement.style.overflow = 'hidden';
+  }
 
   /* Delegate clicks on chapter images to open viewer */
   chapterBodyEl.addEventListener('click', (ev) => {
