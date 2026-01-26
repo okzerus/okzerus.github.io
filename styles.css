@@ -1,9 +1,7 @@
 :root{
   --bg-dark:#0b0f13; --card-dark:#0f1520; --accent-dark:#e6eef6; --muted-dark:#9aa6b2; --btn-bg-dark:#182029;
   --bg-light:#f9f9fb; --card-light:#ffffff; --accent-light:#132029; --muted-light:#66707a; --btn-bg-light:#eef3f6;
-
-  /* tooltip link color (adjust here if you want a different pale blue) */
-  --tooltip-link: #bfe8ff;
+  --tooltip-link-color: #bfe8ff; /* pale light blue for tooltip links, change here if needed */
 }
 
 /* theme-aware variables */
@@ -44,7 +42,7 @@ main{ display:block; padding:18px; }
 /* Chapters aside (fixed, slides in/out from left; small 12px handle visible) */
 #chapters-list{
   width:220px; background:var(--card); padding:12px; border-radius:8px; box-shadow:0 2px 6px rgba(0,0,0,0.06);
-  position:fixed; left:0; top:110px; bottom:18px; overflow:auto; z-index:1200;
+  position:fixed; left:0; top:72px; bottom:18px; overflow:auto; z-index:1200;
   transform:translateX(calc(-100% + 12px));
   transition: transform 220ms cubic-bezier(.2,.9,.3,1);
   will-change: transform;
@@ -86,7 +84,7 @@ body.chapters-open #chapters-list{ transform:translateX(0); }
 
 /* chapter text */
 #chapter-title{font-size:40px; font-weight:700; margin-bottom:8px}
-#chapter-body img{max-width:100%; height:auto; cursor:zoom-in}
+#chapter-body img{max-width:100%; height:auto; cursor:zoom-in;}
 
 /* Chapter navigation buttons (shared style) */
 .chapter-nav{ display:flex; gap:12px; align-items:center; }
@@ -103,16 +101,17 @@ body.chapters-open #chapters-list{ transform:translateX(0); }
   transition: opacity 180ms ease;
 }
 
-/* Top navigation: centered horizontally; vertical position will be set by JS to align with header's top line.
-   invisible by default, fades in/out; pointer events disabled when hidden. */
+/* Top navigation: centered and aligned with header center;
+   initial hidden state; will be positioned precisely by JS for the header line
+*/
 #top-nav{
   position:fixed;
   left:50%;
-  transform: translateX(-50%) translateY(0);
-  z-index:1500;
+  transform: translateX(-50%) translateY(-6px);
+  z-index:1300;
   opacity:0;
   transition: opacity 260ms ease, transform 260ms ease;
-  pointer-events:none; /* disable when hidden */
+  pointer-events:none;
   display:flex;
   gap:12px;
 }
@@ -132,55 +131,47 @@ body.chapters-open main > *:not(#chapters-list) {
 /* Gloss styling for clickable appearance */
 .gloss{ text-decoration:underline dotted; cursor:help; }
 
-/* --- Tippy tooltip link color override --- */
-/* This changes the color of links inside tooltips (pale light blue). */
-.tippy-box a,
-.tippy-content a {
-  color: var(--tooltip-link);
+/* Tippy tooltip link color override (applies to any link inside a tippy tooltip) */
+.tippy-box .tippy-content a,
+.tippy-box a {
+  color: var(--tooltip-link-color) !important;
   text-decoration: underline;
 }
 
-/* --- Image viewer (lightbox) styles --- */
-#image-viewer-overlay{
+/* --- Simple image viewer (lightbox) styles --- */
+#image-overlay {
   position: fixed;
-  z-index: 2000;
   inset: 0;
-  background: rgba(6,8,12,0.88);
-  display: none;
+  background: rgba(0,0,0,0.85);
+  display: none; /* toggled by JS */
   align-items: center;
   justify-content: center;
+  z-index: 2000;
   cursor: default;
 }
-#image-viewer-overlay.visible{ display:flex; }
-#image-viewer-wrap{
+#image-overlay.visible { display:flex; }
+
+#image-overlay .viewer {
   position: relative;
   max-width: 95%;
   max-height: 95%;
   overflow: hidden;
   touch-action: none;
 }
-#image-viewer-img{
-  display:block;
+#image-overlay img.viewer-img {
+  display: block;
   max-width: 100%;
   max-height: 100%;
   user-select: none;
   -webkit-user-drag: none;
-  transform-origin: 50% 50%;
-  transition: transform 120ms ease;
-  cursor: grab;
+  transform-origin: center center;
+  transition: transform 260ms ease;
+  cursor: zoom-in;
 }
-#image-viewer-img.dragging{ cursor: grabbing; }
 
-/* caption area */
-#image-viewer-caption{
-  position: absolute;
-  left: 50%;
-  bottom: 8px;
-  transform: translateX(-50%);
-  color: var(--muted);
-  font-size: 13px;
-  background: rgba(0,0,0,0.25);
-  padding: 6px 10px;
-  border-radius: 6px;
-  backdrop-filter: blur(4px);
+/* when zoomed we'll change cursor via JS, but add fallback */
+#image-overlay img.zoomed { cursor: grab; }
+
+@media (max-width:700px){
+  #top-nav{ right:10px; left:auto; transform:none; } /* on mobile, keep it reasonable */
 }
