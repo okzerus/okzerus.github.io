@@ -101,7 +101,13 @@ body.chapters-open #chapters-list{ transform:translateX(0); }
 }
 
 /* chapter text */
-#chapter-title{font-size:40px; font-weight:700; margin-bottom:8px}
+#chapter-title{
+  font-size: 40px;
+  font-weight: 700;
+  margin: 0 0 16px;
+  text-align: center;      /* ← centers the chapter title */
+}
+
 
 /* Chapter navigation buttons (shared style) */
 .chapter-nav{ display:flex; gap:12px; align-items:center; }
