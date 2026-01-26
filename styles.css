@@ -1,7 +1,7 @@
 :root{
   --bg-dark:#0b0f13; --card-dark:#0f1520; --accent-dark:#e6eef6; --muted-dark:#9aa6b2; --btn-bg-dark:#182029;
   --bg-light:#f9f9fb; --card-light:#ffffff; --accent-light:#132029; --muted-light:#66707a; --btn-bg-light:#eef3f6;
-  --tooltip-link-color: #bfe8ff; /* pale light blue for tooltip links, change here if needed */
+  --tooltip-link-color: #bfe8ff; /* pale light blue for tooltip links */
 }
 
 /* theme-aware variables */
@@ -165,7 +165,8 @@ body.chapters-open main > *:not(#chapters-list) {
   user-select: none;
   -webkit-user-drag: none;
   transform-origin: center center;
-  transition: transform 260ms ease;
+  /* removed transition so dragging is immediate (no smoothing) */
+  transition: none;
   cursor: zoom-in;
 }
 
