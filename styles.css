@@ -171,36 +171,6 @@ body.chapters-open main > *:not(#chapters-list) {
   padding: 8px 10px;
 }
 
-/* ---- Tooltip visibility & priority fixes ---- */
-/* Ensure tippy boxes are on top of other UI and visible */
-.tippy-box {
-  z-index: 99999 !important;
-  pointer-events: auto !important;
-  opacity: 1 !important;
-  visibility: visible !important;
-}
-
-/* Make sure images inside tooltips are displayed and sized reasonably */
-.tippy-box .tippy-content img.tooltip-img,
-.tippy-box img.tooltip-img {
-  display: block !important;
-  visibility: visible !important;
-  opacity: 1 !important;
-  max-width: 320px !important;
-  width: auto !important;
-  max-height: 360px !important;
-  height: auto !important;
-  margin: 0 0 8px !important;
-}
-
-/* Ensure tooltip content is not collapsed by parent sizing */
-.tippy-box .tippy-content {
-  display: block !important;
-  overflow: visible !important;
-  white-space: normal !important;
-}
-
-
 /* --- Image viewer (lightbox) styles --- */
 #image-overlay {
   position: fixed;
