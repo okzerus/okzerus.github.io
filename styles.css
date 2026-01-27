@@ -148,14 +148,21 @@ body.chapters-open main > *:not(#chapters-list) {
 /* Gloss styling for clickable appearance */
 .gloss{ text-decoration:underline dotted; cursor:help; }
 
-/* Tippy tooltip link color override */
+/* --- Tippy / tooltip tweaks --- */
+
+/* Ensure tooltip appears above other UI elements */
+.tippy-box {
+  z-index: 99999 !important;
+}
+
+/* Tippy tooltip link color override (unchanged) */
 .tippy-box .tippy-content a,
 .tippy-box a {
   color: var(--tooltip-link-color) !important;
   text-decoration: underline;
 }
 
-/* --- Style for small images at top of tooltips --- */
+/* Style for images that appear at top of tooltips */
 .tippy-box .tippy-content img.tooltip-img {
   display: block;
   max-width: 320px;
@@ -166,10 +173,13 @@ body.chapters-open main > *:not(#chapters-list) {
   object-fit: cover;
 }
 
-/* center the content inside tippy (keeps text left-aligned inside) */
+/* make sure tooltip content has some padding */
 .tippy-box .tippy-content {
   padding: 8px 10px;
+  box-sizing: border-box;
+  overflow: visible; /* allow the img to be visible */
 }
+
 
 /* --- Image viewer (lightbox) styles --- */
 #image-overlay {
