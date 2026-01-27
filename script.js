@@ -1,4 +1,5 @@
-// script.js - consolidated: chapter loader, theme, slide-out chapters, nav, tippy tooltips with top images, image viewer
+// script.js - consolidated: chapter loader, theme, slide-out chapters, nav,
+// delegated tippy tooltips with top-image support (loads image on hover), image viewer
 
 document.addEventListener('DOMContentLoaded', () => {
   const chaptersListEl = document.getElementById('chapters');
@@ -172,55 +173,61 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  /* Load single chapter */
-  async function loadChapter(filename, title){
-    chapterTitleEl.textContent = title || '';
-    chapterBodyEl.textContent = 'Загрузка главы...';
-    try{
-      const res = await fetch('chapters/' + filename, {cache: 'no-store'});
-      if(!res.ok) throw new Error('HTTP ' + res.status + ' fetching ' + filename);
-      const md = await res.text();
-      const html = (window.marked) ? marked.parse(md) : '<p>Ошибка: библиотека marked не загружена.</p>';
-      chapterBodyEl.innerHTML = html;
-
-      // Init glossary tippy (with top-image support)
-      initGlossTippy();
-
-      // re-bind image viewer to images inside content
-      bindImagesToViewer();
-
-      updateNavButtons();
-    }catch(err){
-      chapterBodyEl.textContent = 'Ошибка загрузки главы: ' + err.message + '\nПроверьте, что файл chapters/' + filename + ' существует.';
-      console.error('loadChapter error:', err);
+  /* Utility: normalize image URLs so common GitHub blob links still work */
+  function normalizeImageUrl(url){
+    if(!url || typeof url !== 'string') return url || '';
+    let u = url.trim();
+    // Convert GitHub blob links to raw.githubusercontent
+    // https://github.com/user/repo/blob/main/path -> https://raw.githubusercontent.com/user/repo/main/path
+    try {
+      const GH_BLOB = '/blob/';
+      if(u.includes('github.com') && u.includes(GH_BLOB)){
+        u = u.replace('https://github.com/', 'https://raw.githubusercontent.com/').replace(GH_BLOB, '/');
+      }
+      // If user used raw.githubusercontent already, leave as is
+    } catch(e){
+      // ignore and fall through
     }
+    return u;
   }
 
-  /* --- TIPPY tooltip initialization for glossary items (supporting top images) --- */
+  /* --- TIPPY tooltip initialization for glossary items (delegated) --- */
+  // we keep a global reference for the delegate instance so we can destroy/recreate if needed
   function initGlossTippy(){
-    if(!window.tippy) return;
-    // destroy any previous tippy instances attached to nodes with class 'gloss'
-    const existing = document.querySelectorAll('.gloss');
-    existing.forEach(el => {
-      try{ if(el._tippy) el._tippy.destroy(); }catch(e){}
-    });
+    if(!window.tippy){
+      console.warn('Tippy not loaded; glossary tooltips disabled.');
+      return;
+    }
 
-    // initialize on all .gloss elements
-    tippy('.gloss', {
+    // destroy previous delegate if exists
+    if(window._glossTippyDelegate){
+      try{ window._glossTippyDelegate.destroy(); }catch(e){}
+      window._glossTippyDelegate = null;
+    }
+
+    // use tippy.delegate to handle dynamically added .gloss elements
+    window._glossTippyDelegate = tippy.delegate(document.body, {
+      target: '.gloss',
       allowHTML: true,
       interactive: true,
       delay: [100, 120],
       maxWidth: 360,
-      // Build content as a DOM node so we can include an image at the top if provided
-      content(reference){
-        // Prefer explicit data-tippy-content, then title attribute, then innerHTML as fallback
-        let contentHTML = reference.getAttribute('data-tippy-content') || reference.getAttribute('data-tip') || reference.getAttribute('title') || reference.innerHTML || '';
-        // if title was used, remove it so the native tooltip does not show
-        if(reference.getAttribute('title')) reference.removeAttribute('title');
+      placement: 'top',
+      offset: [0, 8],
+      // build tooltip content when the tooltip is about to show
+      onShow(instance){
+        const ref = instance.reference;
+        if(!ref) return;
 
-        const imgSrc = reference.getAttribute('data-img'); // optional
-        const imgAlt = reference.getAttribute('data-img-alt') || '';
+        // Remove native title if present
+        if(ref.getAttribute('title')) ref.removeAttribute('title');
 
+        const rawContent = ref.getAttribute('data-tippy-content') || ref.getAttribute('data-tip') || '';
+        const rawImg = ref.getAttribute('data-img') || '';
+        const imgSrc = normalizeImageUrl(rawImg);
+        const imgAlt = ref.getAttribute('data-img-alt') || '';
+
+        // build wrapper
         const wrapper = document.createElement('div');
 
         if(imgSrc){
@@ -228,28 +235,27 @@ document.addEventListener('DOMContentLoaded', () => {
           img.className = 'tooltip-img';
           img.src = imgSrc;
           img.alt = imgAlt;
-          // add loading attr for better perf
           img.loading = 'lazy';
+          // if image fails, remove it silently
+          img.addEventListener('error', () => {
+            try{ if(img.parentNode) img.parentNode.removeChild(img); }catch(e){}
+          });
           wrapper.appendChild(img);
         }
 
-        // content container (allows HTML)
         const contentDiv = document.createElement('div');
         contentDiv.className = 'tooltip-body';
-        // allow HTML safely since user content comes from markdown; tippy will insert as HTML
-        contentDiv.innerHTML = contentHTML;
+        contentDiv.innerHTML = rawContent || '';
         wrapper.appendChild(contentDiv);
 
-        return wrapper;
-      },
-      // small offset so image doesn't touch the arrow
-      offset: [0, 8],
-      // use these placements; let tippy flip if not enough space
-      placement: 'top',
+        instance.setContent(wrapper);
+      }
     });
+
+    // small debug: if there are no .gloss nodes, that's fine; delegate will attach when they appear
   }
 
-  /* TIPPY tooltips for nav buttons */
+  /* TIPPY tooltips for nav buttons (separate small tooltips) */
   function refreshTippyContents(){
     if(!window.tippy) return;
     [bottomPrev, bottomNext, topPrev, topNext].forEach(btn => {
