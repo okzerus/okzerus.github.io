@@ -2,9 +2,11 @@
   --bg-dark:#0b0f13; --card-dark:#0f1520; --accent-dark:#e6eef6; --muted-dark:#9aa6b2; --btn-bg-dark:#182029;
   --bg-light:#f9f9fb; --card-light:#ffffff; --accent-light:#132029; --muted-light:#66707a; --btn-bg-light:#eef3f6;
   --tooltip-link-color: #bfe8ff; /* pale light blue for tooltip links */
+  --tooltip-min-height: 220px;    /* adjust min height of tooltip (affects image area) */
+  --tooltip-image-ratio: 0.5;     /* fraction of tooltip height that is image (0..1) */
 }
 
-/* theme-aware variables */
+/* theme vars */
 html[data-theme="dark"]{
   --bg:var(--bg-dark); --card:var(--card-dark); --accent:var(--accent-dark); --muted:var(--muted-dark); --btn-bg:var(--btn-bg-dark); --btn-fg:var(--accent-dark);
 }
@@ -18,7 +20,7 @@ body{
   transition: filter 220ms ease;
 }
 
-/* Header */
+/* header */
 header{
   background:var(--card); padding:10px 16px; box-shadow:0 1px 0 rgba(0,0,0,0.06);
   display:flex; align-items:center; gap:12px;
@@ -26,20 +28,18 @@ header{
 header h1{margin:0; font-size:18px; font-weight:700; flex:1}
 .header-controls{display:flex;gap:8px}
 
-/* Theme toggle styled like nav button */
+/* theme toggle */
 #theme-toggle{
   width:40px; height:40px; border-radius:10px; border:0; background:var(--btn-bg); color:var(--btn-fg);
   font-size:16px; cursor:pointer; box-shadow:0 6px 12px rgba(0,0,0,0.12); display:flex; align-items:center; justify-content:center;
 }
-
-/* Hover/active feedback */
 #theme-toggle:hover{ transform:translateY(-1px); }
 #theme-toggle:active{ transform:translateY(0); }
 
-/* Layout - keep main padding but aside is fixed so content can center */
+/* layout */
 main{ display:block; padding:18px; }
 
-/* Chapters aside (fixed, slides in/out from left; small 12px handle visible) */
+/* chapters aside */
 #chapters-list{
   width:220px; background:var(--card); padding:12px; border-radius:8px; box-shadow:0 2px 6px rgba(0,0,0,0.06);
   position:fixed; left:0; top:72px; bottom:18px; overflow:auto; z-index:1200;
@@ -49,7 +49,7 @@ main{ display:block; padding:18px; }
 }
 body.chapters-open #chapters-list{ transform:translateX(0); }
 
-/* chapter list items - single-line ellipsis */
+/* chapter list items */
 #chapters-list h2{ margin:0 0 8px 0; font-size:16px; font-weight:700 }
 #chapters-list ul{list-style:none;padding:0;margin:0}
 #chapters-list li{margin:8px 0}
@@ -62,17 +62,9 @@ body.chapters-open #chapters-list{ transform:translateX(0); }
   max-width: calc(220px - 24px);
   padding-right:6px;
 }
+#chapters-list a.undone { color: var(--muted); text-decoration: line-through; pointer-events: none; cursor: default; opacity: 0.75; }
 
-/* style for undone chapters (grayed, strikethrough, unclickable) */
-#chapters-list a.undone {
-  color: var(--muted);
-  text-decoration: line-through;
-  pointer-events: none;
-  cursor: default;
-  opacity: 0.75;
-}
-
-/* content area centered with max-width (produces blank sides) */
+/* content area centered */
 #content{
   max-width: 960px;
   margin: 18px auto;
@@ -82,7 +74,7 @@ body.chapters-open #chapters-list{ transform:translateX(0); }
   box-shadow:0 2px 6px rgba(0,0,0,0.06);
 }
 
-/* ensure images in chapter body are centered */
+/* center images inside chapter text */
 #chapter-body img{
   display: block;
   margin: 18px auto;
@@ -91,7 +83,7 @@ body.chapters-open #chapters-list{ transform:translateX(0); }
   cursor: zoom-in;
 }
 
-/* smaller screens: reduce max-width */
+/* responsiveness */
 @media (max-width:1100px){
   #content{ max-width:760px; padding:20px; }
 }
@@ -100,27 +92,16 @@ body.chapters-open #chapters-list{ transform:translateX(0); }
   #chapters-list{ display:none; }
 }
 
-/* chapter text */
+/* chapter title */
 #chapter-title{font-size:40px; font-weight:700; margin-bottom:8px}
 
-/* Chapter navigation buttons (shared style) */
+/* nav buttons */
 .chapter-nav{ display:flex; gap:12px; align-items:center; }
-.nav-btn{
-  width:56px; height:40px; border-radius:8px; border:0; background:var(--btn-bg); color:var(--btn-fg); font-size:16px; cursor:pointer;
-  box-shadow:0 6px 12px rgba(0,0,0,0.12);
-}
+.nav-btn{ width:56px; height:40px; border-radius:8px; border:0; background:var(--btn-bg); color:var(--btn-fg); font-size:16px; cursor:pointer; box-shadow:0 6px 12px rgba(0,0,0,0.12); }
 .nav-btn:disabled{opacity:0.35; pointer-events:none}
+#bottom-nav{ margin-top:24px; justify-content:center; transition: opacity 180ms ease; }
 
-/* Bottom navigation: sits inline after chapter-body so it appears at the end of each chapter */
-#bottom-nav{
-  margin-top:24px;
-  justify-content:center;
-  transition: opacity 180ms ease;
-}
-
-/* Top navigation: centered and aligned with header center;
-   will be positioned precisely by JS for the header line
-*/
+/* top nav */
 #top-nav{
   position:fixed;
   left:50%;
@@ -132,87 +113,66 @@ body.chapters-open #chapters-list{ transform:translateX(0); }
   display:flex;
   gap:12px;
 }
-#top-nav.visible-top{
-  opacity:1;
-  transform: translateX(-50%) translateY(0);
-  pointer-events:auto;
-}
+#top-nav.visible-top{ opacity:1; transform: translateX(-50%) translateY(0); pointer-events:auto; }
 
-/* blur effect when chapters open */
+/* blur when chapters open */
 body.chapters-open header,
 body.chapters-open main > *:not(#chapters-list) {
   filter: blur(4px);
   transition: filter 220ms ease;
 }
 
-/* Gloss styling for clickable appearance */
+/* gloss */
 .gloss{ text-decoration:underline dotted; cursor:help; }
 
-/* --- Tippy / tooltip tweaks --- */
+/* tippy tweaks: ensure tooltip on top and padding handled via wrapper */
+.tippy-box{ z-index: 99999 !important; }
+.tippy-box .tippy-content { padding: 0; box-sizing: border-box; overflow: visible; }
 
-/* Ensure tooltip appears above other UI elements */
-.tippy-box {
-  z-index: 99999 !important;
-}
-
-/* Tippy tooltip link color override (unchanged) */
+/* tooltip link color */
 .tippy-box .tippy-content a,
 .tippy-box a {
   color: var(--tooltip-link-color) !important;
   text-decoration: underline;
 }
 
-/* Style for images that appear at top of tooltips */
-.tippy-box .tippy-content img.tooltip-img {
-  display: block;
-  max-width: 320px;
-  width: 100%;
-  height: auto;
-  margin: 0 0 8px;
-  border-radius: 6px;
-  object-fit: cover;
-}
-
-/* make sure tooltip content has some padding */
-.tippy-box .tippy-content {
-  padding: 8px 10px;
-  box-sizing: border-box;
-  overflow: visible; /* allow the img to be visible */
-}
-
-
-/* --- Image viewer (lightbox) styles --- */
-#image-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,0.85);
-  display: none;
-  align-items: center;
-  justify-content: center;
-  z-index: 2000;
-  cursor: default;
-}
-#image-overlay.visible { display:flex; }
-
-#image-overlay .viewer {
+/* tooltip wrapper: this contains the image (absolutely positioned) and the textual body */
+.tippy-box .tippy-content .tooltip-wrapper{
   position: relative;
-  max-width: 95%;
-  max-height: 95%;
+  min-height: var(--tooltip-min-height);    /* guarantees meaningful image area */
+  width: 100%;
   overflow: hidden;
-  touch-action: none;
+  border-radius: 10px;                      /* match tooltip border radius */
+  background: inherit;
+  box-sizing: border-box;
 }
-#image-overlay img.viewer-img {
-  display: block;
-  max-width: 100%;
-  max-height: 100%;
-  user-select: none;
-  -webkit-user-drag: none;
-  transform-origin: center center;
-  transition: none;
-  cursor: zoom-in;
-}
-#image-overlay img.zoomed { cursor: grab; }
 
+/* image: cover the top portion (percentage controlled by --tooltip-image-ratio) */
+.tippy-box .tippy-content .tooltip-wrapper img.tooltip-img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: calc(var(--tooltip-image-ratio) * 100%);
+  object-fit: cover;
+  display: block;
+  border-top-left-radius: inherit;
+  border-top-right-radius: inherit;
+}
+
+/* text body: placed below the image; padding gives breathing room */
+.tippy-box .tippy-content .tooltip-body{
+  position: relative;
+  padding: 14px;
+  padding-top: calc(14px + var(--tooltip-min-height) * var(--tooltip-image-ratio) / var(--tooltip-min-height)); /* equals 14px + image-height */
+  /* fallback visual: ensure bottom half has same background as tooltip */
+  background: transparent;
+  color: inherit;
+  box-sizing: border-box;
+}
+
+/* small screens */
 @media (max-width:700px){
   #top-nav{ right:10px; left:auto; transform:none; }
+  :root{ --tooltip-min-height: 160px; } /* reduce tooltip min height on mobile */
 }
