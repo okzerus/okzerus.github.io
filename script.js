@@ -184,10 +184,51 @@ document.addEventListener('DOMContentLoaded', () => {
       const html = (window.marked) ? marked.parse(md) : '<p>Ошибка: библиотека marked не загружена.</p>';
       chapterBodyEl.innerHTML = html;
 
-      // Init glossary tippy if present
-      if(window.tippy) {
-        tippy('.gloss', { allowHTML: true, interactive: true, delay: [100, 100] });
+      // Replace existing simple tippy('.gloss', {...}) calls with this more capable initializer:
+if(window.tippy) {
+  tippy('.gloss', {
+    allowHTML: true,
+    interactive: true,
+    delay: [100, 100],
+    maxWidth: 300,
+    // Build content dynamically from element attributes to avoid HTML-escaping issues.
+    content(reference) {
+      // attributes expected on the glossary span:
+      // data-img="path/to/image.jpg"    (optional)
+      // data-txt="Short explanatory HTML or plain text" (optional)
+      // fallback to data-tippy-content for backwards compatibility
+      const imgSrc = reference.getAttribute('data-img');
+      const text = reference.getAttribute('data-txt') || reference.getAttribute('data-tippy-content') || '';
+
+      const wrap = document.createElement('div');
+      wrap.style.display = 'flex';
+      wrap.style.flexDirection = 'column';
+      wrap.style.gap = '6px';
+
+      if(imgSrc){
+        const img = document.createElement('img');
+        img.src = imgSrc;
+        img.alt = reference.getAttribute('data-img-alt') || '';
+        img.loading = 'lazy';               // do not fetch until needed
+        img.style.maxWidth = '280px';       // keep tooltip compact
+        img.style.width = '100%';
+        img.style.height = 'auto';
+        img.style.borderRadius = '6px';
+        img.style.display = 'block';
+        wrap.appendChild(img);
       }
+
+      if(text){
+        const p = document.createElement('div');
+        p.className = 'tippy-inner-text';
+        p.innerHTML = text; // we control content source; keep allowHTML true
+        wrap.appendChild(p);
+      }
+
+      return wrap;
+    }
+  });
+}
 
       // re-bind image viewer to images inside content
       bindImagesToViewer();
