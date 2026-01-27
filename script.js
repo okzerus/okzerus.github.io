@@ -1,5 +1,5 @@
-// script.js - consolidated: chapter loader, theme, slide-out chapters, nav,
-// delegated tippy tooltips with top-image support (loads image on hover), image viewer
+// script.js - consolidated and reordered: loadChapter defined before goToChapter to avoid ReferenceError.
+// Features: chapter loader, theme, slide-out chapters, nav, delegated tippy tooltips with top-image support (loads image on hover), image viewer
 
 document.addEventListener('DOMContentLoaded', () => {
   const chaptersListEl = document.getElementById('chapters');
@@ -75,33 +75,31 @@ document.addEventListener('DOMContentLoaded', () => {
     return findNextDoneIndex(0);
   }
 
-  /* NAV BUTTONS handling (top & bottom) - consider only done chapters */
-  function updateNavButtons(){
-    const prevIndex = findPrevDoneIndex();
-    const nextIndex = findNextDoneIndex();
-    const prevDisabled = prevIndex === -1;
-    const nextDisabled = nextIndex === -1;
+  /* ---------- loadChapter (must be defined before goToChapter) ---------- */
+  async function loadChapter(filename, title){
+    chapterTitleEl.textContent = title || '';
+    chapterBodyEl.textContent = 'Загрузка главы...';
+    try{
+      const res = await fetch('chapters/' + filename, {cache: 'no-store'});
+      if(!res.ok) throw new Error('HTTP ' + res.status + ' fetching ' + filename);
+      const md = await res.text();
+      const html = (window.marked) ? marked.parse(md) : '<p>Ошибка: библиотека marked не загружена.</p>';
+      chapterBodyEl.innerHTML = html;
 
-    [bottomPrev, topPrev].forEach(btn => { if(btn) btn.disabled = prevDisabled; });
-    [bottomNext, topNext].forEach(btn => { if(btn) btn.disabled = nextDisabled; });
+      // Init glossary tippy (delegated) after content is present
+      initGlossTippy();
 
-    if(!prevDisabled){
-      const p = chapters[prevIndex];
-      [bottomPrev, topPrev].forEach(btn => { if(btn){ btn.dataset.index = prevIndex; btn.dataset.title = p.title || ''; }});
-    } else {
-      [bottomPrev, topPrev].forEach(btn => { if(btn){ btn.removeAttribute('data-index'); btn.removeAttribute('data-title'); }});
+      // re-bind image viewer to images inside content
+      bindImagesToViewer();
+
+      updateNavButtons();
+    }catch(err){
+      chapterBodyEl.textContent = 'Ошибка загрузки главы: ' + err.message + '\nПроверьте, что файл chapters/' + filename + ' существует.';
+      console.error('loadChapter error:', err);
     }
-
-    if(!nextDisabled){
-      const n = chapters[nextIndex];
-      [bottomNext, topNext].forEach(btn => { if(btn){ btn.dataset.index = nextIndex; btn.dataset.title = n.title || ''; }});
-    } else {
-      [bottomNext, topNext].forEach(btn => { if(btn){ btn.removeAttribute('data-index'); btn.removeAttribute('data-title'); }});
-    }
-
-    refreshTippyContents();
   }
 
+  /* ---------- goToChapter (calls loadChapter) ---------- */
   function goToChapter(index){
     if(!chapters || index < 0 || index >= chapters.length) return;
     if(!isDoneEntry(chapters[index])) return; // prevent navigation to undone
@@ -113,6 +111,7 @@ document.addEventListener('DOMContentLoaded', () => {
     closeChapters();
   }
 
+  /* NAV button wiring */
   if(bottomPrev) bottomPrev.addEventListener('click', ()=> { const i = Number(bottomPrev.dataset.index); if(!Number.isNaN(i)) goToChapter(i); });
   if(bottomNext) bottomNext.addEventListener('click', ()=> { const i = Number(bottomNext.dataset.index); if(!Number.isNaN(i)) goToChapter(i); });
   if(topPrev) topPrev.addEventListener('click', ()=> { const i = Number(topPrev.dataset.index); if(!Number.isNaN(i)) goToChapter(i); });
@@ -177,22 +176,18 @@ document.addEventListener('DOMContentLoaded', () => {
   function normalizeImageUrl(url){
     if(!url || typeof url !== 'string') return url || '';
     let u = url.trim();
-    // Convert GitHub blob links to raw.githubusercontent
-    // https://github.com/user/repo/blob/main/path -> https://raw.githubusercontent.com/user/repo/main/path
     try {
       const GH_BLOB = '/blob/';
       if(u.includes('github.com') && u.includes(GH_BLOB)){
         u = u.replace('https://github.com/', 'https://raw.githubusercontent.com/').replace(GH_BLOB, '/');
       }
-      // If user used raw.githubusercontent already, leave as is
     } catch(e){
-      // ignore and fall through
+      // ignore
     }
     return u;
   }
 
   /* --- TIPPY tooltip initialization for glossary items (delegated) --- */
-  // we keep a global reference for the delegate instance so we can destroy/recreate if needed
   function initGlossTippy(){
     if(!window.tippy){
       console.warn('Tippy not loaded; glossary tooltips disabled.');
@@ -219,7 +214,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const ref = instance.reference;
         if(!ref) return;
 
-        // Remove native title if present
         if(ref.getAttribute('title')) ref.removeAttribute('title');
 
         const rawContent = ref.getAttribute('data-tippy-content') || ref.getAttribute('data-tip') || '';
@@ -227,7 +221,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const imgSrc = normalizeImageUrl(rawImg);
         const imgAlt = ref.getAttribute('data-img-alt') || '';
 
-        // build wrapper
         const wrapper = document.createElement('div');
 
         if(imgSrc){
@@ -236,7 +229,6 @@ document.addEventListener('DOMContentLoaded', () => {
           img.src = imgSrc;
           img.alt = imgAlt;
           img.loading = 'lazy';
-          // if image fails, remove it silently
           img.addEventListener('error', () => {
             try{ if(img.parentNode) img.parentNode.removeChild(img); }catch(e){}
           });
@@ -251,8 +243,6 @@ document.addEventListener('DOMContentLoaded', () => {
         instance.setContent(wrapper);
       }
     });
-
-    // small debug: if there are no .gloss nodes, that's fine; delegate will attach when they appear
   }
 
   /* TIPPY tooltips for nav buttons (separate small tooltips) */
