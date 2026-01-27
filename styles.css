@@ -153,7 +153,22 @@ body.chapters-open main > *:not(#chapters-list) {
 
 /* Gloss styling for clickable appearance */
 .gloss{ text-decoration:underline dotted; cursor:help; }
+/* Tooltip image styling */
+.tippy-box img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  border-radius: 6px;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.35);
+}
 
+/* optional caption/text inside tooltip */
+.tippy-box .tippy-inner .tippy-inner-text {
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--accent);
+  max-width: 280px;
+}
 /* Tippy tooltip link color override */
 .tippy-box .tippy-content a,
 .tippy-box a {
