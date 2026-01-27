@@ -1,5 +1,4 @@
-// script.js - consolidated: chapter loader, theme, slide-out chapters, nav, tippy tooltips with top images (returns HTML string so images load)
-
+// script.js - consolidated: chapter loader, theme, slide-out chapters, nav, tippy tooltips with top images (preloads image)
 document.addEventListener('DOMContentLoaded', () => {
   const chaptersListEl = document.getElementById('chapters');
   const chapterBodyEl = document.getElementById('chapter-body');
@@ -34,7 +33,6 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   function setThemeIcon(theme){
     if(!themeToggle) return;
-    // Light-mode glyph '☀︎'
     themeToggle.textContent = (theme === 'dark') ? '☀︎' : '☾';
     themeToggle.setAttribute('aria-pressed', theme === 'dark' ? 'true' : 'false');
   }
@@ -57,7 +55,7 @@ document.addEventListener('DOMContentLoaded', () => {
     return entry.done !== false;
   }
 
-  /* NAV helpers: find previous/next done chapter index given current index */
+  /* NAV helpers */
   function findPrevDoneIndex(fromIndex){
     for(let i = (fromIndex === undefined ? currentIndex - 1 : fromIndex); i >= 0; i--){
       if(isDoneEntry(chapters[i])) return i;
@@ -74,7 +72,7 @@ document.addEventListener('DOMContentLoaded', () => {
     return findNextDoneIndex(0);
   }
 
-  /* NAV BUTTONS handling (top & bottom) - consider only done chapters */
+  /* NAV BUTTONS handling */
   function updateNavButtons(){
     const prevIndex = findPrevDoneIndex();
     const nextIndex = findNextDoneIndex();
@@ -117,7 +115,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if(topPrev) topPrev.addEventListener('click', ()=> { const i = Number(topPrev.dataset.index); if(!Number.isNaN(i)) goToChapter(i); });
   if(topNext) topNext.addEventListener('click', ()=> { const i = Number(topNext.dataset.index); if(!Number.isNaN(i)) goToChapter(i); });
 
-  // Keyboard nav (ignore when focusing inputs)
+  // Keyboard nav
   document.addEventListener('keydown', (e)=>{
     const active = document.activeElement;
     if(active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) return;
@@ -196,7 +194,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  /* Utility: normalize image URLs so common GitHub blob links still work */
+  /* Utility: normalize image URLs (github blob -> raw) */
   function normalizeImageUrl(url){
     if(!url || typeof url !== 'string') return url || '';
     let u = url.trim();
@@ -205,15 +203,11 @@ document.addEventListener('DOMContentLoaded', () => {
       if(u.includes('github.com') && u.includes(GH_BLOB)){
         u = u.replace('https://github.com/', 'https://raw.githubusercontent.com/').replace(GH_BLOB, '/');
       }
-    } catch(e){
-      // ignore and return original
-    }
+    } catch(e){}
     return u;
   }
 
-  /* --- TIPPY tooltip initialization for glossary items (supporting top images) ---
-     IMPORTANT: return an HTML string (not a DOM node) so browsers will parse <img> and fire network requests reliably.
-  */
+  /* --- TIPPY tooltip initialization for glossary items (preloads images, returns HTML string) --- */
   function initGlossTippy(){
     if(!window.tippy) return;
 
@@ -229,27 +223,32 @@ document.addEventListener('DOMContentLoaded', () => {
       delay: [100, 120],
       maxWidth: 360,
       content(reference){
-        // prefer data-tippy-content, then title (and remove title to avoid native tooltip), then innerHTML
+        // prefer data-tippy-content, then title (and remove title), then innerHTML
         let contentHTML = reference.getAttribute('data-tippy-content') || reference.getAttribute('data-tip') || reference.getAttribute('title') || reference.innerHTML || '';
         if(reference.getAttribute('title')) reference.removeAttribute('title');
 
-        // image handling
         const rawImg = reference.getAttribute('data-img') || '';
         const imgSrc = normalizeImageUrl(rawImg);
         const imgAlt = reference.getAttribute('data-img-alt') || '';
 
-        // Build HTML string. Keep contentHTML as-is (it may contain anchors).
-        // Sanity: if contentHTML is empty, we still return image if present.
-        let out = '';
-
+        // --- Preload image if provided to guarantee network request ---
         if(imgSrc){
-          // Note: using width:100% via CSS class; ensure src is set to normalized URL
-          // Add loading="lazy" attribute for perf
-          // Escape double quotes in imgAlt to avoid breaking HTML attribute
+          try {
+            const pre = new Image();
+            pre.src = imgSrc;
+            // optional: set crossOrigin if your images require it
+            // pre.crossOrigin = 'anonymous';
+          } catch(e){
+            // ignore preload errors
+          }
+        }
+
+        // Build HTML string (image first if present)
+        let out = '';
+        if(imgSrc){
           const safeAlt = String(imgAlt).replace(/"/g, '&quot;');
           out += `<img class="tooltip-img" src="${imgSrc}" alt="${safeAlt}" loading="lazy">`;
         }
-
         out += `<div class="tooltip-body">${contentHTML}</div>`;
         return out;
       },
@@ -258,7 +257,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  /* TIPPY tooltips for nav buttons */
+  /* TIPPY for nav buttons */
   function refreshTippyContents(){
     if(!window.tippy) return;
     [bottomPrev, bottomNext, topPrev, topNext].forEach(btn => {
@@ -275,7 +274,6 @@ document.addEventListener('DOMContentLoaded', () => {
   /* Chapters aside slide-in/out behavior */
   let chaptersOpen = false;
   const EDGE_TRIGGER_PX = 12;
-
   function openChapters(){ if(chaptersOpen) return; chaptersOpen = true; document.body.classList.add('chapters-open'); }
   function closeChapters(){ if(!chaptersOpen) return; chaptersOpen = false; document.body.classList.remove('chapters-open'); }
 
@@ -296,7 +294,7 @@ document.addEventListener('DOMContentLoaded', () => {
     closeChapters();
   });
 
-  /* --- Top nav positioning & visibility logic --- */
+  /* Top nav positioning & visibility logic */
   function positionTopNav(){
     if(!topNav || !headerEl) return;
     const hRect = headerEl.getBoundingClientRect();
@@ -316,10 +314,7 @@ document.addEventListener('DOMContentLoaded', () => {
     return (r.top < window.innerHeight) && (r.bottom > 0);
   }
 
-  function showTopNav(){
-    if(bottomNavIsVisible()){ hideTopNav(); return; }
-    topNav.classList.add('visible-top'); topNav.setAttribute('aria-hidden', 'false');
-  }
+  function showTopNav(){ if(bottomNavIsVisible()){ hideTopNav(); return; } topNav.classList.add('visible-top'); topNav.setAttribute('aria-hidden', 'false'); }
   function hideTopNav(){ if(hideDelayTimer){ clearTimeout(hideDelayTimer); hideDelayTimer = null; } topNav.classList.remove('visible-top'); topNav.setAttribute('aria-hidden', 'true'); }
   function scheduleHideTopNavWithDelay(){ if(hideDelayTimer) return; hideDelayTimer = setTimeout(() => { if(!bottomNavIsVisible()) hideTopNav(); hideDelayTimer = null; }, HIDE_DELAY_MS); }
 
@@ -352,7 +347,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const anyVisible = entries.some(en => en.isIntersecting);
     if(anyVisible) { hideTopNav(); }
   }, { root: null, threshold: 0.01 });
-
   if(bottomNav) observer.observe(bottomNav);
 
   function initialTopNavSetup(){
@@ -361,7 +355,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   setTimeout(initialTopNavSetup, 40);
 
-  /* --- Image viewer binding (unchanged) --- */
+  /* Image viewer (unchanged) */
   if(!document.getElementById('image-overlay')){
     const overlay = document.createElement('div');
     overlay.id = 'image-overlay';
