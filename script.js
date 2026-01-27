@@ -1,5 +1,5 @@
-// script.js - removed debug output, preloads tooltip images and displays them as a cover
-// keeps all other features intact (theme, chapters, done flag, nav, image viewer, slide-out list)
+// script.js - tooltip images preloaded & displayed as a cover; no debug output
+// preserves other features (theme, slide-out chapters, done flag, top/bottom nav, image viewer)
 
 document.addEventListener('DOMContentLoaded', () => {
   const chaptersListEl = document.getElementById('chapters');
@@ -26,7 +26,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   let chapters = [];
   let currentIndex = -1;
-  let lastChapterFile = null; // 'chapters/01.md' recorded on load
+  let lastChapterFile = null; // recorded as 'chapters/01.md' when loaded
 
   /* THEME HANDLING */
   function applyTheme(theme){
@@ -49,50 +49,38 @@ document.addEventListener('DOMContentLoaded', () => {
   })();
   if(themeToggle) themeToggle.addEventListener('click', toggleTheme);
 
-  /* DONE FLAG HELPERS */
-  function isDoneEntry(entry){
-    if(!entry) return false;
-    return entry.done !== false;
-  }
-
-  /* NAV HELPERS */
+  /* DONE flag helpers */
+  function isDoneEntry(entry){ if(!entry) return false; return entry.done !== false; }
   function findPrevDoneIndex(fromIndex){
     for(let i = (fromIndex === undefined ? currentIndex - 1 : fromIndex); i >= 0; i--){
       if(isDoneEntry(chapters[i])) return i;
-    }
-    return -1;
+    } return -1;
   }
   function findNextDoneIndex(fromIndex){
     for(let i = (fromIndex === undefined ? currentIndex + 1 : fromIndex); i < chapters.length; i++){
       if(isDoneEntry(chapters[i])) return i;
-    }
-    return -1;
+    } return -1;
   }
   function findFirstDoneIndex(){ return findNextDoneIndex(0); }
 
-  /* NAV BUTTONS */
+  /* NAV buttons update */
   function updateNavButtons(){
     const prevIndex = findPrevDoneIndex();
     const nextIndex = findNextDoneIndex();
     const prevDisabled = prevIndex === -1;
     const nextDisabled = nextIndex === -1;
-
     [bottomPrev, topPrev].forEach(btn => { if(btn) btn.disabled = prevDisabled; });
     [bottomNext, topNext].forEach(btn => { if(btn) btn.disabled = nextDisabled; });
 
     if(!prevDisabled){
       const p = chapters[prevIndex];
       [bottomPrev, topPrev].forEach(btn => { if(btn){ btn.dataset.index = prevIndex; btn.dataset.title = p.title || ''; }});
-    } else {
-      [bottomPrev, topPrev].forEach(btn => { if(btn){ btn.removeAttribute('data-index'); btn.removeAttribute('data-title'); }});
-    }
+    } else { [bottomPrev, topPrev].forEach(btn => { if(btn){ btn.removeAttribute('data-index'); btn.removeAttribute('data-title'); }}); }
 
     if(!nextDisabled){
       const n = chapters[nextIndex];
       [bottomNext, topNext].forEach(btn => { if(btn){ btn.dataset.index = nextIndex; btn.dataset.title = n.title || ''; }});
-    } else {
-      [bottomNext, topNext].forEach(btn => { if(btn){ btn.removeAttribute('data-index'); btn.removeAttribute('data-title'); }});
-    }
+    } else { [bottomNext, topNext].forEach(btn => { if(btn){ btn.removeAttribute('data-index'); btn.removeAttribute('data-title'); }}); }
 
     refreshNavTippies();
   }
@@ -121,7 +109,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if(e.key === 'ArrowRight'){ const next = findNextDoneIndex(); if(next !== -1) goToChapter(next); }
   });
 
-  /* LOAD CHAPTERS */
+  /* LOAD chapters.json */
   async function loadChapters(){
     chapterBodyEl.textContent = 'Загрузка...';
     try{
@@ -161,7 +149,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  /* LOAD A CHAPTER - record lastChapterFile for resolving relative data-img */
+  /* LOAD a single chapter and set lastChapterFile */
   async function loadChapter(filename, title){
     chapterTitleEl.textContent = title || '';
     chapterBodyEl.textContent = 'Загрузка главы...';
@@ -173,13 +161,11 @@ document.addEventListener('DOMContentLoaded', () => {
       const html = (window.marked) ? marked.parse(md) : '<p>Ошибка: библиотека marked не загружена.</p>';
       chapterBodyEl.innerHTML = html;
 
-      // preload tooltip images and initialize tippies
-      await preloadGlossImages(); // start preloads and wait for them to complete (so tooltips show immediately)
+      // pre-resolve & preload images for gloss entries, then init tippies so they show instantly
+      await preloadGlossImages();
       initGlossTippy();
 
-      // bind images inside chapter to viewer
       bindImagesToViewer();
-
       updateNavButtons();
     }catch(err){
       chapterBodyEl.textContent = 'Ошибка загрузки главы: ' + err.message;
@@ -201,47 +187,46 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  /* resolve candidate URLs for data-img; returns first working absolute URL or null */
+  /* Build candidate absolute URLs and return first working URL or null */
   async function resolveTooltipImage(srcCandidate){
     if(!srcCandidate) return null;
 
-    // direct absolute or root path test first
-    if(/^https?:\/\//i.test(srcCandidate) || srcCandidate.startsWith('/')){
-      if(await testImageUrl(srcCandidate)) return srcCandidate;
-    }
-
-    const bases = [];
-    bases.push(window.location.href);
-    bases.push(window.location.origin + window.location.pathname);
-    if(lastChapterFile){
-      bases.push(window.location.origin + '/' + lastChapterFile);
-      const parts = lastChapterFile.split('/');
-      parts.pop();
-      const parent = parts.join('/');
-      if(parent) bases.push(window.location.origin + '/' + parent + '/');
-    }
-    bases.push(window.location.origin + '/');
-
+    // If absolute or root path, test direct (root path must be prefixed by origin)
     const candidates = [];
-    for(const base of bases){
-      try{
-        const u = new URL(srcCandidate, base);
-        candidates.push(u.href);
-      }catch(e){}
+
+    if(/^https?:\/\//i.test(srcCandidate)){
+      candidates.push(srcCandidate);
+    } else if(srcCandidate.startsWith('/')){
+      candidates.push(window.location.origin + srcCandidate);
+    } else {
+      // relative candidates: try chapter dir first (if available), then page, then origin root
+      if(lastChapterFile){
+        const parts = lastChapterFile.split('/');
+        parts.pop(); // directory
+        const dir = parts.join('/');
+        if(dir) candidates.push(window.location.origin + '/' + dir + '/' + srcCandidate);
+      }
+      // relative to current page location
+      try { candidates.push(new URL(srcCandidate, window.location.href).href); } catch(e){}
+      // root-prefixed
+      candidates.push(window.location.origin + '/' + srcCandidate);
     }
 
+    // dedupe while preserving order
     const seen = new Set();
-    const unique = candidates.filter(c => { if(seen.has(c)) return false; seen.add(c); return true; });
+    const unique = candidates.filter(u => { if(!u) return false; if(seen.has(u)) return false; seen.add(u); return true; });
+
     for(const u of unique){
       if(await testImageUrl(u)) return u;
     }
     return null;
   }
 
-  /* ---------- Preload gloss images for the chapter
-     - looks for elements with class .gloss and data-img attribute
-     - resolves candidate URL and stores it in data-resolved-img (if found)
-     - starts loading the image (so hover displays immediately)
+  /* Preload all gloss images found in currently loaded chapter.
+     For each .gloss with data-img, resolve candidate URL and if found:
+       - save as data-resolved-img on the element
+       - start browser caching by setting new Image().src
+     We await all resolves so tooltips show instantly later.
   */
   async function preloadGlossImages(){
     const glossEls = Array.from(chapterBodyEl.querySelectorAll('.gloss'));
@@ -251,25 +236,21 @@ document.addEventListener('DOMContentLoaded', () => {
       try{
         const resolved = await resolveTooltipImage(dataImg);
         if(resolved){
-          // attach resolved absolute URL for immediate use by tippy
           el.dataset.resolvedImg = resolved;
-          // start loading into browser cache
-          const img = new Image();
-          img.src = resolved;
+          const pre = new Image();
+          pre.src = resolved;
         }
       }catch(e){
-        // ignore resolution failures
+        // ignore failures
       }
     });
-    // wait for all resolution attempts to finish before returning
     await Promise.all(promises);
   }
 
-  /* ---------- initialize tippy on .gloss elements (uses preloaded URL if available) */
+  /* Initialize Tippy on .gloss using data-resolved-img (synchronous content) */
   function initGlossTippy(){
     if(!window.tippy) return;
-
-    // destroy existing instances
+    // destroy old ones
     document.querySelectorAll('.gloss').forEach(el => { try{ if(el._tippy) el._tippy.destroy(); }catch(e){} });
 
     tippy('.gloss', {
@@ -282,7 +263,6 @@ document.addEventListener('DOMContentLoaded', () => {
       popperOptions: { strategy: 'fixed' },
       offset: [0, 8],
       content(reference){
-        // synchronous content builder: uses data-resolved-img if present
         let contentHTML = reference.getAttribute('data-tippy-content') || reference.getAttribute('data-tip') || reference.getAttribute('title') || reference.innerHTML || '';
         if(reference.getAttribute('title')) reference.removeAttribute('title');
 
@@ -291,25 +271,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const resolved = reference.dataset.resolvedImg || null;
         if(resolved){
+          const imgWrap = document.createElement('div');
+          imgWrap.className = 'tooltip-image-wrap';
           const img = document.createElement('img');
           img.className = 'tooltip-img';
           img.src = resolved;
           img.alt = reference.getAttribute('data-img-alt') || '';
-          img.loading = 'eager'; // already preloaded, show immediately
-          wrapper.appendChild(img);
+          img.loading = 'eager';
+          imgWrap.appendChild(img);
+          wrapper.appendChild(imgWrap);
         }
 
-        const contentDiv = document.createElement('div');
-        contentDiv.className = 'tooltip-body';
-        contentDiv.innerHTML = contentHTML;
-        wrapper.appendChild(contentDiv);
+        const body = document.createElement('div');
+        body.className = 'tooltip-body';
+        body.innerHTML = contentHTML;
+        wrapper.appendChild(body);
 
         return wrapper;
       }
     });
   }
 
-  /* NAV BUTTON TIPPY (unchanged) */
+  /* Nav tippies for prev/next buttons */
   function refreshNavTippies(){
     if(!window.tippy) return;
     [bottomPrev, bottomNext, topPrev, topNext].forEach(btn => { if(!btn) return; try{ if(btn._tippy) btn._tippy.destroy(); }catch(e){} });
@@ -319,7 +302,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if(topNext) tippy(topNext, { content: () => topNext.dataset.title || '', placement: 'bottom', delay: [80,40], offset: [0,8], appendTo: () => document.body });
   }
 
-  /* Chapters aside slide-in/out (unchanged) */
+  /* Chapters aside slide-in/out */
   let chaptersOpen = false;
   const EDGE_TRIGGER_PX = 12;
   function openChapters(){ if(chaptersOpen) return; chaptersOpen = true; document.body.classList.add('chapters-open'); }
@@ -332,7 +315,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   document.addEventListener('click', (e) => { if(!chaptersOpen) return; if(chaptersAside && chaptersAside.contains(e.target)) return; if(e.clientX <= EDGE_TRIGGER_PX) return; closeChapters(); });
 
-  /* TOP NAV positioning and behavior (unchanged) */
+  /* TOP NAV positioning & visibility */
   function positionTopNav(){
     if(!topNav || !headerEl) return;
     const hRect = headerEl.getBoundingClientRect();
@@ -340,6 +323,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const top = Math.max(6, hRect.top + (hRect.height / 2) - (topNavRect.height / 2));
     topNav.style.top = `${top}px`;
   }
+
   let lastScrollY = window.scrollY;
   let scheduled = false;
   let hideDelayTimer = null;
