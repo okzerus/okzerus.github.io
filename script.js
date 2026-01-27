@@ -1,5 +1,4 @@
-// script.js - consolidated: chapter loader, theme, slide-out chapters, nav, robust tippy tooltips (top images), image viewer
-
+// script.js - consolidated app with robust tooltip image support
 document.addEventListener('DOMContentLoaded', () => {
   const chaptersListEl = document.getElementById('chapters');
   const chapterBodyEl = document.getElementById('chapter-body');
@@ -25,77 +24,39 @@ document.addEventListener('DOMContentLoaded', () => {
 
   let chapters = [];
   let currentIndex = -1;
-  let lastChapterFile = null; // e.g. "chapters/01.md" - used to resolve relative data-img paths
+  let lastChapterFile = null; // recorded as 'chapters/01.md' when loaded
 
-  /* THEME HANDLING */
-  function applyTheme(theme){
-    document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem('site-theme', theme);
-    setThemeIcon(theme);
-  }
-  function setThemeIcon(theme){
-    if(!themeToggle) return;
-    themeToggle.textContent = (theme === 'dark') ? '☀︎' : '☾';
-    themeToggle.setAttribute('aria-pressed', theme === 'dark' ? 'true' : 'false');
-  }
-  function toggleTheme(){
-    const cur = document.documentElement.getAttribute('data-theme') || 'dark';
-    const next = cur === 'dark' ? 'light' : 'dark';
-    applyTheme(next);
-  }
-  (function initTheme(){
-    const saved = localStorage.getItem('site-theme');
-    applyTheme(saved === 'light' ? 'light' : 'dark');
-  })();
-  if(themeToggle){
-    themeToggle.addEventListener('click', toggleTheme);
-  }
+  /* THEME (unchanged) */
+  function applyTheme(theme){ document.documentElement.setAttribute('data-theme', theme); localStorage.setItem('site-theme', theme); setThemeIcon(theme); }
+  function setThemeIcon(theme){ if(!themeToggle) return; themeToggle.textContent = (theme === 'dark') ? '☀︎' : '☾'; themeToggle.setAttribute('aria-pressed', theme === 'dark' ? 'true' : 'false'); }
+  function toggleTheme(){ const cur = document.documentElement.getAttribute('data-theme') || 'dark'; applyTheme(cur === 'dark' ? 'light' : 'dark'); }
+  (function initTheme(){ const saved = localStorage.getItem('site-theme'); applyTheme(saved === 'light' ? 'light' : 'dark'); })();
+  if(themeToggle) themeToggle.addEventListener('click', toggleTheme);
 
-  /* Helper: interpret 'done' property — default true if missing */
-  function isDoneEntry(entry){
-    if(!entry) return false;
-    return entry.done !== false;
-  }
+  /* done flag helpers (unchanged) */
+  function isDoneEntry(entry){ if(!entry) return false; return entry.done !== false; }
+  function findPrevDoneIndex(fromIndex){ for(let i = (fromIndex === undefined ? currentIndex - 1 : fromIndex); i >= 0; i--) if(isDoneEntry(chapters[i])) return i; return -1; }
+  function findNextDoneIndex(fromIndex){ for(let i = (fromIndex === undefined ? currentIndex + 1 : fromIndex); i < chapters.length; i++) if(isDoneEntry(chapters[i])) return i; return -1; }
+  function findFirstDoneIndex(){ return findNextDoneIndex(0); }
 
-  /* NAV helpers */
-  function findPrevDoneIndex(fromIndex){
-    for(let i = (fromIndex === undefined ? currentIndex - 1 : fromIndex); i >= 0; i--){
-      if(isDoneEntry(chapters[i])) return i;
-    }
-    return -1;
-  }
-  function findNextDoneIndex(fromIndex){
-    for(let i = (fromIndex === undefined ? currentIndex + 1 : fromIndex); i < chapters.length; i++){
-      if(isDoneEntry(chapters[i])) return i;
-    }
-    return -1;
-  }
-  function findFirstDoneIndex(){
-    return findNextDoneIndex(0);
-  }
-
+  /* nav handling (unchanged) */
   function updateNavButtons(){
     const prevIndex = findPrevDoneIndex();
     const nextIndex = findNextDoneIndex();
     const prevDisabled = prevIndex === -1;
     const nextDisabled = nextIndex === -1;
-
     [bottomPrev, topPrev].forEach(btn => { if(btn) btn.disabled = prevDisabled; });
     [bottomNext, topNext].forEach(btn => { if(btn) btn.disabled = nextDisabled; });
 
     if(!prevDisabled){
       const p = chapters[prevIndex];
       [bottomPrev, topPrev].forEach(btn => { if(btn){ btn.dataset.index = prevIndex; btn.dataset.title = p.title || ''; }});
-    } else {
-      [bottomPrev, topPrev].forEach(btn => { if(btn){ btn.removeAttribute('data-index'); btn.removeAttribute('data-title'); }});
-    }
+    } else { [bottomPrev, topPrev].forEach(btn => { if(btn){ btn.removeAttribute('data-index'); btn.removeAttribute('data-title'); }}); }
 
     if(!nextDisabled){
       const n = chapters[nextIndex];
       [bottomNext, topNext].forEach(btn => { if(btn){ btn.dataset.index = nextIndex; btn.dataset.title = n.title || ''; }});
-    } else {
-      [bottomNext, topNext].forEach(btn => { if(btn){ btn.removeAttribute('data-index'); btn.removeAttribute('data-title'); }});
-    }
+    } else { [bottomNext, topNext].forEach(btn => { if(btn){ btn.removeAttribute('data-index'); btn.removeAttribute('data-title'); }}); }
 
     refreshNavTippies();
   }
@@ -116,21 +77,14 @@ document.addEventListener('DOMContentLoaded', () => {
   if(topPrev) topPrev.addEventListener('click', ()=> { const i = Number(topPrev.dataset.index); if(!Number.isNaN(i)) goToChapter(i); });
   if(topNext) topNext.addEventListener('click', ()=> { const i = Number(topNext.dataset.index); if(!Number.isNaN(i)) goToChapter(i); });
 
-  // Keyboard nav
   document.addEventListener('keydown', (e)=>{
     const active = document.activeElement;
     if(active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) return;
-    if(e.key === 'ArrowLeft'){
-      const prev = findPrevDoneIndex();
-      if(prev !== -1) goToChapter(prev);
-    }
-    if(e.key === 'ArrowRight'){
-      const next = findNextDoneIndex();
-      if(next !== -1) goToChapter(next);
-    }
+    if(e.key === 'ArrowLeft'){ const prev = findPrevDoneIndex(); if(prev !== -1) goToChapter(prev); }
+    if(e.key === 'ArrowRight'){ const next = findNextDoneIndex(); if(next !== -1) goToChapter(next); }
   });
 
-  /* Load chapters.json */
+  /* load chapters.json (unchanged) */
   async function loadChapters(){
     chapterBodyEl.textContent = 'Загрузка...';
     try{
@@ -140,29 +94,17 @@ document.addEventListener('DOMContentLoaded', () => {
       if(!Array.isArray(data)) throw new Error('chapters.json is not an array');
       chapters = data;
       chaptersListEl.innerHTML = '';
-
       chapters.forEach((c, i)=>{
         const li = document.createElement('li');
         const a = document.createElement('a');
         a.href = '#';
         a.textContent = c.title || `Глава ${i+1}`;
-
-        if(!isDoneEntry(c)){
-          a.classList.add('undone');
-        } else {
-          a.addEventListener('click', (e)=>{ e.preventDefault(); goToChapter(i); });
-        }
-
-        li.appendChild(a);
-        chaptersListEl.appendChild(li);
+        if(!isDoneEntry(c)){ a.classList.add('undone'); } else { a.addEventListener('click', (e)=>{ e.preventDefault(); goToChapter(i); }); }
+        li.appendChild(a); chaptersListEl.appendChild(li);
       });
-
       const first = findFirstDoneIndex();
       if(first !== -1) goToChapter(first);
-      else {
-        chapterBodyEl.textContent = 'В репозитории нет доступных (done) глав.';
-        updateNavButtons();
-      }
+      else { chapterBodyEl.textContent = 'В репозитории нет доступных (done) глав.'; updateNavButtons(); }
     }catch(err){
       chapterBodyEl.textContent = 'Ошибка загрузки chapters.json: ' + err.message;
       console.error('loadChapters error:', err);
@@ -170,7 +112,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  /* Load a chapter file and remember its path for resolving tooltip images */
+  /* load a chapter and remember its path, used to resolve tooltip images */
   async function loadChapter(filename, title){
     chapterTitleEl.textContent = title || '';
     chapterBodyEl.textContent = 'Загрузка главы...';
@@ -178,17 +120,11 @@ document.addEventListener('DOMContentLoaded', () => {
       const res = await fetch('chapters/' + filename, {cache: 'no-store'});
       if(!res.ok) throw new Error('HTTP ' + res.status + ' fetching ' + filename);
       const md = await res.text();
-      // record last chapter file path relative to site root: 'chapters/01.md'
       lastChapterFile = 'chapters/' + filename;
       const html = (window.marked) ? marked.parse(md) : '<p>Ошибка: библиотека marked не загружена.</p>';
       chapterBodyEl.innerHTML = html;
-
-      // Initialize glossary tippies (image-capable)
-      initGlossTippy();
-
-      // Re-bind images inside chapter to viewer
-      bindImagesToViewer();
-
+      initGlossTippy();    // <- initialize image-capable tippies
+      bindImagesToViewer(); // re-bind chapter images
       updateNavButtons();
     }catch(err){
       chapterBodyEl.textContent = 'Ошибка загрузки главы: ' + err.message;
@@ -196,104 +132,91 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  /* -------------------------
-     Robust image resolver helper
-     Tries candidate URLs in order and resolves to the first that loads.
-     Returns Promise<string|null>
-  --------------------------*/
+  /* ---------- image existence test helper ---------- */
   function testImageUrl(url, timeout = 3000){
     return new Promise((resolve) => {
       const img = new Image();
       let done = false;
-      const onLoad = () => { if(done) return; done = true; cleanup(); resolve(url); };
-      const onErr = () => { if(done) return; done = true; cleanup(); resolve(null); };
+      const onLoad = () => { if(done) return; done = true; cleanup(); resolve(true); };
+      const onErr = () => { if(done) return; done = true; cleanup(); resolve(false); };
       const cleanup = () => { img.onload = img.onerror = null; clearTimeout(timer); };
-      img.onload = onLoad;
-      img.onerror = onErr;
-      // start loading
+      img.onload = onLoad; img.onerror = onErr;
       img.src = url;
-      const timer = setTimeout(() => { if(done) return; done = true; cleanup(); resolve(null); }, timeout);
+      const timer = setTimeout(() => { if(done) return; done = true; cleanup(); resolve(false); }, timeout);
     });
   }
 
+  /* build candidate absolute URLs for a data-img string and test sequentially */
   async function resolveTooltipImage(srcCandidate){
     if(!srcCandidate) return null;
-    // If absolute (http or starting with /) try directly first
-    if(/^https?:\/\//i.test(srcCandidate) || srcCandidate.startsWith('/')) {
-      const ok = await testImageUrl(srcCandidate);
-      if(ok) return srcCandidate;
-      // if fails, continue to other candidates
-    }
 
-    // Build a set of candidates:
-    // 1) as-given relative to page (e.g., "images/foo.png")
-    // 2) relative to the chapter file directory (chapters/ + dirname(lastChapterFile) + '/' + src)
-    // 3) parent-of-chapter dir + '/' + src (../images/foo.png)
-    // 4) root-prefixed ("/" + src)
-    const candidates = [];
-
-    // raw
-    candidates.push(srcCandidate);
-
+    // bases to resolve relative URLs against
+    const bases = [];
+    // base: current document location
+    bases.push(document.location.href);
+    // base: current path directory
+    bases.push(window.location.origin + window.location.pathname);
+    // base: last chapter file (if known)
     if(lastChapterFile){
+      bases.push(window.location.origin + '/' + lastChapterFile);
+      // parent dir of lastChapterFile
       const parts = lastChapterFile.split('/');
-      parts.pop(); // remove filename -> get directory (e.g. 'chapters')
-      const dir = parts.join('/');
-      if(dir) candidates.push(dir + '/' + srcCandidate);
-      // parent dir
-      const parentParts = parts.slice(0, -1);
-      if(parentParts.length >= 0){
-        const parentDir = parentParts.join('/');
-        if(parentDir) candidates.push(parentDir + '/' + srcCandidate);
-        else candidates.push('../' + srcCandidate); // fallback
-      } else {
-        candidates.push('../' + srcCandidate);
+      parts.pop();
+      const parent = parts.join('/');
+      if(parent) bases.push(window.location.origin + '/' + parent + '/');
+    }
+    // root
+    bases.push(window.location.origin + '/');
+
+    // generate candidate absolute urls via URL()
+    const candidates = [];
+    for(const base of bases){
+      try{
+        const u = new URL(srcCandidate, base);
+        candidates.push(u.href);
+      }catch(e){
+        // ignore
       }
     }
 
-    // root-prefixed
-    candidates.push('/' + srcCandidate);
-
-    // ensure uniqueness while preserving order
+    // ensure unique order-preserving
     const seen = new Set();
-    const uniqueCandidates = candidates.filter(s => {
-      if(!s) return false;
-      if(seen.has(s)) return false;
-      seen.add(s);
-      return true;
-    });
+    const unique = candidates.filter(c => { if(seen.has(c)) return false; seen.add(c); return true; });
 
-    // test candidates in sequence and return first that works
-    for(const c of uniqueCandidates){
-      const ok = await testImageUrl(c);
-      if(ok) return c;
+    // test each
+    for(const u of unique){
+      // console debug to help user trace resolution
+      console.debug('tippy-img: testing', u);
+      const ok = await testImageUrl(u, 3000);
+      if(ok){
+        console.debug('tippy-img: resolved', srcCandidate, '->', u);
+        return u;
+      }
     }
+
+    console.debug('tippy-img: no candidate succeeded for', srcCandidate);
     return null;
   }
 
-  /* -------------------------
-     Tippy init for .gloss elements (image-on-top support)
-     Uses Promise-based content builder so image resolution can happen async.
-  --------------------------*/
+  /* ---------- tippy for .gloss elements (async content with top image) ---------- */
   function initGlossTippy(){
     if(!window.tippy) return;
-
-    // destroy any existing gloss tippies to avoid duplicates
-    document.querySelectorAll('.gloss').forEach(el => {
-      try{ if(el._tippy) el._tippy.destroy(); }catch(e){}
-    });
+    // destroy existing gloss tippies
+    document.querySelectorAll('.gloss').forEach(el => { try{ if(el._tippy) el._tippy.destroy(); }catch(e){} });
 
     tippy('.gloss', {
       allowHTML: true,
       interactive: true,
       delay: [100, 120],
-      maxWidth: 360,
+      maxWidth: 420,
       placement: 'top',
+      appendTo: () => document.body,          // ensure tooltip appended to body (avoid clipping)
+      popperOptions: { strategy: 'fixed' },  // use fixed positioning
       offset: [0, 8],
       content(reference){
-        // return a Promise that resolves to a node (tippy supports that)
+        // return a Promise that resolves to a Node
         return (async () => {
-          // get text/HTML content
+          // content HTML: prefer data-tippy-content, then title, then innerHTML
           let contentHTML = reference.getAttribute('data-tippy-content') || reference.getAttribute('data-tip') || reference.getAttribute('title') || reference.innerHTML || '';
           if(reference.getAttribute('title')) reference.removeAttribute('title');
 
@@ -310,7 +233,21 @@ document.addEventListener('DOMContentLoaded', () => {
               img.src = resolved;
               img.alt = imgAlt;
               img.loading = 'lazy';
+              // when image loads, ask popper to reposition (safety)
+              img.addEventListener('load', () => {
+                // find the tippy instance and update its popper placement
+                try{
+                  const inst = reference._tippy;
+                  if(inst && inst.popperInstance && typeof inst.popperInstance.update === 'function'){
+                    inst.popperInstance.update();
+                  } else if(inst && typeof inst.update === 'function'){
+                    inst.update();
+                  }
+                }catch(e){}
+              });
               wrapper.appendChild(img);
+            } else {
+              // no resolved image; that's fine (tooltip will show text only)
             }
           }
 
@@ -325,21 +262,17 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  /* Tippy tooltips for nav buttons */
+  /* nav button tippies (unchanged) */
   function refreshNavTippies(){
     if(!window.tippy) return;
-    [bottomPrev, bottomNext, topPrev, topNext].forEach(btn => {
-      if(!btn) return;
-      try{ if(btn._tippy) btn._tippy.destroy(); }catch(e){}
-    });
-
-    if(bottomPrev) tippy(bottomPrev, { content: () => bottomPrev.dataset.title || '', placement: 'top', delay: [80,40], offset: [0,8] });
-    if(bottomNext) tippy(bottomNext, { content: () => bottomNext.dataset.title || '', placement: 'top', delay: [80,40], offset: [0,8] });
-    if(topPrev) tippy(topPrev, { content: () => topPrev.dataset.title || '', placement: 'bottom', delay: [80,40], offset: [0,8] });
-    if(topNext) tippy(topNext, { content: () => topNext.dataset.title || '', placement: 'bottom', delay: [80,40], offset: [0,8] });
+    [bottomPrev, bottomNext, topPrev, topNext].forEach(btn => { if(!btn) return; try{ if(btn._tippy) btn._tippy.destroy(); }catch(e){} });
+    if(bottomPrev) tippy(bottomPrev, { content: () => bottomPrev.dataset.title || '', placement: 'top', delay: [80,40], offset: [0,8], appendTo: () => document.body });
+    if(bottomNext) tippy(bottomNext, { content: () => bottomNext.dataset.title || '', placement: 'top', delay: [80,40], offset: [0,8], appendTo: () => document.body });
+    if(topPrev) tippy(topPrev, { content: () => topPrev.dataset.title || '', placement: 'bottom', delay: [80,40], offset: [0,8], appendTo: () => document.body });
+    if(topNext) tippy(topNext, { content: () => topNext.dataset.title || '', placement: 'bottom', delay: [80,40], offset: [0,8], appendTo: () => document.body });
   }
 
-  /* Chapters aside slide-in/out behavior (unchanged) */
+  /* Chapters aside slide-in/out (unchanged) */
   let chaptersOpen = false;
   const EDGE_TRIGGER_PX = 12;
   function openChapters(){ if(chaptersOpen) return; chaptersOpen = true; document.body.classList.add('chapters-open'); }
@@ -360,7 +293,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const top = Math.max(6, hRect.top + (hRect.height / 2) - (topNavRect.height / 2));
     topNav.style.top = `${top}px`;
   }
-
   let lastScrollY = window.scrollY;
   let scheduled = false;
   let hideDelayTimer = null;
@@ -380,41 +312,22 @@ document.addEventListener('DOMContentLoaded', () => {
     const curY = window.scrollY;
     const scrollingUp = curY < lastScrollY;
     const atTop = curY <= 10;
-
-    if(bottomNavIsVisible()){
-      hideTopNav();
-      if(hideDelayTimer){ clearTimeout(hideDelayTimer); hideDelayTimer = null; }
-    } else if(atTop || scrollingUp){
-      if(hideDelayTimer){ clearTimeout(hideDelayTimer); hideDelayTimer = null; }
-      showTopNav();
-    } else {
-      scheduleHideTopNavWithDelay();
-    }
+    if(bottomNavIsVisible()){ hideTopNav(); if(hideDelayTimer){ clearTimeout(hideDelayTimer); hideDelayTimer = null; } }
+    else if(atTop || scrollingUp){ if(hideDelayTimer){ clearTimeout(hideDelayTimer); hideDelayTimer = null; } showTopNav(); }
+    else { scheduleHideTopNavWithDelay(); }
     lastScrollY = curY;
   }
 
-  window.addEventListener('scroll', () => {
-    if(scheduled) return;
-    scheduled = true;
-    requestAnimationFrame(()=>{ onScrollCheck(); scheduled = false; });
-  }, { passive: true });
-
+  window.addEventListener('scroll', () => { if(scheduled) return; scheduled = true; requestAnimationFrame(()=>{ onScrollCheck(); scheduled = false; }); }, { passive: true });
   window.addEventListener('resize', () => { positionTopNav(); onScrollCheck(); });
 
-  const observer = new IntersectionObserver((entries) => {
-    const anyVisible = entries.some(en => en.isIntersecting);
-    if(anyVisible) { hideTopNav(); }
-  }, { root: null, threshold: 0.01 });
-
+  const observer = new IntersectionObserver((entries) => { const anyVisible = entries.some(en => en.isIntersecting); if(anyVisible) { hideTopNav(); } }, { root: null, threshold: 0.01 });
   if(bottomNav) observer.observe(bottomNav);
 
-  function initialTopNavSetup(){
-    positionTopNav();
-    if(window.scrollY <= 10 && !bottomNavIsVisible()) showTopNav(); else hideTopNav();
-  }
+  function initialTopNavSetup(){ positionTopNav(); if(window.scrollY <= 10 && !bottomNavIsVisible()) showTopNav(); else hideTopNav(); }
   setTimeout(initialTopNavSetup, 40);
 
-  /* --- Image viewer binding --- */
+  /* --- Image viewer (unchanged) --- */
   if(!document.getElementById('image-overlay')){
     const overlay = document.createElement('div');
     overlay.id = 'image-overlay';
@@ -467,38 +380,15 @@ document.addEventListener('DOMContentLoaded', () => {
     applyImageTransform();
   });
 
-  overlayImg.addEventListener('mousedown', (ev) => {
-    if(!isZoomed) return;
-    ev.preventDefault();
-    pointerDown = true;
-    dragMoved = false;
-    pointerStart = { x: ev.clientX, y: ev.clientY };
-    overlayImg.style.cursor = 'grabbing';
-  });
-
+  overlayImg.addEventListener('mousedown', (ev) => { if(!isZoomed) return; ev.preventDefault(); pointerDown = true; dragMoved = false; pointerStart = { x: ev.clientX, y: ev.clientY }; overlayImg.style.cursor = 'grabbing'; });
   window.addEventListener('mousemove', (ev) => {
     if(!pointerDown || !isZoomed) return;
     const dx = ev.clientX - pointerStart.x;
     const dy = ev.clientY - pointerStart.y;
-    if(!dragMoved && (Math.abs(dx) + Math.abs(dy) >= DRAG_THRESHOLD)){
-      dragMoved = true;
-    }
-    if(dragMoved){
-      pointerStart = { x: ev.clientX, y: ev.clientY };
-      imgPos.x += dx;
-      imgPos.y += dy;
-      applyImageTransform();
-    }
+    if(!dragMoved && (Math.abs(dx) + Math.abs(dy) >= DRAG_THRESHOLD)){ dragMoved = true; }
+    if(dragMoved){ pointerStart = { x: ev.clientX, y: ev.clientY }; imgPos.x += dx; imgPos.y += dy; applyImageTransform(); }
   });
-
-  window.addEventListener('mouseup', (ev) => {
-    if(pointerDown && dragMoved){
-      suppressClick = true;
-      setTimeout(() => { suppressClick = false; }, 0);
-    }
-    pointerDown = false;
-    overlayImg.style.cursor = isZoomed ? 'grab' : 'zoom-in';
-  });
+  window.addEventListener('mouseup', (ev) => { if(pointerDown && dragMoved){ suppressClick = true; setTimeout(() => { suppressClick = false; }, 0); } pointerDown = false; overlayImg.style.cursor = isZoomed ? 'grab' : 'zoom-in'; });
 
   overlay.addEventListener('click', (ev) => { if(ev.target === overlay) closeImageViewer(); });
   window.addEventListener('keydown', (ev) => { if(ev.key === 'Escape' && overlay.classList.contains('visible')) closeImageViewer(); });
