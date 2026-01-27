@@ -101,13 +101,7 @@ body.chapters-open #chapters-list{ transform:translateX(0); }
 }
 
 /* chapter text */
-#chapter-title{
-  font-size: 40px;
-  font-weight: 700;
-  margin: 0 0 16px;
-  text-align: center;      /* ← centers the chapter title */
-}
-
+#chapter-title{font-size:40px; font-weight:700; margin-bottom:8px}
 
 /* Chapter navigation buttons (shared style) */
 .chapter-nav{ display:flex; gap:12px; align-items:center; }
@@ -153,27 +147,28 @@ body.chapters-open main > *:not(#chapters-list) {
 
 /* Gloss styling for clickable appearance */
 .gloss{ text-decoration:underline dotted; cursor:help; }
-/* Tooltip image styling */
-.tippy-box img {
-  max-width: 100%;
-  height: auto;
-  display: block;
-  border-radius: 6px;
-  box-shadow: 0 6px 18px rgba(0,0,0,0.35);
-}
 
-/* optional caption/text inside tooltip */
-.tippy-box .tippy-inner .tippy-inner-text {
-  font-size: 13px;
-  line-height: 1.35;
-  color: var(--accent);
-  max-width: 280px;
-}
 /* Tippy tooltip link color override */
 .tippy-box .tippy-content a,
 .tippy-box a {
   color: var(--tooltip-link-color) !important;
   text-decoration: underline;
+}
+
+/* --- Style for small images at top of tooltips --- */
+.tippy-box .tippy-content img.tooltip-img {
+  display: block;
+  max-width: 320px;
+  width: 100%;
+  height: auto;
+  margin: 0 0 8px;
+  border-radius: 6px;
+  object-fit: cover;
+}
+
+/* center the content inside tippy (keeps text left-aligned inside) */
+.tippy-box .tippy-content {
+  padding: 8px 10px;
 }
 
 /* --- Image viewer (lightbox) styles --- */
