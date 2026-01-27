@@ -1,4 +1,6 @@
-// script.js - consolidated: chapter loader, theme, slide-out chapters, nav, tippy tooltips with top images (preloads image)
+// script.js - consolidated: chapter loader, theme, slide-out chapters, nav, tippy tooltips with top images
+// Updated: tooltips now append to document.body and explicitly decode images on show so they render reliably.
+
 document.addEventListener('DOMContentLoaded', () => {
   const chaptersListEl = document.getElementById('chapters');
   const chapterBodyEl = document.getElementById('chapter-body');
@@ -207,7 +209,7 @@ document.addEventListener('DOMContentLoaded', () => {
     return u;
   }
 
-  /* --- TIPPY tooltip initialization for glossary items (preloads images, returns HTML string) --- */
+  /* --- TIPPY tooltip initialization for glossary items (preload + appendTo + decode on show) --- */
   function initGlossTippy(){
     if(!window.tippy) return;
 
@@ -222,6 +224,7 @@ document.addEventListener('DOMContentLoaded', () => {
       interactive: true,
       delay: [100, 120],
       maxWidth: 360,
+      appendTo: () => document.body, // ensure tooltip is appended to body (prevents clipping)
       content(reference){
         // prefer data-tippy-content, then title (and remove title), then innerHTML
         let contentHTML = reference.getAttribute('data-tippy-content') || reference.getAttribute('data-tip') || reference.getAttribute('title') || reference.innerHTML || '';
@@ -231,16 +234,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const imgSrc = normalizeImageUrl(rawImg);
         const imgAlt = reference.getAttribute('data-img-alt') || '';
 
-        // --- Preload image if provided to guarantee network request ---
+        // Preload image if provided to guarantee network request (helps with rendering)
         if(imgSrc){
           try {
             const pre = new Image();
             pre.src = imgSrc;
-            // optional: set crossOrigin if your images require it
-            // pre.crossOrigin = 'anonymous';
-          } catch(e){
-            // ignore preload errors
-          }
+          } catch(e){}
         }
 
         // Build HTML string (image first if present)
@@ -254,6 +253,26 @@ document.addEventListener('DOMContentLoaded', () => {
       },
       offset: [0, 8],
       placement: 'top',
+      // when tooltip is shown, ensure image is decoded/painted and visible
+      onShow(instance){
+        try {
+          const img = instance.popper.querySelector('.tooltip-img');
+          if(img){
+            // If src was set and image not complete, try decode; if decode fails, ignore
+            if(!img.complete){
+              // start load in case something prevented it earlier
+              img.src = img.getAttribute('src');
+            }
+            // Force a reflow and try to decode so the browser paints it immediately
+            void img.offsetWidth;
+            if(img.decode) {
+              img.decode().catch(()=>{ /* ignore decode errors */ });
+            }
+          }
+        } catch(e){
+          // ignore any tippy/popper timing errors
+        }
+      }
     });
   }
 
@@ -265,10 +284,10 @@ document.addEventListener('DOMContentLoaded', () => {
       try{ if(btn._tippy) btn._tippy.destroy(); }catch(e){}
     });
 
-    if(bottomPrev) tippy(bottomPrev, { content: () => bottomPrev.dataset.title || '', placement: 'top', delay: [80,40], offset: [0,8] });
-    if(bottomNext) tippy(bottomNext, { content: () => bottomNext.dataset.title || '', placement: 'top', delay: [80,40], offset: [0,8] });
-    if(topPrev) tippy(topPrev, { content: () => topPrev.dataset.title || '', placement: 'bottom', delay: [80,40], offset: [0,8] });
-    if(topNext) tippy(topNext, { content: () => topNext.dataset.title || '', placement: 'bottom', delay: [80,40], offset: [0,8] });
+    if(bottomPrev) tippy(bottomPrev, { content: () => bottomPrev.dataset.title || '', placement: 'top', delay: [80,40], offset: [0,8], appendTo: () => document.body });
+    if(bottomNext) tippy(bottomNext, { content: () => bottomNext.dataset.title || '', placement: 'top', delay: [80,40], offset: [0,8], appendTo: () => document.body });
+    if(topPrev) tippy(topPrev, { content: () => topPrev.dataset.title || '', placement: 'bottom', delay: [80,40], offset: [0,8], appendTo: () => document.body });
+    if(topNext) tippy(topNext, { content: () => topNext.dataset.title || '', placement: 'bottom', delay: [80,40], offset: [0,8], appendTo: () => document.body });
   }
 
   /* Chapters aside slide-in/out behavior */
@@ -355,7 +374,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   setTimeout(initialTopNavSetup, 40);
 
-  /* Image viewer (unchanged) */
+  /* Image viewer */
   if(!document.getElementById('image-overlay')){
     const overlay = document.createElement('div');
     overlay.id = 'image-overlay';
