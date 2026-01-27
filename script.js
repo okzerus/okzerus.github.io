@@ -49,6 +49,88 @@ document.addEventListener('DOMContentLoaded', () => {
   if(themeToggle){
     themeToggle.addEventListener('click', toggleTheme);
   }
+// destroy any previous tippy instances on .gloss and initialize fresh ones
+function initGlossTippy(){
+  if(!window.tippy) return;
+
+  // destroy existing tippies on elements that will be re-used
+  document.querySelectorAll('.gloss').forEach(el => {
+    try { if(el._tippy) el._tippy.destroy(); } catch(e) {}
+  });
+
+  tippy('.gloss', {
+    allowHTML: true,
+    interactive: true,
+    delay: [100, 100],
+    maxWidth: 340,
+    content(reference){
+      // data sources:
+      // - data-img  (optional)  -> image URL, possibly relative to the markdown file
+      // - data-img-alt (optional)
+      // - data-txt OR data-tippy-content (optional) -> HTML/text caption
+      const rawImg = reference.getAttribute('data-img');
+      const imgAlt = reference.getAttribute('data-img-alt') || '';
+      const rawText = reference.getAttribute('data-txt') || reference.getAttribute('data-tippy-content') || '';
+
+      const wrap = document.createElement('div');
+      wrap.style.display = 'flex';
+      wrap.style.flexDirection = 'column';
+      wrap.style.gap = '8px';
+      wrap.style.maxWidth = '320px';
+
+      if(rawImg){
+        const img = document.createElement('img');
+        img.loading = 'lazy';
+        img.alt = imgAlt;
+        // resolve the src correctly (see function below)
+        img.src = resolveImgSrc(rawImg);
+        img.style.width = '100%';
+        img.style.height = 'auto';
+        img.style.borderRadius = '6px';
+        img.style.display = 'block';
+        wrap.appendChild(img);
+      }
+
+      if(rawText){
+        const textEl = document.createElement('div');
+        textEl.className = 'tippy-inner-text';
+        // we allow HTML because you are using links; make sure your md is trusted
+        textEl.innerHTML = rawText;
+        wrap.appendChild(textEl);
+      }
+
+      // if neither image nor text, fallback to element's title or empty
+      if(!rawImg && !rawText){
+        const t = reference.getAttribute('title') || '';
+        const fallback = document.createElement('div');
+        fallback.textContent = t;
+        wrap.appendChild(fallback);
+      }
+
+      return wrap;
+    }
+  });
+}
+
+// Resolve image path: absolute urls and root-absolute left as-is; relative urls resolved
+// relative to the markdown file that was loaded (chapterBodyEl.dataset.mdFile).
+function resolveImgSrc(raw){
+  if(!raw) return raw;
+  // if absolute URL or protocol-relative or starting with slash, return as-is
+  if(/^https?:\/\//i.test(raw) || raw.startsWith('//') || raw.startsWith('/')) return raw;
+
+  // relative to markdown file: e.g. md file is "chapters/01.md" and raw="../images/foo.png"
+  const mdFile = chapterBodyEl.dataset.mdFile || '';
+  const mdDir = mdFile.includes('/') ? mdFile.substring(0, mdFile.lastIndexOf('/') + 1) : '';
+  // build a combined path and let URL resolve ".." segments relative to current page location
+  // Using location.href as base ensures we get a usable absolute URL.
+  try {
+    return new URL(mdDir + raw, location.href).href;
+  } catch(e){
+    // fallback: return raw as-is
+    return raw;
+  }
+}
 
   /* Helper: interpret 'done' property — default true if missing */
   function isDoneEntry(entry){
@@ -183,6 +265,9 @@ document.addEventListener('DOMContentLoaded', () => {
       const md = await res.text();
       const html = (window.marked) ? marked.parse(md) : '<p>Ошибка: библиотека marked не загружена.</p>';
       chapterBodyEl.innerHTML = html;
+      // tell tooltips where this markdown file came from (used to resolve relative image paths)
+chapterBodyEl.dataset.mdFile = filename;
+initGlossTippy(); // initialize tippy for glossary spans inside this chapter
 
       // Replace existing simple tippy('.gloss', {...}) calls with this more capable initializer:
 if(window.tippy) {
