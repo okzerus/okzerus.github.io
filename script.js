@@ -1,5 +1,4 @@
-// script.js - consolidated and reordered: loadChapter defined before goToChapter to avoid ReferenceError.
-// Features: chapter loader, theme, slide-out chapters, nav, delegated tippy tooltips with top-image support (loads image on hover), image viewer
+// script.js - consolidated: chapter loader, theme, slide-out chapters, nav, tippy tooltips with top images (returns HTML string so images load)
 
 document.addEventListener('DOMContentLoaded', () => {
   const chaptersListEl = document.getElementById('chapters');
@@ -75,31 +74,33 @@ document.addEventListener('DOMContentLoaded', () => {
     return findNextDoneIndex(0);
   }
 
-  /* ---------- loadChapter (must be defined before goToChapter) ---------- */
-  async function loadChapter(filename, title){
-    chapterTitleEl.textContent = title || '';
-    chapterBodyEl.textContent = 'Загрузка главы...';
-    try{
-      const res = await fetch('chapters/' + filename, {cache: 'no-store'});
-      if(!res.ok) throw new Error('HTTP ' + res.status + ' fetching ' + filename);
-      const md = await res.text();
-      const html = (window.marked) ? marked.parse(md) : '<p>Ошибка: библиотека marked не загружена.</p>';
-      chapterBodyEl.innerHTML = html;
+  /* NAV BUTTONS handling (top & bottom) - consider only done chapters */
+  function updateNavButtons(){
+    const prevIndex = findPrevDoneIndex();
+    const nextIndex = findNextDoneIndex();
+    const prevDisabled = prevIndex === -1;
+    const nextDisabled = nextIndex === -1;
 
-      // Init glossary tippy (delegated) after content is present
-      initGlossTippy();
+    [bottomPrev, topPrev].forEach(btn => { if(btn) btn.disabled = prevDisabled; });
+    [bottomNext, topNext].forEach(btn => { if(btn) btn.disabled = nextDisabled; });
 
-      // re-bind image viewer to images inside content
-      bindImagesToViewer();
-
-      updateNavButtons();
-    }catch(err){
-      chapterBodyEl.textContent = 'Ошибка загрузки главы: ' + err.message + '\nПроверьте, что файл chapters/' + filename + ' существует.';
-      console.error('loadChapter error:', err);
+    if(!prevDisabled){
+      const p = chapters[prevIndex];
+      [bottomPrev, topPrev].forEach(btn => { if(btn){ btn.dataset.index = prevIndex; btn.dataset.title = p.title || ''; }});
+    } else {
+      [bottomPrev, topPrev].forEach(btn => { if(btn){ btn.removeAttribute('data-index'); btn.removeAttribute('data-title'); }});
     }
+
+    if(!nextDisabled){
+      const n = chapters[nextIndex];
+      [bottomNext, topNext].forEach(btn => { if(btn){ btn.dataset.index = nextIndex; btn.dataset.title = n.title || ''; }});
+    } else {
+      [bottomNext, topNext].forEach(btn => { if(btn){ btn.removeAttribute('data-index'); btn.removeAttribute('data-title'); }});
+    }
+
+    refreshTippyContents();
   }
 
-  /* ---------- goToChapter (calls loadChapter) ---------- */
   function goToChapter(index){
     if(!chapters || index < 0 || index >= chapters.length) return;
     if(!isDoneEntry(chapters[index])) return; // prevent navigation to undone
@@ -111,7 +112,6 @@ document.addEventListener('DOMContentLoaded', () => {
     closeChapters();
   }
 
-  /* NAV button wiring */
   if(bottomPrev) bottomPrev.addEventListener('click', ()=> { const i = Number(bottomPrev.dataset.index); if(!Number.isNaN(i)) goToChapter(i); });
   if(bottomNext) bottomNext.addEventListener('click', ()=> { const i = Number(bottomNext.dataset.index); if(!Number.isNaN(i)) goToChapter(i); });
   if(topPrev) topPrev.addEventListener('click', ()=> { const i = Number(topPrev.dataset.index); if(!Number.isNaN(i)) goToChapter(i); });
@@ -172,6 +172,30 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  /* Load single chapter */
+  async function loadChapter(filename, title){
+    chapterTitleEl.textContent = title || '';
+    chapterBodyEl.textContent = 'Загрузка главы...';
+    try{
+      const res = await fetch('chapters/' + filename, {cache: 'no-store'});
+      if(!res.ok) throw new Error('HTTP ' + res.status + ' fetching ' + filename);
+      const md = await res.text();
+      const html = (window.marked) ? marked.parse(md) : '<p>Ошибка: библиотека marked не загружена.</p>';
+      chapterBodyEl.innerHTML = html;
+
+      // Init glossary tippy (with top-image support)
+      initGlossTippy();
+
+      // re-bind image viewer to images inside content
+      bindImagesToViewer();
+
+      updateNavButtons();
+    }catch(err){
+      chapterBodyEl.textContent = 'Ошибка загрузки главы: ' + err.message + '\nПроверьте, что файл chapters/' + filename + ' существует.';
+      console.error('loadChapter error:', err);
+    }
+  }
+
   /* Utility: normalize image URLs so common GitHub blob links still work */
   function normalizeImageUrl(url){
     if(!url || typeof url !== 'string') return url || '';
@@ -182,70 +206,59 @@ document.addEventListener('DOMContentLoaded', () => {
         u = u.replace('https://github.com/', 'https://raw.githubusercontent.com/').replace(GH_BLOB, '/');
       }
     } catch(e){
-      // ignore
+      // ignore and return original
     }
     return u;
   }
 
-  /* --- TIPPY tooltip initialization for glossary items (delegated) --- */
+  /* --- TIPPY tooltip initialization for glossary items (supporting top images) ---
+     IMPORTANT: return an HTML string (not a DOM node) so browsers will parse <img> and fire network requests reliably.
+  */
   function initGlossTippy(){
-    if(!window.tippy){
-      console.warn('Tippy not loaded; glossary tooltips disabled.');
-      return;
-    }
+    if(!window.tippy) return;
 
-    // destroy previous delegate if exists
-    if(window._glossTippyDelegate){
-      try{ window._glossTippyDelegate.destroy(); }catch(e){}
-      window._glossTippyDelegate = null;
-    }
+    // destroy previous instances on .gloss elements to avoid duplicates
+    const existing = document.querySelectorAll('.gloss');
+    existing.forEach(el => {
+      try{ if(el._tippy) el._tippy.destroy(); }catch(e){}
+    });
 
-    // use tippy.delegate to handle dynamically added .gloss elements
-    window._glossTippyDelegate = tippy.delegate(document.body, {
-      target: '.gloss',
+    tippy('.gloss', {
       allowHTML: true,
       interactive: true,
       delay: [100, 120],
       maxWidth: 360,
-      placement: 'top',
-      offset: [0, 8],
-      // build tooltip content when the tooltip is about to show
-      onShow(instance){
-        const ref = instance.reference;
-        if(!ref) return;
+      content(reference){
+        // prefer data-tippy-content, then title (and remove title to avoid native tooltip), then innerHTML
+        let contentHTML = reference.getAttribute('data-tippy-content') || reference.getAttribute('data-tip') || reference.getAttribute('title') || reference.innerHTML || '';
+        if(reference.getAttribute('title')) reference.removeAttribute('title');
 
-        if(ref.getAttribute('title')) ref.removeAttribute('title');
-
-        const rawContent = ref.getAttribute('data-tippy-content') || ref.getAttribute('data-tip') || '';
-        const rawImg = ref.getAttribute('data-img') || '';
+        // image handling
+        const rawImg = reference.getAttribute('data-img') || '';
         const imgSrc = normalizeImageUrl(rawImg);
-        const imgAlt = ref.getAttribute('data-img-alt') || '';
+        const imgAlt = reference.getAttribute('data-img-alt') || '';
 
-        const wrapper = document.createElement('div');
+        // Build HTML string. Keep contentHTML as-is (it may contain anchors).
+        // Sanity: if contentHTML is empty, we still return image if present.
+        let out = '';
 
         if(imgSrc){
-          const img = document.createElement('img');
-          img.className = 'tooltip-img';
-          img.src = imgSrc;
-          img.alt = imgAlt;
-          img.loading = 'lazy';
-          img.addEventListener('error', () => {
-            try{ if(img.parentNode) img.parentNode.removeChild(img); }catch(e){}
-          });
-          wrapper.appendChild(img);
+          // Note: using width:100% via CSS class; ensure src is set to normalized URL
+          // Add loading="lazy" attribute for perf
+          // Escape double quotes in imgAlt to avoid breaking HTML attribute
+          const safeAlt = String(imgAlt).replace(/"/g, '&quot;');
+          out += `<img class="tooltip-img" src="${imgSrc}" alt="${safeAlt}" loading="lazy">`;
         }
 
-        const contentDiv = document.createElement('div');
-        contentDiv.className = 'tooltip-body';
-        contentDiv.innerHTML = rawContent || '';
-        wrapper.appendChild(contentDiv);
-
-        instance.setContent(wrapper);
-      }
+        out += `<div class="tooltip-body">${contentHTML}</div>`;
+        return out;
+      },
+      offset: [0, 8],
+      placement: 'top',
     });
   }
 
-  /* TIPPY tooltips for nav buttons (separate small tooltips) */
+  /* TIPPY tooltips for nav buttons */
   function refreshTippyContents(){
     if(!window.tippy) return;
     [bottomPrev, bottomNext, topPrev, topNext].forEach(btn => {
