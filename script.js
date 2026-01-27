@@ -1,5 +1,5 @@
-// script.js - full replacement with robust tooltip-onShow image insertion
-// preserves all other features: theme, slide-out chapters, done-flag, top/bottom nav, image viewer
+// script.js - removed debug output, preloads tooltip images and displays them as a cover
+// keeps all other features intact (theme, chapters, done flag, nav, image viewer, slide-out list)
 
 document.addEventListener('DOMContentLoaded', () => {
   const chaptersListEl = document.getElementById('chapters');
@@ -26,7 +26,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   let chapters = [];
   let currentIndex = -1;
-  let lastChapterFile = null; // e.g. 'chapters/01.md'
+  let lastChapterFile = null; // 'chapters/01.md' recorded on load
 
   /* THEME HANDLING */
   function applyTheme(theme){
@@ -47,9 +47,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const saved = localStorage.getItem('site-theme');
     applyTheme(saved === 'light' ? 'light' : 'dark');
   })();
-  if(themeToggle){
-    themeToggle.addEventListener('click', toggleTheme);
-  }
+  if(themeToggle) themeToggle.addEventListener('click', toggleTheme);
 
   /* DONE FLAG HELPERS */
   function isDoneEntry(entry){
@@ -70,9 +68,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     return -1;
   }
-  function findFirstDoneIndex(){
-    return findNextDoneIndex(0);
-  }
+  function findFirstDoneIndex(){ return findNextDoneIndex(0); }
 
   /* NAV BUTTONS */
   function updateNavButtons(){
@@ -103,7 +99,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function goToChapter(index){
     if(!chapters || index < 0 || index >= chapters.length) return;
-    if(!isDoneEntry(chapters[index])) return; // prevent navigation to undone
+    if(!isDoneEntry(chapters[index])) return;
     currentIndex = index;
     const c = chapters[index];
     loadChapter(c.file, c.title);
@@ -117,21 +113,15 @@ document.addEventListener('DOMContentLoaded', () => {
   if(topPrev) topPrev.addEventListener('click', ()=> { const i = Number(topPrev.dataset.index); if(!Number.isNaN(i)) goToChapter(i); });
   if(topNext) topNext.addEventListener('click', ()=> { const i = Number(topNext.dataset.index); if(!Number.isNaN(i)) goToChapter(i); });
 
-  // keyboard nav (ignore while focusing inputs)
+  // keyboard nav
   document.addEventListener('keydown', (e)=>{
     const active = document.activeElement;
     if(active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) return;
-    if(e.key === 'ArrowLeft'){
-      const prev = findPrevDoneIndex();
-      if(prev !== -1) goToChapter(prev);
-    }
-    if(e.key === 'ArrowRight'){
-      const next = findNextDoneIndex();
-      if(next !== -1) goToChapter(next);
-    }
+    if(e.key === 'ArrowLeft'){ const prev = findPrevDoneIndex(); if(prev !== -1) goToChapter(prev); }
+    if(e.key === 'ArrowRight'){ const next = findNextDoneIndex(); if(next !== -1) goToChapter(next); }
   });
 
-  /* LOAD CHAPTER LIST */
+  /* LOAD CHAPTERS */
   async function loadChapters(){
     chapterBodyEl.textContent = 'Загрузка...';
     try{
@@ -141,16 +131,19 @@ document.addEventListener('DOMContentLoaded', () => {
       if(!Array.isArray(data)) throw new Error('chapters.json is not an array');
       chapters = data;
       chaptersListEl.innerHTML = '';
+
       chapters.forEach((c, i)=>{
         const li = document.createElement('li');
         const a = document.createElement('a');
         a.href = '#';
         a.textContent = c.title || `Глава ${i+1}`;
+
         if(!isDoneEntry(c)){
           a.classList.add('undone');
         } else {
           a.addEventListener('click', (e)=>{ e.preventDefault(); goToChapter(i); });
         }
+
         li.appendChild(a);
         chaptersListEl.appendChild(li);
       });
@@ -168,7 +161,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  /* LOAD SINGLE CHAPTER */
+  /* LOAD A CHAPTER - record lastChapterFile for resolving relative data-img */
   async function loadChapter(filename, title){
     chapterTitleEl.textContent = title || '';
     chapterBodyEl.textContent = 'Загрузка главы...';
@@ -180,10 +173,11 @@ document.addEventListener('DOMContentLoaded', () => {
       const html = (window.marked) ? marked.parse(md) : '<p>Ошибка: библиотека marked не загружена.</p>';
       chapterBodyEl.innerHTML = html;
 
-      // initialize glossary tippies (image-capable)
+      // preload tooltip images and initialize tippies
+      await preloadGlossImages(); // start preloads and wait for them to complete (so tooltips show immediately)
       initGlossTippy();
 
-      // bind in-chapter images to the viewer
+      // bind images inside chapter to viewer
       bindImagesToViewer();
 
       updateNavButtons();
@@ -193,7 +187,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  /* IMAGE RESOLUTION HELPERS */
+  /* ---------- image existence test ---------- */
   function testImageUrl(url, timeout = 3000){
     return new Promise((resolve) => {
       const img = new Image();
@@ -207,16 +201,15 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  /* resolve candidate URLs for data-img; returns first working absolute URL or null */
   async function resolveTooltipImage(srcCandidate){
     if(!srcCandidate) return null;
 
-    // If absolute HTTP/HTTPS or root path, test directly first
+    // direct absolute or root path test first
     if(/^https?:\/\//i.test(srcCandidate) || srcCandidate.startsWith('/')){
-      console.debug('tippy-img: trying direct', srcCandidate);
       if(await testImageUrl(srcCandidate)) return srcCandidate;
     }
 
-    // Candidate bases to try (document, page path, chapter dir, root)
     const bases = [];
     bases.push(window.location.href);
     bases.push(window.location.origin + window.location.pathname);
@@ -237,87 +230,73 @@ document.addEventListener('DOMContentLoaded', () => {
       }catch(e){}
     }
 
-    // unique preserve order
     const seen = new Set();
     const unique = candidates.filter(c => { if(seen.has(c)) return false; seen.add(c); return true; });
-
     for(const u of unique){
-      console.debug('tippy-img: testing', u);
-      if(await testImageUrl(u)) {
-        console.debug('tippy-img: resolved', srcCandidate, '->', u);
-        return u;
-      }
+      if(await testImageUrl(u)) return u;
     }
-    console.debug('tippy-img: none resolved for', srcCandidate);
     return null;
   }
 
-  /* TIPPY - robust onShow pattern to set content after resolving image */
+  /* ---------- Preload gloss images for the chapter
+     - looks for elements with class .gloss and data-img attribute
+     - resolves candidate URL and stores it in data-resolved-img (if found)
+     - starts loading the image (so hover displays immediately)
+  */
+  async function preloadGlossImages(){
+    const glossEls = Array.from(chapterBodyEl.querySelectorAll('.gloss'));
+    const promises = glossEls.map(async (el) => {
+      const dataImg = el.getAttribute('data-img');
+      if(!dataImg) return;
+      try{
+        const resolved = await resolveTooltipImage(dataImg);
+        if(resolved){
+          // attach resolved absolute URL for immediate use by tippy
+          el.dataset.resolvedImg = resolved;
+          // start loading into browser cache
+          const img = new Image();
+          img.src = resolved;
+        }
+      }catch(e){
+        // ignore resolution failures
+      }
+    });
+    // wait for all resolution attempts to finish before returning
+    await Promise.all(promises);
+  }
+
+  /* ---------- initialize tippy on .gloss elements (uses preloaded URL if available) */
   function initGlossTippy(){
     if(!window.tippy) return;
 
-    // destroy existing gloss instances to avoid duplicates
-    document.querySelectorAll('.gloss').forEach(el => {
-      try{ if(el._tippy) el._tippy.destroy(); }catch(e){}
-    });
+    // destroy existing instances
+    document.querySelectorAll('.gloss').forEach(el => { try{ if(el._tippy) el._tippy.destroy(); }catch(e){} });
 
-    // attach tippy with onShow that resolves and inserts image above text
     tippy('.gloss', {
       allowHTML: true,
       interactive: true,
-      delay: [100, 120],
-      maxWidth: 420,
+      delay: [60, 80],
+      maxWidth: 520,
       placement: 'top',
-      offset: [0, 8],
       appendTo: () => document.body,
       popperOptions: { strategy: 'fixed' },
-
-      // initial placeholder content (so tooltip appears while we load)
-      content: 'Loading...',
-
-      onShow: async (instance) => {
-        const reference = instance.reference;
-        // build textual content
+      offset: [0, 8],
+      content(reference){
+        // synchronous content builder: uses data-resolved-img if present
         let contentHTML = reference.getAttribute('data-tippy-content') || reference.getAttribute('data-tip') || reference.getAttribute('title') || reference.innerHTML || '';
         if(reference.getAttribute('title')) reference.removeAttribute('title');
 
         const wrapper = document.createElement('div');
+        wrapper.className = 'tooltip-wrapper';
 
-        const dataImg = reference.getAttribute('data-img');
-        const imgAlt = reference.getAttribute('data-img-alt') || '';
-
-        if(dataImg){
-          // try resolving image URL
-          const resolved = await resolveTooltipImage(dataImg);
-          if(resolved){
-            const img = document.createElement('img');
-            img.className = 'tooltip-img';
-            img.src = resolved;
-            img.alt = imgAlt;
-            img.loading = 'lazy';
-            // set safe inline styles as a final fallback (in case external CSS missing)
-            img.style.display = 'block';
-            img.style.maxWidth = '320px';
-            img.style.width = '100%';
-            img.style.height = 'auto';
-            img.style.marginBottom = '8px';
-            img.style.borderRadius = '6px';
-            // append image BEFORE content
-            wrapper.appendChild(img);
-
-            // when image finishes loading, update popper to reposition correctly
-            img.addEventListener('load', () => {
-              try{
-                if(instance.popperInstance && typeof instance.popperInstance.update === 'function'){
-                  instance.popperInstance.update();
-                } else if(typeof instance.update === 'function'){
-                  instance.update();
-                }
-              }catch(e){}
-            });
-          } else {
-            // resolved failed - proceed without image
-          }
+        const resolved = reference.dataset.resolvedImg || null;
+        if(resolved){
+          const img = document.createElement('img');
+          img.className = 'tooltip-img';
+          img.src = resolved;
+          img.alt = reference.getAttribute('data-img-alt') || '';
+          img.loading = 'eager'; // already preloaded, show immediately
+          wrapper.appendChild(img);
         }
 
         const contentDiv = document.createElement('div');
@@ -325,32 +304,22 @@ document.addEventListener('DOMContentLoaded', () => {
         contentDiv.innerHTML = contentHTML;
         wrapper.appendChild(contentDiv);
 
-        // finally set the composed content into the tooltip
-        try{
-          instance.setContent(wrapper);
-        }catch(e){
-          // fallback: set as HTML string
-          instance.setContent(wrapper.outerHTML);
-        }
+        return wrapper;
       }
     });
   }
 
-  /* nav button tippies */
+  /* NAV BUTTON TIPPY (unchanged) */
   function refreshNavTippies(){
     if(!window.tippy) return;
-    [bottomPrev, bottomNext, topPrev, topNext].forEach(btn => {
-      if(!btn) return;
-      try{ if(btn._tippy) btn._tippy.destroy(); }catch(e){}
-    });
-
+    [bottomPrev, bottomNext, topPrev, topNext].forEach(btn => { if(!btn) return; try{ if(btn._tippy) btn._tippy.destroy(); }catch(e){} });
     if(bottomPrev) tippy(bottomPrev, { content: () => bottomPrev.dataset.title || '', placement: 'top', delay: [80,40], offset: [0,8], appendTo: () => document.body });
     if(bottomNext) tippy(bottomNext, { content: () => bottomNext.dataset.title || '', placement: 'top', delay: [80,40], offset: [0,8], appendTo: () => document.body });
     if(topPrev) tippy(topPrev, { content: () => topPrev.dataset.title || '', placement: 'bottom', delay: [80,40], offset: [0,8], appendTo: () => document.body });
     if(topNext) tippy(topNext, { content: () => topNext.dataset.title || '', placement: 'bottom', delay: [80,40], offset: [0,8], appendTo: () => document.body });
   }
 
-  /* Chapters aside slide-in/out */
+  /* Chapters aside slide-in/out (unchanged) */
   let chaptersOpen = false;
   const EDGE_TRIGGER_PX = 12;
   function openChapters(){ if(chaptersOpen) return; chaptersOpen = true; document.body.classList.add('chapters-open'); }
@@ -363,7 +332,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   document.addEventListener('click', (e) => { if(!chaptersOpen) return; if(chaptersAside && chaptersAside.contains(e.target)) return; if(e.clientX <= EDGE_TRIGGER_PX) return; closeChapters(); });
 
-  /* TOP NAV positioning & visibility (unchanged) */
+  /* TOP NAV positioning and behavior (unchanged) */
   function positionTopNav(){
     if(!topNav || !headerEl) return;
     const hRect = headerEl.getBoundingClientRect();
@@ -371,7 +340,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const top = Math.max(6, hRect.top + (hRect.height / 2) - (topNavRect.height / 2));
     topNav.style.top = `${top}px`;
   }
-
   let lastScrollY = window.scrollY;
   let scheduled = false;
   let hideDelayTimer = null;
@@ -411,10 +379,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if(bottomNav) observer.observe(bottomNav);
 
-  function initialTopNavSetup(){
-    positionTopNav();
-    if(window.scrollY <= 10 && !bottomNavIsVisible()) showTopNav(); else hideTopNav();
-  }
+  function initialTopNavSetup(){ positionTopNav(); if(window.scrollY <= 10 && !bottomNavIsVisible()) showTopNav(); else hideTopNav(); }
   setTimeout(initialTopNavSetup, 40);
 
   /* IMAGE VIEWER (unchanged) */
@@ -529,5 +494,4 @@ document.addEventListener('DOMContentLoaded', () => {
       showTopNav();
     }
   }, 120);
-
 });
