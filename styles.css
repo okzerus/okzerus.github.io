@@ -12,7 +12,7 @@
   --btn-bg-light:#eef3f6;
 
   --tooltip-link-color: #bfe8ff; /* pale light blue for links inside tooltips */
-  --tooltip-image-height: 200px;  /* preferred banner height for tooltip images; will shrink on small viewports */
+  --tooltip-image-height: 200px;  /* banner height for tooltip images; tweak as needed */
 }
 
 /* theme-aware variables */
@@ -112,21 +112,19 @@ body.chapters-open header, body.chapters-open main > *:not(#chapters-list) { fil
 /* Tooltip container high z-index */
 .tippy-box { z-index: 99999 !important; }
 
-/* NO internal scrolling for tooltip text: allow tooltip to overflow if necessary,
-   but prevent images from growing beyond viewport by constraining image max-height.
-   (Popper modifiers in script.js will try to flip/reposition tooltips to keep them visible.)
-*/
+/* Tooltip content: allow Popper smart positioning, do not create internal scroll */
 .tippy-box .tippy-content {
   padding: 0;
   box-sizing: border-box;
+  max-height: none;   /* don't restrict tooltip height */
+  overflow: visible;  /* allow Popper to position it, no inner scrolling */
 }
 
-/* Banner-style image: preferred height, but capped by viewport to avoid pushing tooltip off-screen */
+/* Banner-style image that fills top of tooltip */
 .tippy-box .tippy-content img.tooltip-img {
   display: block;
   width: 100%;
-  height: var(--tooltip-image-height);      /* preferred banner height */
-  max-height: calc(50vh);                   /* shrink on small viewports so tooltip doesn't exceed screen */
+  height: var(--tooltip-image-height);
   object-fit: cover;
   border-top-left-radius: 8px;
   border-top-right-radius: 8px;
