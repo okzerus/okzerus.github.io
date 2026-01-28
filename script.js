@@ -1,6 +1,5 @@
-// script.js - full replacement
-// Adds: banner-style tooltip images + preloading for immediate tooltip display.
-// Preserves: theme, chapters list, done-flag behavior, top/bottom nav, image viewer.
+// script.js - full replacement: tooltip banner images are clickable and open the image viewer
+// preserves: theme toggle, chapters list, done-flag, preloading, top/bottom nav, image viewer behavior
 
 document.addEventListener('DOMContentLoaded', () => {
   const chaptersListEl = document.getElementById('chapters');
@@ -30,10 +29,8 @@ document.addEventListener('DOMContentLoaded', () => {
   let lastChapterFile = null; // e.g. 'chapters/01.md'
 
   // ---- Tooltip image caches ----
-  // Map<string, string> dataImgValue -> resolved absolute URL (or null)
-  const resolvedUrlCache = new Map();
-  // Map<string, HTMLImageElement> resolvedAbsoluteUrl -> preloaded Image element
-  const preloadedImgCache = new Map();
+  const resolvedUrlCache = new Map();      // data-img => resolved absolute URL or null
+  const preloadedImgCache = new Map();     // resolved absolute URL => HTMLImageElement (preloaded)
 
   /* THEME HANDLING */
   function applyTheme(theme){
@@ -77,9 +74,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     return -1;
   }
-  function findFirstDoneIndex(){
-    return findNextDoneIndex(0);
-  }
+  function findFirstDoneIndex(){ return findNextDoneIndex(0); }
 
   /* NAV BUTTONS */
   function updateNavButtons(){
@@ -187,13 +182,13 @@ document.addEventListener('DOMContentLoaded', () => {
       const html = (window.marked) ? marked.parse(md) : '<p>Ошибка: библиотека marked не загружена.</p>';
       chapterBodyEl.innerHTML = html;
 
-      // 1) preload tooltip images for the current chapter (start first)
+      // preload tooltip images for this chapter
       preloadTooltipImages();
 
-      // 2) initialize tippy for glossary items (uses cached preloaded images if available)
+      // init tippy for glossary items (uses cached preloaded images if available)
       initGlossTippy();
 
-      // 3) bind page images to viewer
+      // bind inline images to viewer
       bindImagesToViewer();
 
       updateNavButtons();
@@ -204,17 +199,16 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   /* -------------------------
-     Image resolver and tester (same robust approach)
+     Image resolver and tester
   --------------------------*/
   function testImageUrl(url, timeout = 3000){
     return new Promise((resolve) => {
       const img = new Image();
       let done = false;
       const onLoad = () => { if(done) return; done = true; cleanup(); resolve(true); };
-      const onErr = () =>  { if(done) return; done = true; cleanup(); resolve(false); };
+      const onErr  = () => { if(done) return; done = true; cleanup(); resolve(false); };
       const cleanup = () => { img.onload = img.onerror = null; clearTimeout(timer); };
-      img.onload = onLoad;
-      img.onerror = onErr;
+      img.onload = onLoad; img.onerror = onErr;
       img.src = url;
       const timer = setTimeout(() => { if(done) return; done = true; cleanup(); resolve(false); }, timeout);
     });
@@ -223,12 +217,8 @@ document.addEventListener('DOMContentLoaded', () => {
   async function resolveTooltipImage(srcCandidate){
     if(!srcCandidate) return null;
 
-    // if already cached as resolved (data-img value => resolvedUrl), return it immediately
-    if(resolvedUrlCache.has(srcCandidate)){
-      return resolvedUrlCache.get(srcCandidate); // may be null
-    }
+    if(resolvedUrlCache.has(srcCandidate)) return resolvedUrlCache.get(srcCandidate);
 
-    // If absolute HTTP/HTTPS or root path, test directly first
     if(/^https?:\/\//i.test(srcCandidate) || srcCandidate.startsWith('/')){
       console.debug('tippy-img: trying direct', srcCandidate);
       if(await testImageUrl(srcCandidate)){
@@ -237,7 +227,6 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
 
-    // Candidate bases to try
     const bases = [];
     bases.push(window.location.href);
     bases.push(window.location.origin + window.location.pathname);
@@ -258,7 +247,6 @@ document.addEventListener('DOMContentLoaded', () => {
       }catch(e){}
     }
 
-    // unique preserve order
     const seen = new Set();
     const unique = candidates.filter(c => { if(seen.has(c)) return false; seen.add(c); return true; });
 
@@ -277,51 +265,29 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   /* -------------------------
-     Preload images used in tooltips for current chapter
-     - finds all .gloss in chapter, resolves their data-img, and preloads the resolved URL
-     - stores resolved URL and preloaded Image in caches
+     Preload tooltip images for current chapter
   --------------------------*/
   async function preloadTooltipImages(){
     if(!chapterBodyEl) return;
     const glossEls = Array.from(chapterBodyEl.querySelectorAll('.gloss'));
     if(!glossEls.length) return;
 
-    // iterate sequentially to avoid hammering network (could be parallel if desired).
     for(const el of glossEls){
       const dataImg = el.getAttribute('data-img');
       if(!dataImg) continue;
+      if(resolvedUrlCache.has(dataImg) && resolvedUrlCache.get(dataImg) === null) continue;
 
-      // If we've already resolved this dataImg earlier, skip resolving again.
-      if(resolvedUrlCache.has(dataImg) && resolvedUrlCache.get(dataImg) === null) {
-        // previously resolved to null -> skip
-        continue;
-      }
-
-      // Resolve to absolute URL (uses same resolver)
       try{
         const resolved = await resolveTooltipImage(dataImg);
         if(resolved){
-          // if we already preloaded this resolved URL, skip
           if(preloadedImgCache.has(resolved)) continue;
-
-          // Preload by creating an Image and attaching load/error.
           const pimg = new Image();
-          pimg.crossOrigin = 'anonymous'; // safe default (no credentials)
+          pimg.crossOrigin = 'anonymous';
           pimg.decoding = 'async';
-          // small console debug
           console.debug('tippy-img: preloading', resolved);
-          // store promise-like placeholder so parallel duplicates don't create multiple Image objects
           preloadedImgCache.set(resolved, pimg);
-          pimg.onload = () => {
-            console.debug('tippy-img: preloaded', resolved);
-          };
-          pimg.onerror = () => {
-            console.warn('tippy-img: preload failed', resolved);
-            // remove failed attempt so future tries may attempt again
-            preloadedImgCache.delete(resolved);
-            // keep resolvedUrlCache entry (we know it's reachable earlier), but allow reload later
-          };
-          // start loading
+          pimg.onload = () => { console.debug('tippy-img: preloaded', resolved); };
+          pimg.onerror = () => { console.warn('tippy-img: preload failed', resolved); preloadedImgCache.delete(resolved); };
           pimg.src = resolved;
         }
       }catch(err){
@@ -331,7 +297,8 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   /* -------------------------
-     Initialize tippy for .gloss elements (onShow will use preloaded images if available)
+     Initialize tippy for .gloss elements
+     Tooltip images are clickable: clicking opens the viewer and hides the tooltip
   --------------------------*/
   function initGlossTippy(){
     if(!window.tippy) return;
@@ -350,12 +317,8 @@ document.addEventListener('DOMContentLoaded', () => {
       offset: [0, 8],
       appendTo: () => document.body,
       popperOptions: { strategy: 'fixed' },
-
-      // set a small placeholder so tooltip appears quickly
       content: 'Loading...',
 
-      // onShow composes content using cached preloaded image when present;
-      // falls back to resolving if needed (but since we preload this should be immediate).
       onShow: async (instance) => {
         const reference = instance.reference;
         let contentHTML = reference.getAttribute('data-tippy-content') || reference.getAttribute('data-tip') || reference.getAttribute('title') || reference.innerHTML || '';
@@ -366,37 +329,34 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const wrapper = document.createElement('div');
 
-        // attempt to get resolved URL from cache or resolve now
         let resolved = null;
         if(dataImg){
-          if(resolvedUrlCache.has(dataImg)) {
-            resolved = resolvedUrlCache.get(dataImg);
-          } else {
-            // attempt to resolve quickly (should be rare because of preloading)
-            resolved = await resolveTooltipImage(dataImg);
-          }
+          if(resolvedUrlCache.has(dataImg)) resolved = resolvedUrlCache.get(dataImg);
+          else resolved = await resolveTooltipImage(dataImg);
         }
 
         if(resolved){
-          // If we preloaded an Image element, clone it (so we can attach event handlers independently)
+          // Use preloaded image copy if available/complete; otherwise create a fresh img element
           const cachedImg = preloadedImgCache.get(resolved);
           if(cachedImg && cachedImg.complete){
-            // clone node to avoid moving the cached element
             const imgClone = document.createElement('img');
             imgClone.className = 'tooltip-img';
             imgClone.src = resolved;
             imgClone.alt = imgAlt;
             imgClone.loading = 'eager';
-            // append banner image first
+            // clicking the banner opens the overlay viewer and hides tooltip
+            imgClone.addEventListener('click', (ev) => {
+              ev.stopPropagation();
+              try{ openImageViewer(resolved, imgAlt); }catch(e){ console.error(e); }
+              try{ instance.hide(); }catch(e){}
+            });
             wrapper.appendChild(imgClone);
           } else {
-            // fallback: create an img that will load (already resolved URL)
             const img = document.createElement('img');
             img.className = 'tooltip-img';
             img.src = resolved;
             img.alt = imgAlt;
             img.loading = 'eager';
-            // ensure popper repositions when image loads
             img.addEventListener('load', () => {
               try{
                 if(instance.popperInstance && typeof instance.popperInstance.update === 'function'){
@@ -406,17 +366,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
               }catch(e){}
             });
+            img.addEventListener('click', (ev) => {
+              ev.stopPropagation();
+              try{ openImageViewer(resolved, imgAlt); }catch(e){ console.error(e); }
+              try{ instance.hide(); }catch(e){}
+            });
             wrapper.appendChild(img);
           }
         }
 
-        // content text area
         const contentDiv = document.createElement('div');
         contentDiv.className = 'tooltip-body';
         contentDiv.innerHTML = contentHTML;
         wrapper.appendChild(contentDiv);
 
-        // set composed content
         try{
           instance.setContent(wrapper);
         }catch(e){
@@ -426,7 +389,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  /* TIPPY for navigation buttons */
+  /* nav button tippies */
   function refreshNavTippies(){
     if(!window.tippy) return;
     [bottomPrev, bottomNext, topPrev, topNext].forEach(btn => {
@@ -440,7 +403,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if(topNext) tippy(topNext, { content: () => topNext.dataset.title || '', placement: 'bottom', delay: [80,40], offset: [0,8], appendTo: () => document.body });
   }
 
-  /* Chapters aside slide-in/out */
+  /* Chapters aside slide-in/out behavior */
   let chaptersOpen = false;
   const EDGE_TRIGGER_PX = 12;
   function openChapters(){ if(chaptersOpen) return; chaptersOpen = true; document.body.classList.add('chapters-open'); }
@@ -461,6 +424,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const top = Math.max(6, hRect.top + (hRect.height / 2) - (topNavRect.height / 2));
     topNav.style.top = `${top}px`;
   }
+
   let lastScrollY = window.scrollY;
   let scheduled = false;
   let hideDelayTimer = null;
