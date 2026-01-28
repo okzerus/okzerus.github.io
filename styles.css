@@ -119,7 +119,6 @@ body.chapters-open header, body.chapters-open main > *:not(#chapters-list) { fil
 .tippy-box .tippy-content {
   padding: 0;
   box-sizing: border-box;
-  overflow: visible; /* no internal scroll */
 }
 
 /* Banner-style image: preferred height, but capped by viewport to avoid pushing tooltip off-screen */
