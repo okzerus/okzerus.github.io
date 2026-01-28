@@ -11,9 +11,9 @@
   --muted-light:#66707a;
   --btn-bg-light:#eef3f6;
 
-  --tooltip-link-color: #bfe8ff;
-  --tooltip-image-height: 200px;
-  --viewer-margin: 40px; /* margin around the image inside viewer */
+  --tooltip-link-color: #bfe8ff; /* pale light blue for tooltip links */
+  --tooltip-image-height: 200px;  /* base banner height */
+  --viewer-margin: 40px;          /* margin for lightbox */
 }
 
 /* theme-aware variables */
@@ -34,10 +34,10 @@ html[data-theme="light"]{
   --btn-fg:var(--accent-light);
 }
 
-/* Basic reset */
+/* Basic page */
 *{box-sizing:border-box}
 body{
-  font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
   margin:0;
   background:var(--bg);
   color:var(--accent);
@@ -55,25 +55,26 @@ header{
   align-items:center;
   gap:12px;
 }
-header h1{ margin:0; font-size:18px; font-weight:700; flex:1; }
-.header-controls{ display:flex; gap:8px; }
+header h1{margin:0;font-size:18px;font-weight:700;flex:1}
+.header-controls{display:flex;gap:8px}
 
 /* Theme toggle */
 #theme-toggle{
-  width:40px; height:40px; border-radius:10px; border:0; background:var(--btn-bg); color:var(--btn-fg);
-  font-size:16px; cursor:pointer; box-shadow:0 6px 12px rgba(0,0,0,0.12); display:flex; align-items:center; justify-content:center;
+  width:40px;height:40px;border-radius:10px;border:0;background:var(--btn-bg);color:var(--btn-fg);
+  font-size:16px;cursor:pointer;box-shadow:0 6px 12px rgba(0,0,0,0.12);display:flex;align-items:center;justify-content:center;
 }
 #theme-toggle:hover{ transform:translateY(-1px); }
 #theme-toggle:active{ transform:translateY(0); }
 
-/* Layout */
+/* Layout - centered content */
 main{ display:block; padding:18px; }
 
-/* Chapters aside */
+/* Chapters aside (fixed) */
 #chapters-list{
-  width:220px; background:var(--card); padding:12px; border-radius:8px; box-shadow:0 2px 6px rgba(0,0,0,0.06);
-  position:fixed; left:0; top:72px; bottom:18px; overflow:auto; z-index:1200;
-  transform:translateX(calc(-100% + 12px)); transition: transform 220ms cubic-bezier(.2,.9,.3,1); will-change: transform;
+  width:220px;background:var(--card);padding:12px;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.06);
+  position:fixed;left:0;top:72px;bottom:18px;overflow:auto;z-index:1200;
+  transform:translateX(calc(-100% + 12px));transition: transform 220ms cubic-bezier(.2,.9,.3,1);
+  will-change: transform;
 }
 body.chapters-open #chapters-list{ transform:translateX(0); }
 
@@ -85,93 +86,104 @@ body.chapters-open #chapters-list{ transform:translateX(0); }
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
   max-width: calc(220px - 24px); padding-right:6px;
 }
-#chapters-list a.undone { color: var(--muted); text-decoration: line-through; pointer-events:none; opacity:0.75; }
+#chapters-list a.undone {
+  color: var(--muted); text-decoration: line-through; pointer-events: none; cursor: default; opacity: 0.75;
+}
 
-/* Content area centered */
+/* content area centered with max-width */
 #content{
   max-width: 960px; margin: 18px auto; background:var(--card); padding:24px; border-radius:8px; box-shadow:0 2px 6px rgba(0,0,0,0.06);
 }
 
-/* Chapter title centered */
-#chapter-title{ font-size:40px; font-weight:700; margin: 0 0 16px; text-align:center; word-break:break-word; }
-
-/* Inline images (centered) — show pointer so it's clear they are clickable */
-#chapter-body img{
-  display:block; margin:18px auto; max-width:100%; height:auto;
-  cursor: pointer; /* clickable visual cue */
+/* chapter title centered */
+#chapter-title{
+  font-size:40px; font-weight:700; margin: 0 0 16px; text-align:center; word-break:break-word;
 }
 
-/* Navigation buttons */
-.chapter-nav{ display:flex; gap:12px; align-items:center; }
-.nav-btn{ width:56px; height:40px; border-radius:8px; border:0; background:var(--btn-bg); color:var(--btn-fg); font-size:16px; cursor:pointer; box-shadow:0 6px 12px rgba(0,0,0,0.12); }
-.nav-btn:disabled{ opacity:0.35; pointer-events:none; }
+/* ensure inline images are centered and look clickable */
+#chapter-body img{
+  display:block; margin:18px auto; max-width:100%; height:auto; cursor:pointer;
+}
 
-/* Bottom nav */
+/* nav buttons */
+.chapter-nav{ display:flex; gap:12px; align-items:center; }
+.nav-btn{
+  width:56px;height:40px;border-radius:8px;border:0;background:var(--btn-bg);color:var(--btn-fg);font-size:16px;cursor:pointer;
+  box-shadow:0 6px 12px rgba(0,0,0,0.12);
+}
+.nav-btn:disabled{ opacity:0.35; pointer-events:none }
+
+/* bottom nav */
 #bottom-nav{ margin-top:24px; display:flex; justify-content:center; transition: opacity 180ms ease; }
 
-/* Top nav */
+/* top nav */
 #top-nav{
-  position:fixed; left:50%; transform: translateX(-50%) translateY(-6px); z-index:1300; opacity:0; transition: opacity 260ms ease, transform 260ms ease; pointer-events:none; display:flex; gap:12px;
+  position:fixed; left:50%; transform: translateX(-50%) translateY(-6px); z-index:1300; opacity:0; transition: opacity 260ms ease, transform 260ms ease;
+  pointer-events:none; display:flex; gap:12px;
 }
 #top-nav.visible-top{ opacity:1; transform: translateX(-50%) translateY(0); pointer-events:auto; }
 
-/* blur when chapters open */
+/* blur effect when chapters open */
 body.chapters-open header,
-body.chapters-open main > *:not(#chapters-list) { filter: blur(4px); transition: filter 220ms ease; }
+body.chapters-open main > *:not(#chapters-list) {
+  filter: blur(4px);
+  transition: filter 220ms ease;
+}
 
 /* Gloss style */
 .gloss{ text-decoration:underline dotted; cursor:help; }
 
 /* Tooltip link color override */
-.tippy-box .tippy-content a, .tippy-box a { color: var(--tooltip-link-color) !important; text-decoration: underline; }
+.tippy-box .tippy-content a,
+.tippy-box a { color: var(--tooltip-link-color) !important; text-decoration: underline; }
 
-/* ---------- Tooltip banner image ---------- */
+/* tooltip (banner) - high z */
 .tippy-box { z-index: 99999 !important; }
-.tippy-box .tippy-content { padding:0; box-sizing:border-box; overflow:visible; }
 
-/* banner image fills top, crops to cover */
-.tippy-box .tippy-content img.tooltip-img {
-  display:block; width:100%; height:var(--tooltip-image-height); object-fit:cover;
-  border-top-left-radius:8px; border-top-right-radius:8px; margin:0; user-select:none; cursor:pointer;
+/* make tooltip content scrollable if too big, and remove default padding so image touches top */
+.tippy-box .tippy-content {
+  padding: 0; box-sizing: border-box;
+  max-height: calc(100vh - 48px);
+  overflow: auto;
 }
-.tippy-box .tippy-content .tooltip-body { padding:10px 12px; box-sizing:border-box; }
 
-/* ---------- Image viewer (lightbox) ---------- */
-/* overlay */
+/* banner-style image */
+.tippy-box .tippy-content img.tooltip-img {
+  display:block; width:100%;
+  height:var(--tooltip-image-height);
+  object-fit:cover; border-top-left-radius:8px; border-top-right-radius:8px;
+  margin:0; user-select:none; cursor:pointer;
+}
+
+/* textual area */
+.tippy-box .tippy-content .tooltip-body {
+  padding:10px 12px; box-sizing:border-box;
+}
+
+/* Image viewer (lightbox) */
 #image-overlay {
-  position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: none; align-items: center; justify-content: center;
-  z-index: 2000; cursor: default;
+  position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: none; align-items: center; justify-content: center; z-index: 2000;
+  cursor: default;
 }
 #image-overlay.visible { display:flex; }
 
-/* viewer box: allow auto overflow when image larger than space (especially when zoomed) */
 #image-overlay .viewer {
   position: relative;
   max-width: calc(100vw - var(--viewer-margin));
   max-height: calc(100vh - var(--viewer-margin));
-  overflow: auto; /* allow scroll when zoomed */
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  touch-action: none;
+  overflow: auto; /* allow scroll if zoomed */
+  display:flex; align-items:center; justify-content:center; touch-action: none;
 }
 
-/* the displayed image: always fit into viewer by default */
 #image-overlay img.viewer-img {
-  display:block;
-  width:auto;
-  height:auto;
-  max-width: calc(100vw - calc(var(--viewer-margin) * 1));   /* defensive */
+  display:block; width:auto; height:auto;
+  max-width: calc(100vw - calc(var(--viewer-margin) * 1)); 
   max-height: calc(100vh - calc(var(--viewer-margin) * 1.5));
-  user-select:none;
-  -webkit-user-drag:none;
-  transform-origin: center center;
-  transition: none;
-  cursor: zoom-in;
+  user-select:none; -webkit-user-drag:none; transform-origin:center center; transition:none; cursor: zoom-in;
 }
 #image-overlay img.viewer-img.zoomed { cursor: grab; }
 
-/* small responsiveness */
+/* responsiveness */
 @media (max-width:1100px){ #content{ max-width:760px; padding:20px; } }
 @media (max-width:700px){
   #content{ max-width: calc(100% - 20px); margin: 12px auto; }
