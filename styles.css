@@ -112,12 +112,12 @@ body.chapters-open header, body.chapters-open main > *:not(#chapters-list) { fil
 /* Tooltip container high z-index */
 .tippy-box { z-index: 99999 !important; }
 
-/* Tooltip content: allow Popper smart positioning, do not create internal scroll */
+/* Tooltip content: allow internal scrolling when large */
 .tippy-box .tippy-content {
   padding: 0;
   box-sizing: border-box;
-  max-height: none;   /* don't restrict tooltip height */
-  overflow: visible;  /* allow Popper to position it, no inner scrolling */
+  max-height: calc(80vh);    /* prevents tooltip extending out of viewport */
+  overflow: auto;            /* scroll inside tooltip if it's too tall */
 }
 
 /* Banner-style image that fills top of tooltip */
