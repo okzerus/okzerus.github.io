@@ -205,28 +205,28 @@ body.chapters-open main > *:not(#chapters-list) {
 /* Gloss styling for clickable appearance */
 .gloss{ text-decoration:underline dotted; cursor:help; }
 
-/* Tooltip link color override */
-.tippy-box .tippy-content a,
-.tippy-box a {
-  color: var(--tooltip-link-color) !important;
-  text-decoration: underline;
+/* keep the rest of your existing styles above (unchanged) */
+
+/* Tooltip / tippy tweaks and banner-style image */
+:root{
+  --tooltip-image-height: 200px; /* change this to grow/shrink banner height */
 }
 
-/* --------------------------------------------
-   Tooltip banner-style image (fills the top)
-   -------------------------------------------- */
+/* Ensure tooltip appears over everything */
 .tippy-box {
   z-index: 99999 !important;
 }
 
-/* remove top padding so the image can touch the tooltip top edge */
+/* Remove default top padding so image can touch the tooltip top edge.
+   We'll apply padding to the text body instead.
+*/
 .tippy-box .tippy-content {
   padding: 0;
   box-sizing: border-box;
-  overflow: visible;
+  overflow: visible; /* make sure image isn't clipped */
 }
 
-/* Banner-style image */
+/* Banner-style image that fills the top of the tooltip */
 .tippy-box .tippy-content img.tooltip-img {
   display: block;
   width: 100%;
@@ -238,11 +238,20 @@ body.chapters-open main > *:not(#chapters-list) {
   user-select: none;
 }
 
-/* textual body below the banner gets its own padding */
+/* textual body below the banner gets its own padding and background */
 .tippy-box .tippy-content .tooltip-body {
   padding: 10px 12px;
+  /* inherit tooltip background / text color; no need to set explicit bg */
   box-sizing: border-box;
 }
+
+/* small tweak: ensure links inside tippies use your tooltip link color */
+.tippy-box .tippy-content a,
+.tippy-box a {
+  color: var(--tooltip-link-color) !important;
+  text-decoration: underline;
+}
+
 
 /* --------------------------------------------
    Image viewer (lightbox)
