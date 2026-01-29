@@ -112,12 +112,12 @@ body.chapters-open header, body.chapters-open main > *:not(#chapters-list) { fil
 /* Tooltip container high z-index */
 .tippy-box { z-index: 99999 !important; }
 
-/* Tooltip content: allow internal scrolling when large */
+/* Tooltip content: allow Popper to position; do not let the whole tooltip scroll */
 .tippy-box .tippy-content {
   padding: 0;
   box-sizing: border-box;
-  max-height: calc(80vh);    /* prevents tooltip extending out of viewport */
-  overflow: auto;            /* scroll inside tooltip if it's too tall */
+  max-height: none;
+  overflow: visible; /* allow Popper to reposition; prevent the whole tooltip from creating a scrollbar */
 }
 
 /* Banner-style image that fills top of tooltip */
@@ -133,8 +133,29 @@ body.chapters-open header, body.chapters-open main > *:not(#chapters-list) { fil
   cursor: pointer;
 }
 
-/* textual body below the banner gets its own padding */
-.tippy-box .tippy-content .tooltip-body { padding: 10px 12px; box-sizing: border-box; }
+/* textual body below the banner: confined scrolling only inside this element when necessary */
+.tippy-box .tippy-content .tooltip-body {
+  padding: 10px 12px;
+  box-sizing: border-box;
+
+  /* limit text area height so really tall tooltips still fit the viewport intelligently */
+  max-height: calc(80vh - var(--tooltip-image-height));
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Optional: make the scrollbar visually less intrusive (user agent fallback friendly) */
+.tippy-box .tippy-content .tooltip-body::-webkit-scrollbar { width: 10px; height: 10px; }
+.tippy-box .tippy-content .tooltip-body::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.06);
+  border-radius: 6px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+/* when on light theme, slightly darker thumb */
+html[data-theme="light"] .tippy-box .tippy-content .tooltip-body::-webkit-scrollbar-thumb {
+  background: rgba(0,0,0,0.08);
+}
 
 /* image viewer styles */
 #image-overlay {
@@ -145,7 +166,7 @@ body.chapters-open header, body.chapters-open main > *:not(#chapters-list) { fil
 #image-overlay img.viewer-img { display:block; width:auto; height:auto; max-width: calc(100vw - 40px); max-height: calc(100vh - 60px); user-select:none; -webkit-user-drag:none; transform-origin:center center; transition:none; cursor: zoom-in; }
 #image-overlay img.viewer-img.zoomed { cursor: grab; }
 
-/* responsive */
+/* responsive tweaks */
 @media (max-width:1100px){ #content{ max-width:760px; padding:20px; } }
 @media (max-width:700px){
   #content{ max-width: calc(100% - 20px); margin: 12px auto; }
