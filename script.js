@@ -53,7 +53,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Luminance threshold (0..1) to decide when to use dark text.
   // Increase to make text switch to black earlier on bright backgrounds.
-  const TEXT_LUMINANCE_THRESHOLD = 0.60;
+  const TEXT_LUMINANCE_THRESHOLD = 0.33;
 
   /* ---------------- Color convert helpers ---------------- */
   function hexToRgb(hex) {
