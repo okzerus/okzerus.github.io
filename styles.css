@@ -6,12 +6,13 @@
   --tooltip-link-color: #bfe8ff;
   --tooltip-image-height: 200px;
   --transition-fast: 180ms;
-  /* runtime vars set by script:
+
+  /* runtime vars (script overrides):
      --bg, --card, --btn-bg, --accent, --btn-fg
   */
 }
 
-/* sensible defaults if script hasn't run */
+/* fallback defaults */
 html { --bg: var(--bg-dark); --card: rgba(11,15,19,0.9); --btn-bg: rgba(11,15,19,0.9); --accent: var(--accent-dark); --btn-fg: var(--accent-dark); }
 
 *{box-sizing:border-box}
@@ -68,7 +69,6 @@ header h1{ margin:0; font-size:18px; font-weight:700; flex:1 }
   box-shadow: inset 0 0 0 1px rgba(255,255,255,0.03);
   overflow: hidden;
 }
-/* we render the white/black overlays as background layers (script also writes the base hue) */
 .area-cursor {
   position:absolute; width:12px; height:12px; border-radius:50%; border:2px solid #fff; box-shadow:0 2px 6px rgba(0,0,0,0.5);
   transform: translate(-6px, -6px); pointer-events:none;
@@ -77,6 +77,10 @@ header h1{ margin:0; font-size:18px; font-weight:700; flex:1 }
 /* hue slider */
 .hue-slider { width: 20px; height: 160px; border-radius:6px; position:relative; cursor: ns-resize; background: linear-gradient(to top, red, yellow, lime, cyan, blue, magenta, red); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.03); }
 .hue-cursor { position:absolute; left: -4px; right: -4px; height:6px; border-radius:4px; background:#fff; box-shadow:0 2px 6px rgba(0,0,0,0.35); transform: translateY(-3px); pointer-events:none; }
+
+/* reset button container */
+.picker-reset-wrap { display:flex; justify-content:center; margin-top:10px; }
+.small{ padding:6px 12px; border-radius:8px; border:0; background:var(--btn-bg); color:var(--btn-fg); cursor:pointer; }
 
 /* Layout - centered content */
 main{ display:block; padding:18px; }
