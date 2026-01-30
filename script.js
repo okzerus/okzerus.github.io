@@ -46,7 +46,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // How much to lighten the background (8% by default).
   // Set e.g. 0.10 for 10% lighten.
-  const CONTRAST_PERCENT = 0.08;
+  const CONTRAST_PERCENT = 0.05;
 
   // Exponential scaling: how quickly the percent decays near white
   const CONTRAST_SCALE = 5;
@@ -290,25 +290,31 @@ document.addEventListener('DOMContentLoaded', () => {
      Reset should restore "old" look (exactly like pre-picker light/dark toggle)
      Old defaults: background DEFAULT_BG, card & btn-bg as rgba(11,15,19,0.9) (see styles.css fallback)
   */
-  if (colorResetBtn) colorResetBtn.addEventListener('click', (e) => {
-    try { localStorage.removeItem(STORAGE_KEY); } catch (err) {}
-    // set CSS vars to old defaults
-    const root = document.documentElement;
-    root.style.setProperty('--bg', DEFAULT_BG);
-    root.style.setProperty('--card', 'rgba(11,15,19,0.9)');
-    root.style.setProperty('--btn-bg', 'rgba(11,15,19,0.9)');
-    root.style.setProperty('--accent', '#e6eef6'); // dark-mode text
-    root.style.setProperty('--btn-fg', '#e6eef6');
-    root.style.setProperty('--tooltip-link-color', '#bfe8ff');
-    // reset picker UI to default color
-    try {
-      const { r, g, b } = hexToRgb(DEFAULT_BG);
-      const hvs = rgbToHsv(r, g, b);
-      hsv = { h: hvs.h || 0, s: hvs.s || 0, v: hvs.v || 0 };
-      updatePickerUI();
-    } catch (_) {}
-    hideColorPopup();
-  });
+// --- Replace your current reset handler with this block ---
+if (colorResetBtn) colorResetBtn.addEventListener('click', (e) => {
+  try { localStorage.removeItem(STORAGE_KEY); } catch (err) {}
+  const root = document.documentElement;
+
+  // Restore exact pre-picker dark-mode defaults (explicit hex values).
+  // These come from your original stylesheet defaults so the reset is identical
+  // to how the site looked before the custom picker existed.
+  root.style.setProperty('--bg', '#0b0f13');    // page background (dark)
+  root.style.setProperty('--card', '#0f1520');  // card / content background (slightly different)
+  root.style.setProperty('--btn-bg', '#182029'); // small control background
+  root.style.setProperty('--accent', '#e6eef6'); // light text color
+  root.style.setProperty('--btn-fg', '#e6eef6'); // button text color
+  root.style.setProperty('--tooltip-link-color', '#bfe8ff');
+
+  // Reset picker UI to the default color so the picker reflects the "reset" state.
+  try {
+    const { r, g, b } = hexToRgb(DEFAULT_BG);
+    const hvs = rgbToHsv(r, g, b);
+    hsv = { h: hvs.h || 0, s: hvs.s || 0, v: hvs.v || 0 };
+    updatePickerUI();
+  } catch (_) {}
+
+  hideColorPopup();
+});
 
   /* ---------------- Initialize color from storage ---------------- */
   (function initColorFromStorage() {
