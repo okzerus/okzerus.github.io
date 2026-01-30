@@ -707,3 +707,118 @@ document.addEventListener('DOMContentLoaded', () => {
   // position top nav once more shortly after load to ensure correct placement
   setTimeout(() => { positionTopNav(); if (window.scrollY <= 10 && !bottomNavIsVisible()) showTopNavImmediate(); }, 120);
 });
+
+// COLOR PALETTE UI: open palette from top button, persist chosen color in localStorage
+(function () {
+  document.addEventListener('DOMContentLoaded', () => {
+    const toggleBtn = document.getElementById('theme-toggle');
+    const modal = document.getElementById('color-modal');
+    const colorInput = document.getElementById('color-input');
+    const applyBtn = document.getElementById('color-apply');
+    const resetBtn = document.getElementById('color-reset');
+    const closeBtn = document.getElementById('color-close');
+    const swatches = Array.from(document.querySelectorAll('.color-swatch'));
+
+    if (!toggleBtn || !modal || !colorInput || !applyBtn || !resetBtn || !closeBtn) return;
+
+    // Get default color from CSS --bg-dark (the "current dark mode uses")
+    const computed = getComputedStyle(document.documentElement);
+    const defaultColor = (computed.getPropertyValue('--bg-dark') || '#0b0f13').trim();
+
+    // Apply color and persist (localStorage)
+    function applyColor(color) {
+      if (!color) return;
+      document.documentElement.style.setProperty('--bg', color);
+      try { localStorage.setItem('custom-bg-color', color); } catch (e) { /* ignore */ }
+    }
+    // Reset: restore default dark-mode color (and remove storage)
+    function resetColorToDefault() {
+      document.documentElement.style.setProperty('--bg', defaultColor);
+      try { localStorage.removeItem('custom-bg-color'); } catch (e) { /* ignore */ }
+    }
+
+    // Open/close helpers
+    function openModal() {
+      // set initial input value to currently stored or default
+      const stored = localStorage.getItem('custom-bg-color');
+      const initial = stored || defaultColor;
+      // ensure valid hex when possible; color input requires hex, so try to convert rgb -> hex if necessary
+      function toHexIfNeeded(val){
+        if(!val) return initial;
+        val = val.trim();
+        if(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(val)) return val;
+        // attempt parse rgb(a)
+        const m = val.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
+        if(m) {
+          const r = (+m[1]).toString(16).padStart(2,'0');
+          const g = (+m[2]).toString(16).padStart(2,'0');
+          const b = (+m[3]).toString(16).padStart(2,'0');
+          return `#${r}${g}${b}`;
+        }
+        return initial;
+      }
+      colorInput.value = toHexIfNeeded(initial);
+      modal.setAttribute('aria-hidden', 'false');
+      // trap focus briefly
+      colorInput.focus();
+      document.body.style.overflow = 'hidden';
+    }
+    function closeModal() {
+      modal.setAttribute('aria-hidden', 'true');
+      document.body.style.overflow = '';
+      toggleBtn.focus();
+    }
+
+    // Handlers
+    toggleBtn.addEventListener('click', (e) => { e.preventDefault(); openModal(); });
+
+    applyBtn.addEventListener('click', () => {
+      const val = colorInput.value;
+      if (val) { applyColor(val); }
+      closeModal();
+    });
+
+    resetBtn.addEventListener('click', () => {
+      resetColorToDefault();
+      // update input to default
+      colorInput.value = defaultColor;
+      closeModal();
+    });
+
+    closeBtn.addEventListener('click', (e) => { e.preventDefault(); closeModal(); });
+
+    // click outside to close
+    modal.addEventListener('click', (ev) => {
+      if (ev.target === modal) closeModal();
+    });
+
+    // Esc to close
+    window.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && modal.getAttribute('aria-hidden') === 'false') closeModal(); });
+
+    // swatch clicks
+    swatches.forEach(s => {
+      s.addEventListener('click', (ev) => {
+        const c = s.dataset.color;
+        if (c) {
+          // set input and immediately apply so user sees preview while modal open
+          colorInput.value = c;
+        }
+      });
+    });
+
+    // on load, apply stored color if any (persist between sessions)
+    try {
+      const stored = localStorage.getItem('custom-bg-color');
+      if (stored) {
+        // if stored is not a hex, best-effort convert/rgb->hex is handled by applyColor using same override
+        applyColor(stored);
+      } else {
+        // ensure default background uses --bg-dark by default
+        document.documentElement.style.setProperty('--bg', getComputedStyle(document.documentElement).getPropertyValue('--bg-dark').trim() || defaultColor);
+      }
+    } catch (e) {
+      // ignore storage errors
+      document.documentElement.style.setProperty('--bg', defaultColor);
+    }
+  });
+})();
