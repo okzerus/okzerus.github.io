@@ -1,22 +1,22 @@
 :root{
   --bg-dark:#0b0f13;
-  --card-dark:#0f1520;
+  --card-dark: rgba(11,15,19,0.8); /* fallback */
   --accent-dark:#e6eef6;
   --muted-dark:#9aa6b2;
-  --btn-bg-dark:#182029;
+  --btn-bg-dark: rgba(11,15,19,0.8);
 
   --bg-light:#f9f9fb;
-  --card-light:#ffffff;
+  --card-light: rgba(249,249,251,0.8);
   --accent-light:#132029;
   --muted-light:#66707a;
-  --btn-bg-light:#eef3f6;
+  --btn-bg-light: rgba(249,249,251,0.8);
 
   --tooltip-link-color: #bfe8ff;
   --tooltip-image-height: 200px;
   --transition-fast: 180ms;
 }
 
-/* theme-aware variables (fallback) */
+/* theme-aware variables fallback (script will override --bg and --card dynamically) */
 html[data-theme="dark"]{
   --bg:var(--bg-dark);
   --card:var(--card-dark);
@@ -64,6 +64,7 @@ header h1{ margin:0; font-size:18px; font-weight:700; flex:1 }
 #theme-toggle:hover{ transform:translateY(-2px) }
 #theme-toggle:active{ transform:translateY(0) }
 
+/* Color popup panel */
 .color-picker-container { position: relative; display:inline-block; }
 .color-popup{
   position: absolute;
@@ -75,25 +76,35 @@ header h1{ margin:0; font-size:18px; font-weight:700; flex:1 }
   box-shadow: 0 8px 20px rgba(0,0,0,0.25);
   display: none;
   z-index: 1400;
-  min-width: 240px;
+  min-width: 280px;
 }
 .color-popup.visible { display:block; }
 
-.palette { display:flex; flex-direction:column; gap:8px; align-items:center; }
-#palette-sv { width:220px; height:160px; border-radius:6px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.02); cursor: crosshair; }
-#palette-hue { width:220px; height:18px; border-radius:6px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.02); cursor: pointer; }
-
-/* swatches & controls */
-.color-controls { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:6px; }
-.swatches { display:flex; gap:8px; align-items:center; }
-.swatch {
-  width:28px; height:28px; border-radius:6px; box-shadow: 0 4px 10px rgba(0,0,0,0.14); border:1px solid rgba(255,255,255,0.03);
+/* picker layout: gradient area (left), hue slider (right) */
+.picker { display:flex; gap:10px; align-items:center; }
+.color-area {
+  width: 200px; height: 160px; border-radius: 6px; position: relative;
+  background: linear-gradient(to top, #000, rgba(0,0,0,0)); /* base will be set dynamically by script */
+  cursor: crosshair; user-select:none;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.03);
 }
-#swatch-default { border: 1px dashed rgba(255,255,255,0.06); opacity:0.9 }
-.buttons { display:flex; gap:8px }
-.small{ padding:6px 10px; border-radius:8px; border:0; background:var(--btn-bg); color:var(--btn-fg); cursor:pointer; }
+.color-area::after {
+  /* overlay gradient for saturation */
+  content: ""; position:absolute; left:0; right:0; top:0; bottom:0;
+  background: linear-gradient(to right, #fff, rgba(255,255,255,0));
+  border-radius: inherit;
+  pointer-events: none;
+}
+.area-cursor {
+  position:absolute; width:12px; height:12px; border-radius:50%; border:2px solid #fff; box-shadow:0 2px 6px rgba(0,0,0,0.5);
+  transform: translate(-6px, -6px); pointer-events:none;
+}
 
-/* Layout centered content */
+/* hue slider */
+.hue-slider { width: 20px; height: 160px; border-radius:6px; position:relative; cursor: ns-resize; background: linear-gradient(to top, red, yellow, lime, cyan, blue, magenta, red); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.03); }
+.hue-cursor { position:absolute; left: -4px; right: -4px; height:6px; border-radius:4px; background:#fff; box-shadow:0 2px 6px rgba(0,0,0,0.35); transform: translateY(-3px); pointer-events:none; }
+
+/* Layout - centered content */
 main{ display:block; padding:18px; }
 
 /* Chapters aside */
@@ -114,19 +125,13 @@ body.chapters-open #chapters-list{ transform:translateX(0); }
 }
 #chapters-list a.undone { color: var(--muted); text-decoration: line-through; pointer-events: none; cursor: default; opacity: 0.75; }
 
-/* content area centered; card darkening via transparent overlay over the background */
-#content{
-  max-width: 960px; margin: 18px auto;
-  /* overlay a tiny dark layer above the background to make the card slightly darker */
-  background: linear-gradient(rgba(0,0,0,0.08), rgba(0,0,0,0.08)), var(--bg);
-  padding:24px; border-radius:8px; box-shadow:0 2px 6px rgba(0,0,0,0.06);
-  transition: background var(--transition-fast) ease;
-}
+/* content area centered */
+#content{ max-width: 960px; margin: 18px auto; background:var(--card); padding:24px; border-radius:8px; box-shadow:0 2px 6px rgba(0,0,0,0.06); transition: background var(--transition-fast) ease; }
 
 /* chapter title centered */
 #chapter-title{ font-size:40px; font-weight:700; margin: 0 0 16px; text-align:center; word-break:break-word; }
 
-/* inline images centered & clickable */
+/* inline images centered & clickable cursor */
 #chapter-body img{ display:block; margin:18px auto; max-width:100%; height:auto; cursor:pointer; }
 
 /* nav buttons */
@@ -141,29 +146,39 @@ body.chapters-open #chapters-list{ transform:translateX(0); }
 #top-nav{ position:fixed; left:50%; transform: translateX(-50%) translateY(-6px); z-index:1300; opacity:0; transition: opacity 260ms ease, transform 260ms ease; pointer-events:none; display:flex; gap:12px; }
 #top-nav.visible-top{ opacity:1; transform: translateX(-50%) translateY(0); pointer-events:auto; }
 
-/* blur when chapters open */
+/* blur effect when chapters open */
 body.chapters-open header, body.chapters-open main > *:not(#chapters-list) { filter: blur(4px); transition: filter 220ms ease; }
 
 /* Gloss styling */
 .gloss{ text-decoration:underline dotted; cursor:help; }
 
-/* Tooltip link color override */
+/* Tippy tooltip link color override */
 .tippy-box .tippy-content a, .tippy-box a { color: var(--tooltip-link-color) !important; text-decoration: underline; }
 
-/* Tooltip container */
+/* Tooltip container high z-index */
 .tippy-box { z-index: 99999 !important; }
-.tippy-box .tippy-content { padding: 0; box-sizing: border-box; overflow: visible; }
-.tippy-box .tippy-content img.tooltip-img { display:block; width:100%; height:var(--tooltip-image-height); object-fit:cover; border-top-left-radius:8px; border-top-right-radius:8px; margin:0; user-select:none; cursor:pointer; }
-.tippy-box .tippy-content .tooltip-body { padding:10px 12px; box-sizing:border-box; max-height: calc(80vh - var(--tooltip-image-height)); overflow:auto; -webkit-overflow-scrolling:touch; }
 
-/* image viewer */
+/* Tooltip content: image banner + confined text area */
+.tippy-box .tippy-content { padding: 0; box-sizing: border-box; overflow: visible; }
+
+/* Banner-style image that fills top of tooltip */
+.tippy-box .tippy-content img.tooltip-img {
+  display: block; width: 100%; height: var(--tooltip-image-height); object-fit: cover; border-top-left-radius: 8px; border-top-right-radius: 8px; margin: 0; user-select: none; cursor: pointer;
+}
+
+/* textual body below the banner */
+.tippy-box .tippy-content .tooltip-body {
+  padding: 10px 12px; box-sizing: border-box; max-height: calc(80vh - var(--tooltip-image-height)); overflow:auto; -webkit-overflow-scrolling: touch;
+}
+
+/* image viewer styles */
 #image-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: none; align-items: center; justify-content: center; z-index: 2000; cursor: default; }
 #image-overlay.visible { display:flex; }
 #image-overlay .viewer { position: relative; max-width: calc(100vw - 40px); max-height: calc(100vh - 60px); overflow: auto; display:flex; align-items:center; justify-content:center; touch-action: none; }
 #image-overlay img.viewer-img { display:block; width:auto; height:auto; max-width: calc(100vw - 40px); max-height: calc(100vh - 60px); user-select:none; -webkit-user-drag:none; transform-origin:center center; transition:none; cursor: zoom-in; }
 #image-overlay img.viewer-img.zoomed { cursor: grab; }
 
-/* responsive */
+/* responsive tweaks */
 @media (max-width:1100px){ #content{ max-width:760px; padding:20px; } }
 @media (max-width:700px){
   #content{ max-width: calc(100% - 20px); margin: 12px auto; }
@@ -171,5 +186,5 @@ body.chapters-open header, body.chapters-open main > *:not(#chapters-list) { fil
   #top-nav{ right:10px; left:auto; transform:none; }
 }
 
-/* utility */
-.visually-hidden { position:absolute !important; height:1px; width:1px; overflow:hidden; clip:rect(1px,1px,1px,1px); white-space:nowrap; }
+/* utilities */
+.visually-hidden { position: absolute !important; height: 1px; width: 1px; overflow: hidden; clip: rect(1px,1px,1px,1px); white-space: nowrap; }
