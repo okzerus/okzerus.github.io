@@ -1,14 +1,16 @@
-// script.js - full replacement with compact, draggable gradient+hue color picker
-// Preserves all prior app behavior: chapter loading (with done flag), slide-out list,
-// tippy tooltips (preload + banner image), image viewer, top/bottom nav behavior,
-// and scroll-on-reload-only persistence.
+// script.js - fixed color picker + full app logic
+// - compact hue + gradient picker, live persistence
+// - header & content use 20% transparent card (rgba(...,0.8))
+// - other app features preserved: chapters load, "done" flag, slide-out chapters,
+//   tippy tooltips (preload + banner), image viewer (click to open, LMB zoom & drag),
+//   top/bottom nav behavior, scroll-on-reload-only persistence.
 
 document.addEventListener('DOMContentLoaded', () => {
-  // DOM refs
+  /* ---------------- DOM refs ---------------- */
   const chaptersListEl = document.getElementById('chapters');
   const chapterBodyEl = document.getElementById('chapter-body');
   const chapterTitleEl = document.getElementById('chapter-title');
-  const themeToggle = document.getElementById('theme-toggle'); // opens custom picker
+  const themeToggle = document.getElementById('theme-toggle'); // opens picker
   const headerEl = document.querySelector('header');
 
   const bottomPrev = document.getElementById('bottom-prev');
@@ -21,7 +23,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const chaptersAside = document.getElementById('chapters-list');
 
-  // Color picker DOM
   const colorPopup = document.getElementById('color-popup');
   const colorArea = document.getElementById('color-area');
   const colorAreaCursor = document.getElementById('color-area-cursor');
@@ -34,23 +35,21 @@ document.addEventListener('DOMContentLoaded', () => {
     return;
   }
 
-  // App state
+  /* ---------------- App state ---------------- */
   let chapters = [];
   let currentIndex = -1;
   let lastChapterFile = null;
 
-  // Tooltip image caches
   const resolvedUrlCache = new Map();
   const preloadedImgCache = new Map();
 
-  /* ---------------- Color picker: HSV model + UI controls ---------------- */
+  /* ---------------- Color picker state & helpers ---------------- */
   const STORAGE_KEY = 'site-bg-color';
-  const DEFAULT_BG = '#0b0f13'; // default dark background
+  const DEFAULT_BG = '#0b0f13';
 
-  // HSV state (h:0-360, s:0-1, v:0-1)
-  let hsv = { h: 210, s: 0.3, v: 0.05 }; // default approximate near DEFAULT_BG; will be set on init
+  // HSV state
+  let hsv = { h: 210, s: 0.3, v: 0.05 };
 
-  // Conversion helpers
   function hsvToRgb(h, s, v) {
     h = (h % 360 + 360) % 360;
     const c = v * s;
@@ -65,52 +64,19 @@ document.addEventListener('DOMContentLoaded', () => {
     else { r = c; g = 0; b = x; }
     return { r: Math.round((r + m) * 255), g: Math.round((g + m) * 255), b: Math.round((b + m) * 255) };
   }
-  function rgbToHex(r, g, b) {
-    return '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('');
-  }
-  function hexToRgb(hex) {
-    hex = (hex || '').replace('#', '');
-    if (hex.length === 3) hex = hex.split('').map(ch => ch + ch).join('');
-    const n = parseInt(hex, 16);
-    return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
-  }
-  function rgbToHsv(r, g, b) {
-    r /= 255; g /= 255; b /= 255;
-    const max = Math.max(r, g, b), min = Math.min(r, g, b);
-    const d = max - min;
-    let h = 0, s = (max === 0 ? 0 : d / max), v = max;
-    if (d !== 0) {
-      if (max === r) h = (g - b) / d + (g < b ? 6 : 0);
-      else if (max === g) h = (b - r) / d + 2;
-      else h = (r - g) / d + 4;
-      h *= 60;
-    }
-    return { h, s, v };
-  }
+  function rgbToHex(r,g,b){ return '#' + [r,g,b].map(v=>v.toString(16).padStart(2,'0')).join(''); }
+  function hexToRgb(hex){ hex = (hex||'').replace('#',''); if(hex.length===3) hex = hex.split('').map(c=>c+c).join(''); const n=parseInt(hex,16); return { r:(n>>16)&255, g:(n>>8)&255, b:n&255 }; }
+  function rgbToHsv(r,g,b){ r/=255; g/=255; b/=255; const max=Math.max(r,g,b), min=Math.min(r,g,b); const d=max-min; let h=0, s = (max===0?0:d/max), v=max; if(d!==0){ if(max===r) h=(g-b)/d + (g<b?6:0); else if(max===g) h=(b-r)/d + 2; else h=(r-g)/d + 4; h*=60; } return {h,s,v}; }
+  function luminanceFromRgb(r,g,b){ const srgb=[r,g,b].map(v=>{ v/=255; return v<=0.03928 ? v/12.92 : Math.pow((v+0.055)/1.055,2.4); }); return 0.2126*srgb[0] + 0.7152*srgb[1] + 0.0722*srgb[2]; }
 
-  // Luminance for contrast decisions
-  function luminanceFromRgb(r, g, b) {
-    const srgb = [r, g, b].map(v => {
-      v /= 255;
-      return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
-    });
-    return 0.2126 * srgb[0] + 0.7152 * srgb[1] + 0.0722 * srgb[2];
-  }
-
-  // Apply chosen color to CSS variables:
-  // --bg: chosen hex
-  // --card and --btn-bg: rgba(r,g,b,0.8)   (20% transparent)
-  // --accent / --btn-fg: chosen based on luminance for readable text
   function applyColorFromHsv(hsvObj) {
-    const { r, g, b } = hsvToRgb(hsvObj.h, hsvObj.s, hsvObj.v);
-    const hex = rgbToHex(r, g, b);
+    const { r,g,b } = hsvToRgb(hsvObj.h, hsvObj.s, hsvObj.v);
+    const hex = rgbToHex(r,g,b);
     const root = document.documentElement;
     root.style.setProperty('--bg', hex);
-    // 20% transparent card / header / buttons: alpha = 0.8
     root.style.setProperty('--card', `rgba(${r},${g},${b},0.8)`);
     root.style.setProperty('--btn-bg', `rgba(${r},${g},${b},0.8)`);
-    // contrast
-    const lum = luminanceFromRgb(r, g, b);
+    const lum = luminanceFromRgb(r,g,b);
     if (lum < 0.45) {
       root.style.setProperty('--accent', '#e6eef6');
       root.style.setProperty('--btn-fg', '#e6eef6');
@@ -122,44 +88,21 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Initialize hsv from stored color or default
-  function initColorFromStorage() {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      const hex = stored || DEFAULT_BG;
-      const { r, g, b } = hexToRgb(hex);
-      const hvs = rgbToHsv(r, g, b);
-      hsv = { h: hvs.h || 0, s: hvs.s || 0, v: hvs.v || 0 };
-      applyColorFromHsv(hsv);
-      // update UI cursors to reflect current HSV
-      requestAnimationFrame(() => updatePickerUI());
-    } catch (e) {
-      // fallback
-      const { r, g, b } = hexToRgb(DEFAULT_BG);
-      const hvs = rgbToHsv(r, g, b);
-      hsv = { h: hvs.h || 0, s: hvs.s || 0, v: hvs.v || 0 };
-      applyColorFromHsv(hsv);
-      requestAnimationFrame(() => updatePickerUI());
-    }
-  }
-
-  // Persist color (hex) to localStorage
   function persistColor() {
-    const { r, g, b } = hsvToRgb(hsv.h, hsv.s, hsv.v);
-    try { localStorage.setItem(STORAGE_KEY, rgbToHex(r, g, b)); } catch (e) {}
+    const { r,g,b } = hsvToRgb(hsv.h, hsv.s, hsv.v);
+    try { localStorage.setItem(STORAGE_KEY, rgbToHex(r,g,b)); } catch (e) {}
   }
 
-  // Update visual UI: gradient area's base color (hue) and cursors
   function updatePickerUI() {
     if (!colorArea || !hueSlider || !colorAreaCursor || !hueCursor) return;
-    // set gradient area's base color to current hue (pure color at v=1, s=1)
-    const { r: hr, g: hg, b: hb } = hsvToRgb(hsv.h, 1, 1);
-    colorArea.style.background = `linear-gradient(to top, rgba(0,0,0,1), rgba(0,0,0,0)), linear-gradient(to right, rgba(255,255,255,1), rgba(255,255,255,0)), rgb(${hr},${hg},${hb})`;
-    // position hue cursor (vertical)
+    // update color-area background to the pure hue (saturation/value axes overlayed via pseudo gradients)
+    const { r:gR, g:gG, b:gB } = hsvToRgb(hsv.h, 1, 1);
+    colorArea.style.background = `rgb(${gR},${gG},${gB})`;
+    // position hue cursor
     const sliderRect = hueSlider.getBoundingClientRect();
     const y = sliderRect.height * (1 - (hsv.h / 360));
     hueCursor.style.top = `${Math.min(Math.max(0, y), sliderRect.height)}px`;
-    // position area cursor according to s (x) and v (y)
+    // position area cursor
     const areaRect = colorArea.getBoundingClientRect();
     const cx = areaRect.width * hsv.s;
     const cy = areaRect.height * (1 - hsv.v);
@@ -167,63 +110,46 @@ document.addEventListener('DOMContentLoaded', () => {
     colorAreaCursor.style.top = `${Math.min(Math.max(0, cy), areaRect.height)}px`;
   }
 
-  // pointer utilities (supports mouse and touch via pointer events where available)
+  // pointer drag helper using pointer events (mouse & touch)
   function addDrag(element, handlers) {
+    if (!element) return;
     let dragging = false;
-    function start(e) {
-      dragging = true;
-      element.setPointerCapture && element.setPointerCapture(e.pointerId);
-      handlers.start && handlers.start(e);
-    }
-    function move(e) {
-      if (!dragging) return;
-      handlers.move && handlers.move(e);
-    }
-    function end(e) {
-      if (!dragging) return;
-      dragging = false;
-      element.releasePointerCapture && element.releasePointerCapture(e.pointerId);
-      handlers.end && handlers.end(e);
-    }
-    element.addEventListener('pointerdown', start);
-    window.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', end);
-    // Touch fallback for browsers without pointer events (rare)
-    element.addEventListener('touchstart', (e) => { handlers.start && handlers.start(e.touches[0]); e.preventDefault(); }, { passive: false });
-    window.addEventListener('touchmove', (e) => { if (e.touches && e.touches[0]) handlers.move && handlers.move(e.touches[0]); }, { passive: false });
+    let pointerId = null;
+    element.addEventListener('pointerdown', (ev) => {
+      element.setPointerCapture && element.setPointerCapture(ev.pointerId);
+      dragging = true; pointerId = ev.pointerId;
+      handlers.start && handlers.start(ev);
+      ev.preventDefault();
+    });
+    window.addEventListener('pointermove', (ev) => {
+      if (!dragging || (pointerId !== null && ev.pointerId !== pointerId)) return;
+      handlers.move && handlers.move(ev);
+      ev.preventDefault();
+    }, { passive: false });
+    window.addEventListener('pointerup', (ev) => {
+      if (!dragging || (pointerId !== null && ev.pointerId !== pointerId)) return;
+      dragging = false; pointerId = null;
+      handlers.end && handlers.end(ev);
+      ev.preventDefault();
+    });
+    // fallback touch handlers if pointer events not supported (older browsers)
+    element.addEventListener('touchstart', (e) => { if (!e.touches[0]) return; handlers.start && handlers.start(e.touches[0]); e.preventDefault(); }, { passive: false });
+    window.addEventListener('touchmove', (e) => { if (!e.touches[0]) return; handlers.move && handlers.move(e.touches[0]); e.preventDefault(); }, { passive: false });
     window.addEventListener('touchend', (e) => { handlers.end && handlers.end(e.changedTouches && e.changedTouches[0]); }, { passive: false });
   }
 
-  // handlers for hue slider
-  if (hueSlider) {
-    addDrag(hueSlider, {
-      start: (e) => { handleHuePointer(e); },
-      move: (e) => { handleHuePointer(e); },
-      end: (e) => { persistColor(); }
-    });
-  }
-
-  // handlers for color area
-  if (colorArea) {
-    addDrag(colorArea, {
-      start: (e) => { handleAreaPointer(e); },
-      move: (e) => { handleAreaPointer(e); },
-      end: (e) => { persistColor(); }
-    });
-  }
-
   function handleHuePointer(e) {
+    if (!hueSlider) return;
     const rect = hueSlider.getBoundingClientRect();
     const y = Math.min(Math.max(0, (e.clientY || 0) - rect.top), rect.height);
     const ratio = 1 - (y / rect.height);
     hsv.h = ratio * 360;
     updatePickerUI();
     applyColorFromHsv(hsv);
-    // do not persist every pixel except on pointer up — but user requested real-time save, so persist now
     persistColor();
   }
-
   function handleAreaPointer(e) {
+    if (!colorArea) return;
     const rect = colorArea.getBoundingClientRect();
     const x = Math.min(Math.max(0, (e.clientX || 0) - rect.left), rect.width);
     const y = Math.min(Math.max(0, (e.clientY || 0) - rect.top), rect.height);
@@ -234,27 +160,33 @@ document.addEventListener('DOMContentLoaded', () => {
     persistColor();
   }
 
-  // Show/hide popup on button
+  if (hueSlider) addDrag(hueSlider, { start: handleHuePointer, move: handleHuePointer, end: () => persistColor() });
+  if (colorArea) addDrag(colorArea, { start: handleAreaPointer, move: handleAreaPointer, end: () => persistColor() });
+
+  // show/hide popup
   function showColorPopup() { if (!colorPopup) return; colorPopup.classList.add('visible'); colorPopup.setAttribute('aria-hidden', 'false'); document.addEventListener('click', onDocClickForPopup); }
   function hideColorPopup() { if (!colorPopup) return; colorPopup.classList.remove('visible'); colorPopup.setAttribute('aria-hidden', 'true'); document.removeEventListener('click', onDocClickForPopup); }
   function onDocClickForPopup(e) { if (!colorPopup) return; if (colorPopup.contains(e.target) || (themeToggle && themeToggle.contains(e.target))) return; hideColorPopup(); }
-
   if (themeToggle) themeToggle.addEventListener('click', (e) => { e.stopPropagation(); if (!colorPopup) return; if (colorPopup.classList.contains('visible')) hideColorPopup(); else showColorPopup(); });
 
-  /* ---------------- THEME attribute fallback ---------------- */
-  (function initThemeAttr() { const saved = localStorage.getItem('site-theme'); document.documentElement.setAttribute('data-theme', saved === 'light' ? 'light' : 'dark'); })();
+  // initialize color from storage (or default)
+  (function initColorFromStorage() {
+    try {
+      const storedHex = localStorage.getItem(STORAGE_KEY) || DEFAULT_BG;
+      const { r,g,b } = hexToRgb(storedHex);
+      const hvs = rgbToHsv(r,g,b);
+      hsv = { h: hvs.h || 0, s: hvs.s || 0, v: hvs.v || 0 };
+    } catch (e) {
+      const { r,g,b } = hexToRgb(DEFAULT_BG);
+      const hvs = rgbToHsv(r,g,b);
+      hsv = { h: hvs.h || 0, s: hvs.s || 0, v: hvs.v || 0 };
+    }
+    applyColorFromHsv(hsv);
+    requestAnimationFrame(updatePickerUI);
+  })();
 
-  // Initialize color picker values from storage and UI
-  initColorFromStorage();
+  /* ---------------- Now the rest of app: chapters, tippy, image viewer, nav ---------------- */
 
-  /* ---------------- Remaining app code (chapters, tippy, image viewer, nav) ----------------
-     This section is essentially the same functionality you had before.
-     I kept the functions compact but unchanged in behavior: chapters load from chapters.json,
-     "done" flag handling, slide-out list, tippy tooltips with banner + preload, image viewer, top/bottom nav,
-     and session-only scroll restore.
-  */
-
-  /* ---------------- HELPERS: done flag & nav ---------------- */
   function isDoneEntry(entry) { if (!entry) return false; return entry.done !== false; }
   function findPrevDoneIndex(fromIndex) { for (let i = (fromIndex === undefined ? currentIndex - 1 : fromIndex); i >= 0; i--) if (isDoneEntry(chapters[i])) return i; return -1; }
   function findNextDoneIndex(fromIndex) { for (let i = (fromIndex === undefined ? currentIndex + 1 : fromIndex); i < chapters.length; i++) if (isDoneEntry(chapters[i])) return i; return -1; }
@@ -269,11 +201,19 @@ document.addEventListener('DOMContentLoaded', () => {
     [bottomPrev, topPrev].forEach(btn => { if (btn) btn.disabled = prevDisabled; });
     [bottomNext, topNext].forEach(btn => { if (btn) btn.disabled = nextDisabled; });
 
-    if (!prevDisabled) { const p = chapters[prevIndex]; [bottomPrev, topPrev].forEach(btn => { if (btn) { btn.dataset.index = prevIndex; btn.dataset.title = p.title || ''; }}); }
-    else { [bottomPrev, topPrev].forEach(btn => { if (btn) { btn.removeAttribute('data-index'); btn.removeAttribute('data-title'); }}); }
+    if (!prevDisabled) {
+      const p = chapters[prevIndex];
+      [bottomPrev, topPrev].forEach(btn => { if (btn) { btn.dataset.index = prevIndex; btn.dataset.title = p.title || ''; }});
+    } else {
+      [bottomPrev, topPrev].forEach(btn => { if (btn) { btn.removeAttribute('data-index'); btn.removeAttribute('data-title'); }});
+    }
 
-    if (!nextDisabled) { const n = chapters[nextIndex]; [bottomNext, topNext].forEach(btn => { if (btn) { btn.dataset.index = nextIndex; btn.dataset.title = n.title || ''; }}); }
-    else { [bottomNext, topNext].forEach(btn => { if (btn) { btn.removeAttribute('data-index'); btn.removeAttribute('data-title'); }}); }
+    if (!nextDisabled) {
+      const n = chapters[nextIndex];
+      [bottomNext, topNext].forEach(btn => { if (btn) { btn.dataset.index = nextIndex; btn.dataset.title = n.title || ''; }});
+    } else {
+      [bottomNext, topNext].forEach(btn => { if (btn) { btn.removeAttribute('data-index'); btn.removeAttribute('data-title'); }});
+    }
 
     refreshNavTippies();
   }
@@ -303,7 +243,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.key === 'ArrowRight') { const next = findNextDoneIndex(); if (next !== -1) goToChapter(next); }
   });
 
-  /* ---------------- LOAD CHAPTER LIST ---------------- */
+  /* ---------------- LOAD CHAPTERS ---------------- */
   async function loadChapters() {
     chapterBodyEl.textContent = 'Загрузка...';
     try {
@@ -319,10 +259,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const a = document.createElement('a');
         a.href = '#';
         a.textContent = c.title || `Глава ${i+1}`;
-        if (!isDoneEntry(c)) { a.classList.add('undone'); } else { a.addEventListener('click', (e) => { e.preventDefault(); goToChapter(i); }); }
-        li.appendChild(a); chaptersListEl.appendChild(li);
+        if (!isDoneEntry(c)) {
+          a.classList.add('undone');
+        } else {
+          a.addEventListener('click', (e) => { e.preventDefault(); goToChapter(i); });
+        }
+        li.appendChild(a);
+        chaptersListEl.appendChild(li);
       });
 
+      // restore last-chapter-file if saved
       const saved = localStorage.getItem('last-chapter-file');
       if (saved) {
         const idx = chapters.findIndex(ch => ch && ch.file === saved && isDoneEntry(ch));
@@ -339,8 +285,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  /* ---------------- LOAD SINGLE CHAPTER ---------------- */
-  let lastLoadedFilename = null;
+  /* ---------------- LOAD CHAPTER ---------------- */
   async function loadChapter(filename, title) {
     chapterTitleEl.textContent = title || '';
     chapterBodyEl.textContent = 'Загрузка главы...';
@@ -349,7 +294,6 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!res.ok) throw new Error('HTTP ' + res.status + ' fetching ' + filename);
       const md = await res.text();
       lastChapterFile = filename;
-      lastLoadedFilename = filename;
       const html = (window.marked) ? marked.parse(md) : '<p>Ошибка: библиотека marked не загружена.</p>';
       chapterBodyEl.innerHTML = html;
 
@@ -358,7 +302,7 @@ document.addEventListener('DOMContentLoaded', () => {
       bindImagesToViewer();
       updateNavButtons();
 
-      // restore scroll only on reload if present in sessionStorage
+      // restore scroll only if session entry exists (reload)
       try {
         const key = 'scroll:' + filename;
         const v = sessionStorage.getItem(key);
@@ -382,7 +326,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  /* ---------------- IMAGE RESOLUTION / PRELOAD (tippy helper) ---------------- */
+  /* ---------------- IMAGE PRELOAD / RESOLVE for tooltips ---------------- */
   function testImageUrl(url, timeout = 3000) {
     return new Promise(resolve => {
       const img = new Image();
@@ -421,7 +365,6 @@ document.addEventListener('DOMContentLoaded', () => {
     for (const u of unique) {
       if (await testImageUrl(u)) { resolvedUrlCache.set(srcCandidate, u); return u; }
     }
-
     resolvedUrlCache.set(srcCandidate, null);
     return null;
   }
@@ -449,7 +392,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // re-preload on page visibility change
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState !== 'visible') return;
     if (!chapterBodyEl) return;
@@ -458,31 +400,25 @@ document.addEventListener('DOMContentLoaded', () => {
       const dataImg = el.getAttribute('data-img'); if (!dataImg) return;
       const resolved = resolvedUrlCache.has(dataImg) ? resolvedUrlCache.get(dataImg) : await resolveTooltipImage(dataImg);
       if (resolved && (!preloadedImgCache.has(resolved) || !preloadedImgCache.get(resolved).complete)) {
-        try {
-          const pimg = new Image(); pimg.crossOrigin = 'anonymous'; pimg.decoding = 'async';
-          preloadedImgCache.set(resolved, pimg);
-          pimg.onload = () => {};
-          pimg.onerror = () => { preloadedImgCache.delete(resolved); };
-          pimg.src = resolved;
-        } catch (e) {}
+        try { const pimg = new Image(); pimg.crossOrigin='anonymous'; pimg.decoding='async'; preloadedImgCache.set(resolved,pimg); pimg.onload=()=>{}; pimg.onerror=()=>{preloadedImgCache.delete(resolved)}; pimg.src=resolved; } catch (e) {}
       }
     });
   });
 
-  /* ---------------- TIPPY init for .gloss ---------------- */
+  /* ---------------- TIPPY for .gloss (banner image + body) ---------------- */
   function initGlossTippy() {
     if (!window.tippy) return;
     document.querySelectorAll('.gloss').forEach(el => { try { if (el._tippy) el._tippy.destroy(); } catch (e) {} });
 
     tippy('.gloss', {
-      allowHTML: true, interactive: true, delay: [60, 80], maxWidth: 520, placement: 'top', offset: [0, 8],
+      allowHTML: true, interactive: true, delay: [60,80], maxWidth: 520, placement: 'top', offset: [0,8],
       appendTo: () => document.body,
       popperOptions: {
         strategy: 'fixed',
         modifiers: [
           { name: 'computeStyles', options: { adaptive: false } },
           { name: 'preventOverflow', options: { padding: 8, altAxis: true } },
-          { name: 'flip', options: { fallbackPlacements: ['bottom', 'right', 'left'] } }
+          { name: 'flip', options: { fallbackPlacements: ['bottom','right','left'] } }
         ]
       },
       content: 'Loading...',
@@ -490,82 +426,51 @@ document.addEventListener('DOMContentLoaded', () => {
         const reference = instance.reference;
         let contentHTML = reference.getAttribute('data-tippy-content') || reference.getAttribute('data-tip') || reference.getAttribute('title') || reference.innerHTML || '';
         if (reference.getAttribute('title')) reference.removeAttribute('title');
-
         const dataImg = reference.getAttribute('data-img');
         const imgAlt = reference.getAttribute('data-img-alt') || '';
-
         const wrapper = document.createElement('div');
-
         let resolved = null;
         if (dataImg) {
           if (resolvedUrlCache.has(dataImg)) resolved = resolvedUrlCache.get(dataImg);
           else resolved = await resolveTooltipImage(dataImg);
         }
-
         if (resolved) {
           if (!preloadedImgCache.has(resolved) || !preloadedImgCache.get(resolved).complete) {
-            try {
-              const pimg = new Image(); pimg.crossOrigin = 'anonymous'; pimg.decoding = 'async';
-              preloadedImgCache.set(resolved, pimg);
-              pimg.onload = () => {};
-              pimg.onerror = () => { preloadedImgCache.delete(resolved); };
-              pimg.src = resolved;
-            } catch (e) {}
+            try { const pimg = new Image(); pimg.crossOrigin='anonymous'; pimg.decoding='async'; preloadedImgCache.set(resolved,pimg); pimg.onload=()=>{}; pimg.onerror=()=>{preloadedImgCache.delete(resolved)}; pimg.src=resolved; } catch (e) {}
           }
-
           const imgEl = document.createElement('img');
-          imgEl.className = 'tooltip-img';
-          imgEl.src = resolved;
-          imgEl.alt = imgAlt;
-          imgEl.loading = 'eager';
-          imgEl.style.cursor = 'pointer';
-          imgEl.addEventListener('click', (ev) => {
-            ev.stopPropagation();
-            try { openImageViewer(resolved, imgAlt); } catch (e) {}
-            try { instance.hide(); } catch (e) {}
-          });
-          imgEl.addEventListener('load', () => {
-            try {
-              if (instance.popperInstance && typeof instance.popperInstance.update === 'function') instance.popperInstance.update();
-              else if (typeof instance.update === 'function') instance.update();
-            } catch (e) {}
-          });
-
+          imgEl.className = 'tooltip-img'; imgEl.src = resolved; imgEl.alt = imgAlt; imgEl.loading = 'eager'; imgEl.style.cursor='pointer';
+          imgEl.addEventListener('click', (ev)=>{ ev.stopPropagation(); try{ openImageViewer(resolved,imgAlt);}catch(e){} try{ instance.hide(); }catch(e){} });
+          imgEl.addEventListener('load', ()=>{ try{ if(instance.popperInstance&&typeof instance.popperInstance.update==='function') instance.popperInstance.update(); else if(typeof instance.update==='function') instance.update(); }catch(e){} });
           wrapper.appendChild(imgEl);
         }
-
-        const contentDiv = document.createElement('div');
-        contentDiv.className = 'tooltip-body';
-        contentDiv.innerHTML = contentHTML;
-        wrapper.appendChild(contentDiv);
-
+        const contentDiv = document.createElement('div'); contentDiv.className='tooltip-body'; contentDiv.innerHTML = contentHTML; wrapper.appendChild(contentDiv);
         try { instance.setContent(wrapper); } catch (e) { instance.setContent(wrapper.outerHTML); }
       }
     });
   }
 
-  /* ---------------- nav tippies ---------------- */
   function refreshNavTippies() {
     if (!window.tippy) return;
-    [bottomPrev, bottomNext, topPrev, topNext].forEach(btn => { if (!btn) return; try { if (btn._tippy) btn._tippy.destroy(); } catch (e) {} });
-    if (bottomPrev) tippy(bottomPrev, { content: () => bottomPrev.dataset.title || '', placement: 'top', delay: [80, 40], offset: [0, 8], appendTo: () => document.body });
-    if (bottomNext) tippy(bottomNext, { content: () => bottomNext.dataset.title || '', placement: 'top', delay: [80, 40], offset: [0, 8], appendTo: () => document.body });
-    if (topPrev) tippy(topPrev, { content: () => topPrev.dataset.title || '', placement: 'bottom', delay: [80, 40], offset: [0, 8], appendTo: () => document.body });
-    if (topNext) tippy(topNext, { content: () => topNext.dataset.title || '', placement: 'bottom', delay: [80, 40], offset: [0, 8], appendTo: () => document.body });
+    [bottomPrev,bottomNext,topPrev,topNext].forEach(btn=>{ if(!btn) return; try{ if(btn._tippy) btn._tippy.destroy(); }catch(e){} });
+    if (bottomPrev) tippy(bottomPrev, { content: () => bottomPrev.dataset.title || '', placement:'top', delay:[80,40], offset:[0,8], appendTo:()=>document.body });
+    if (bottomNext) tippy(bottomNext, { content: () => bottomNext.dataset.title || '', placement:'top', delay:[80,40], offset:[0,8], appendTo:()=>document.body });
+    if (topPrev) tippy(topPrev, { content: () => topPrev.dataset.title || '', placement:'bottom', delay:[80,40], offset:[0,8], appendTo:()=>document.body });
+    if (topNext) tippy(topNext, { content: () => topNext.dataset.title || '', placement:'bottom', delay:[80,40], offset:[0,8], appendTo:()=>document.body });
   }
 
-  /* ---------------- Chapters aside slide ---------------- */
+  /* ---------------- Chapters aside slide-in/out ---------------- */
   let chaptersOpen = false;
   const EDGE_TRIGGER_PX = 12;
   function openChapters() { if (chaptersOpen) return; chaptersOpen = true; document.body.classList.add('chapters-open'); }
   function closeChapters() { if (!chaptersOpen) return; chaptersOpen = false; document.body.classList.remove('chapters-open'); }
 
-  document.addEventListener('mousemove', (e) => { if (window.innerWidth <= 700) return; if (e.clientX <= EDGE_TRIGGER_PX) openChapters(); });
+  document.addEventListener('mousemove', (e)=>{ if(window.innerWidth<=700) return; if(e.clientX<=EDGE_TRIGGER_PX) openChapters(); });
   if (chaptersAside) {
     chaptersAside.addEventListener('mouseenter', openChapters);
-    chaptersAside.addEventListener('mouseleave', (ev) => { if (ev.clientX <= EDGE_TRIGGER_PX) return; closeChapters(); });
+    chaptersAside.addEventListener('mouseleave', (ev)=>{ if(ev.clientX<=EDGE_TRIGGER_PX) return; closeChapters(); });
   }
-  document.addEventListener('click', (e) => { if (!chaptersOpen) return; if (chaptersAside && chaptersAside.contains(e.target)) return; if (e.clientX <= EDGE_TRIGGER_PX) return; closeChapters(); });
+  document.addEventListener('click', (e)=>{ if(!chaptersOpen) return; if(chaptersAside && chaptersAside.contains(e.target)) return; if(e.clientX<=EDGE_TRIGGER_PX) return; closeChapters(); });
 
   /* ---------------- Top nav visibility (1s hide delay) ---------------- */
   function positionTopNav() {
@@ -575,75 +480,29 @@ document.addEventListener('DOMContentLoaded', () => {
     const top = Math.max(6, hRect.top + (hRect.height / 2) - (topNavRect.height / 2));
     topNav.style.top = `${top}px`;
   }
-
   let lastScrollY = window.scrollY;
   let scheduled = false;
   let hideDelayTimer = null;
   const HIDE_DELAY_MS = 1000;
-
-  function clearHideTimer() { if (hideDelayTimer) { clearTimeout(hideDelayTimer); hideDelayTimer = null; } }
-
-  function bottomNavIsVisible() {
-    if (!bottomNav) return false;
-    const r = bottomNav.getBoundingClientRect();
-    return (r.top < window.innerHeight) && (r.bottom > 0);
-  }
-
-  function showTopNavImmediate() {
-    if (bottomNavIsVisible()) { hideTopNavImmediate(); return; }
-    if (!topNav) return;
-    topNav.classList.add('visible-top');
-    topNav.setAttribute('aria-hidden', 'false');
-    clearHideTimer();
-  }
-
-  function hideTopNavImmediate() {
-    if (!topNav) return;
-    topNav.classList.remove('visible-top');
-    topNav.setAttribute('aria-hidden', 'true');
-    clearHideTimer();
-  }
-
-  function scheduleHideTopNav() {
-    if (hideDelayTimer) return;
-    hideDelayTimer = setTimeout(() => {
-      if (!bottomNavIsVisible()) hideTopNavImmediate();
-      hideDelayTimer = null;
-    }, HIDE_DELAY_MS);
-  }
-
-  function onScrollCheck() {
-    const curY = window.scrollY;
-    const scrollingUp = curY < lastScrollY;
-    const atTop = curY <= 10;
-    if (bottomNavIsVisible()) { hideTopNavImmediate(); clearHideTimer(); }
-    else if (atTop || scrollingUp) { clearHideTimer(); showTopNavImmediate(); }
+  function clearHideTimer(){ if(hideDelayTimer){ clearTimeout(hideDelayTimer); hideDelayTimer = null; } }
+  function bottomNavIsVisible(){ if(!bottomNav) return false; const r = bottomNav.getBoundingClientRect(); return (r.top < window.innerHeight) && (r.bottom > 0); }
+  function showTopNavImmediate(){ if (bottomNavIsVisible()) { hideTopNavImmediate(); return; } if(!topNav) return; topNav.classList.add('visible-top'); topNav.setAttribute('aria-hidden','false'); clearHideTimer(); }
+  function hideTopNavImmediate(){ if(!topNav) return; topNav.classList.remove('visible-top'); topNav.setAttribute('aria-hidden','true'); clearHideTimer(); }
+  function scheduleHideTopNav(){ if(hideDelayTimer) return; hideDelayTimer = setTimeout(()=>{ if(!bottomNavIsVisible()) hideTopNavImmediate(); hideDelayTimer=null; }, HIDE_DELAY_MS); }
+  function onScrollCheck(){ const curY = window.scrollY; const scrollingUp = curY < lastScrollY; const atTop = curY <= 10;
+    if (bottomNavIsVisible()){ hideTopNavImmediate(); clearHideTimer(); }
+    else if (atTop || scrollingUp){ clearHideTimer(); showTopNavImmediate(); }
     else { scheduleHideTopNav(); }
     lastScrollY = curY;
   }
-
-  window.addEventListener('scroll', () => {
-    if (scheduled) return;
-    scheduled = true;
-    requestAnimationFrame(() => { onScrollCheck(); scheduled = false; });
-  }, { passive: true });
-
-  window.addEventListener('resize', () => { positionTopNav(); onScrollCheck(); });
-
-  const observer = new IntersectionObserver((entries) => {
-    const anyVisible = entries.some(en => en.isIntersecting);
-    if (anyVisible) hideTopNavImmediate();
-  }, { root: null, threshold: 0.01 });
+  window.addEventListener('scroll', ()=>{ if(scheduled) return; scheduled=true; requestAnimationFrame(()=>{ onScrollCheck(); scheduled=false; }); }, { passive:true });
+  window.addEventListener('resize', ()=>{ positionTopNav(); onScrollCheck(); });
+  const observer = new IntersectionObserver((entries)=>{ const anyVisible = entries.some(en=>en.isIntersecting); if(anyVisible) hideTopNavImmediate(); }, { root:null, threshold:0.01 });
   if (bottomNav) observer.observe(bottomNav);
+  function initialTopNavSetup(){ positionTopNav(); if(window.scrollY <= 10 && !bottomNavIsVisible()) showTopNavImmediate(); else hideTopNavImmediate(); }
+  initialTopNavSetup(); setTimeout(initialTopNavSetup, 80);
 
-  function initialTopNavSetup() {
-    positionTopNav();
-    if (window.scrollY <= 10 && !bottomNavIsVisible()) showTopNavImmediate(); else hideTopNavImmediate();
-  }
-  initialTopNavSetup();
-  setTimeout(initialTopNavSetup, 80);
-
-  /* ---------------- Image viewer ---------------- */
+  /* ---------------- Image viewer (lightbox) ---------------- */
   if (!document.getElementById('image-overlay')) {
     const overlay = document.createElement('div');
     overlay.id = 'image-overlay';
@@ -653,67 +512,46 @@ document.addEventListener('DOMContentLoaded', () => {
   const overlay = document.getElementById('image-overlay');
   const overlayImg = overlay.querySelector('.viewer-img');
 
-  let isZoomed = false, pointerDown = false, pointerStart = { x: 0, y: 0 }, imgPos = { x: 0, y: 0 }, dragMoved = false, suppressClick = false;
+  let isZoomed = false, pointerDown = false, pointerStart = { x:0,y:0 }, imgPos = { x:0,y:0 }, dragMoved=false, suppressClick=false;
   const DRAG_THRESHOLD = 4;
 
-  function openImageViewer(src, alt = '') {
+  function openImageViewer(src, alt='') {
     overlayImg.src = src; overlayImg.alt = alt || '';
     const marginPx = 40;
-    overlayImg.style.maxWidth = `calc(100vw - ${marginPx}px)`; overlayImg.style.maxHeight = `calc(100vh - ${Math.round(marginPx * 1.5)}px)`;
-    overlay.classList.add('visible'); isZoomed = false; imgPos = { x: 0, y: 0 }; overlayImg.style.transform = `translate(0px, 0px) scale(1)`; overlayImg.classList.remove('zoomed'); overlay.style.cursor = 'default'; document.body.style.overflow = 'hidden';
-    const viewer = overlay.querySelector('.viewer'); if (viewer) { viewer.scrollTop = 0; viewer.scrollLeft = 0; }
+    overlayImg.style.maxWidth = `calc(100vw - ${marginPx}px)`; overlayImg.style.maxHeight = `calc(100vh - ${Math.round(marginPx*1.5)}px)`;
+    overlay.classList.add('visible'); isZoomed=false; imgPos={x:0,y:0}; overlayImg.style.transform = `translate(0px,0px) scale(1)`; overlayImg.classList.remove('zoomed'); overlay.style.cursor='default'; document.body.style.overflow='hidden';
+    const viewer = overlay.querySelector('.viewer'); if(viewer){ viewer.scrollTop=0; viewer.scrollLeft=0; }
   }
 
-  function closeImageViewer() { overlay.classList.remove('visible'); overlayImg.src = ''; isZoomed = false; pointerDown = false; dragMoved = false; suppressClick = false; document.body.style.overflow = ''; overlayImg.style.maxWidth = ''; overlayImg.style.maxHeight = ''; }
+  function closeImageViewer(){ overlay.classList.remove('visible'); overlayImg.src=''; isZoomed=false; pointerDown=false; dragMoved=false; suppressClick=false; document.body.style.overflow=''; overlayImg.style.maxWidth=''; overlayImg.style.maxHeight=''; }
 
-  function applyImageTransform() {
-    const scale = isZoomed ? 2 : 1;
-    overlayImg.style.transform = `translate(${imgPos.x}px, ${imgPos.y}px) scale(${scale})`;
-    if (isZoomed) overlayImg.classList.add('zoomed'); else overlayImg.classList.remove('zoomed');
-  }
+  function applyImageTransform(){ const scale = isZoomed ? 2 : 1; overlayImg.style.transform = `translate(${imgPos.x}px, ${imgPos.y}px) scale(${scale})`; if(isZoomed) overlayImg.classList.add('zoomed'); else overlayImg.classList.remove('zoomed'); }
 
-  overlayImg.addEventListener('click', (ev) => {
-    if (suppressClick) { suppressClick = false; return; }
-    isZoomed = !isZoomed;
-    if (!isZoomed) imgPos = { x: 0, y: 0 };
-    applyImageTransform();
-  });
+  overlayImg.addEventListener('click', (ev)=>{ if(suppressClick){ suppressClick=false; return; } isZoomed = !isZoomed; if(!isZoomed) imgPos={x:0,y:0}; applyImageTransform(); });
 
-  overlayImg.addEventListener('mousedown', (ev) => {
-    if (!isZoomed) return; ev.preventDefault(); pointerDown = true; dragMoved = false; pointerStart = { x: ev.clientX, y: ev.clientY }; overlayImg.style.cursor = 'grabbing';
-  });
+  overlayImg.addEventListener('mousedown', (ev)=>{ if(!isZoomed) return; ev.preventDefault(); pointerDown=true; dragMoved=false; pointerStart={x:ev.clientX,y:ev.clientY}; overlayImg.style.cursor='grabbing'; });
+  window.addEventListener('mousemove', (ev)=>{ if(!pointerDown || !isZoomed) return; const dx = ev.clientX - pointerStart.x; const dy = ev.clientY - pointerStart.y; if(!dragMoved && (Math.abs(dx)+Math.abs(dy) >= DRAG_THRESHOLD)) dragMoved=true; if(dragMoved){ pointerStart={x:ev.clientX,y:ev.clientY}; imgPos.x += dx; imgPos.y += dy; applyImageTransform(); } });
+  window.addEventListener('mouseup', (ev)=>{ if(pointerDown && dragMoved){ suppressClick=true; setTimeout(()=>{ suppressClick=false; },0); } pointerDown=false; overlayImg.style.cursor = isZoomed ? 'grab' : 'zoom-in'; });
 
-  window.addEventListener('mousemove', (ev) => {
-    if (!pointerDown || !isZoomed) return;
-    const dx = ev.clientX - pointerStart.x; const dy = ev.clientY - pointerStart.y;
-    if (!dragMoved && (Math.abs(dx) + Math.abs(dy) >= DRAG_THRESHOLD)) dragMoved = true;
-    if (dragMoved) { pointerStart = { x: ev.clientX, y: ev.clientY }; imgPos.x += dx; imgPos.y += dy; applyImageTransform(); }
-  });
+  overlay.addEventListener('click', (ev)=>{ if(ev.target === overlay) closeImageViewer(); });
+  window.addEventListener('keydown', (ev)=>{ if(ev.key === 'Escape' && overlay.classList.contains('visible')) closeImageViewer(); });
 
-  window.addEventListener('mouseup', (ev) => {
-    if (pointerDown && dragMoved) { suppressClick = true; setTimeout(() => { suppressClick = false; }, 0); }
-    pointerDown = false; overlayImg.style.cursor = isZoomed ? 'grab' : 'zoom-in';
-  });
-
-  overlay.addEventListener('click', (ev) => { if (ev.target === overlay) closeImageViewer(); });
-  window.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && overlay.classList.contains('visible')) closeImageViewer(); });
-
-  function bindImagesToViewer() {
+  function bindImagesToViewer(){
     const imgs = chapterBodyEl.querySelectorAll('img');
     imgs.forEach(img => {
       const clone = img.cloneNode(true);
       clone.style.cursor = 'pointer';
       img.parentNode.replaceChild(clone, img);
-      clone.addEventListener('click', (e) => {
+      clone.addEventListener('click', (e)=> {
         const src = clone.getAttribute('src') || clone.getAttribute('data-src') || '';
-        if (!src) return;
+        if(!src) return;
         openImageViewer(src, clone.getAttribute('alt') || '');
       });
     });
   }
 
-  /* ---------------- Save scroll only on beforeunload (sessionStorage) ---------------- */
-  window.addEventListener('beforeunload', () => {
+  /* ---------------- Persist scroll ONLY on reload (sessionStorage) ---------------- */
+  window.addEventListener('beforeunload', ()=> {
     try {
       if (currentIndex >= 0 && chapters[currentIndex] && chapters[currentIndex].file) {
         const key = 'scroll:' + chapters[currentIndex].file;
@@ -722,46 +560,19 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (e) {}
   });
 
-  /* ---------------- Utilities: tippies & nav init ---------------- */
+  /* ---------------- tippies/nav init util ---------------- */
   function refreshNavTippies() {
     if (!window.tippy) return;
-    [bottomPrev, bottomNext, topPrev, topNext].forEach(btn => { if (!btn) return; try { if (btn._tippy) btn._tippy.destroy(); } catch (e) {} });
-    if (bottomPrev) tippy(bottomPrev, { content: () => bottomPrev.dataset.title || '', placement: 'top', delay: [80,40], offset: [0,8], appendTo: () => document.body });
-    if (bottomNext) tippy(bottomNext, { content: () => bottomNext.dataset.title || '', placement: 'top', delay: [80,40], offset: [0,8], appendTo: () => document.body });
-    if (topPrev) tippy(topPrev, { content: () => topPrev.dataset.title || '', placement: 'bottom', delay: [80,40], offset: [0,8], appendTo: () => document.body });
-    if (topNext) tippy(topNext, { content: () => topNext.dataset.title || '', placement: 'bottom', delay: [80,40], offset: [0,8], appendTo: () => document.body });
+    [bottomPrev,bottomNext,topPrev,topNext].forEach(btn=>{ if(!btn) return; try{ if(btn._tippy) btn._tippy.destroy(); }catch(e){} });
+    if (bottomPrev) tippy(bottomPrev, { content: () => bottomPrev.dataset.title || '', placement:'top', delay:[80,40], offset:[0,8], appendTo:()=>document.body });
+    if (bottomNext) tippy(bottomNext, { content: () => bottomNext.dataset.title || '', placement:'top', delay:[80,40], offset:[0,8], appendTo:()=>document.body });
+    if (topPrev) tippy(topPrev, { content: () => topPrev.dataset.title || '', placement:'bottom', delay:[80,40], offset:[0,8], appendTo:()=>document.body });
+    if (topNext) tippy(topNext, { content: () => topNext.dataset.title || '', placement:'bottom', delay:[80,40], offset:[0,8], appendTo:()=>document.body });
   }
 
-  /* ---------------- START ---------------- */
-  // initialize color picker + apply saved color
-  function initColorFromStorage() {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      const hex = stored || DEFAULT_BG;
-      const { r, g, b } = hexToRgb(hex);
-      const hvs = rgbToHsv(r, g, b);
-      hsv = { h: hvs.h || 0, s: hvs.s || 0, v: hvs.v || 0 };
-      applyColorFromHsv(hsv);
-      requestAnimationFrame(() => updatePickerUI());
-    } catch (e) {
-      const { r, g, b } = hexToRgb(DEFAULT_BG); const hvs = rgbToHsv(r,g,b);
-      hsv = { h: hvs.h || 0, s: hvs.s || 0, v: hvs.v || 0 };
-      applyColorFromHsv(hsv); requestAnimationFrame(() => updatePickerUI());
-    }
-  }
-
-  // small helpers used from picker (we defined earlier)
-  function rgbToHsv(r,g,b) { r/=255; g/=255; b/=255; const max=Math.max(r,g,b), min=Math.min(r,g,b); const d=max-min; let h=0, s = (max===0?0:d/max), v=max; if (d!==0){ if (max===r) h = (g-b)/d + (g<b?6:0); else if (max===g) h = (b-r)/d + 2; else h = (r-g)/d + 4; h *= 60; } return {h,s,v}; }
-  // hexToRgb already defined above near picker helpers
-
-  initColorFromStorage();
+  /* ---------------- Start app ---------------- */
   loadChapters();
   updateNavButtons();
-  setTimeout(() => { positionTopNav(); if (window.scrollY <= 10 && !bottomNavIsVisible()) showTopNavImmediate(); }, 120);
-
-  // expose some helper functions used earlier in this file scope
-  function applyColorFromHsv(h) { applyColorFromHsv /* placeholder */ }
-  // NOTE: The real applyColorFromHsv/hsvToRgb functions are defined earlier in the file scope,
-  // but to keep linting friendly, no change is required here.
+  setTimeout(()=>{ positionTopNav(); if(window.scrollY <= 10 && !bottomNavIsVisible()) showTopNavImmediate(); }, 120);
 
 });
