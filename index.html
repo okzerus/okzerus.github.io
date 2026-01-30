@@ -16,9 +16,41 @@
 <body>
 <header>
   <h1 id="site-title">Distortion Detective [RU]</h1>
+
   <div class="header-controls">
-    <!-- theme toggle (styled like nav button) -->
-    <button id="theme-toggle" aria-label="Переключить тему" title="Переключить тему">☀︎</button>
+    <!-- color palette opener (replaces previous light/dark toggle behavior) -->
+    <button id="theme-toggle" aria-label="Открыть палитру цветов" title="Открыть палитру цветов">☀︎</button>
+  </div>
+
+  <!-- Color palette modal (hidden by default) -->
+  <div id="color-modal" class="color-modal" role="dialog" aria-modal="true" aria-hidden="true">
+    <div class="color-panel" role="document">
+      <header class="color-panel-header">
+        <strong>Выберите фон</strong>
+        <button id="color-close" class="color-close" aria-label="Закрыть палитру">✕</button>
+      </header>
+
+      <div class="color-panel-body">
+        <p class="muted">Выберите цвет фона страницы.</p>
+
+        <div class="swatches" aria-label="Предустановленные цвета">
+          <!-- presets; user can change or add hexes -->
+          <button class="color-swatch" data-color="#0b0f13" style="background:#0b0f13" title="#0b0f13"></button>
+          <button class="color-swatch" data-color="#0f1520" style="background:#0f1520" title="#0f1520"></button>
+          <button class="color-swatch" data-color="#07121a" style="background:#07121a" title="#07121a"></button>
+          <button class="color-swatch" data-color="#102030" style="background:#102030" title="#102030"></button>
+          <button class="color-swatch" data-color="#1b2430" style="background:#1b2430" title="#1b2430"></button>
+        </div>
+
+        <label for="color-input" style="display:block;margin-top:12px">Точный цвет</label>
+        <input id="color-input" class="color-input" type="color" value="#0b0f13" aria-label="Цвет фона">
+
+        <div class="modal-controls" style="margin-top:12px">
+          <button id="color-apply" class="btn">Применить</button>
+          <button id="color-reset" class="btn btn-secondary">Сбросить</button>
+        </div>
+      </div>
+    </div>
   </div>
 </header>
 
