@@ -16,7 +16,7 @@
 }
 
 /* sensible defaults in case script hasn't run yet */
-html { --bg: var(--bg-dark); --card: rgba(11,15,19,0.8); --btn-bg: rgba(11,15,19,0.8); --accent: var(--accent-dark); --btn-fg: var(--accent-dark); }
+html { --bg: var(--bg-dark); --card: rgba(11,15,19,0.2); --btn-bg: rgba(11,15,19,0.2); --accent: var(--accent-dark); --btn-fg: var(--accent-dark); }
 
 *{box-sizing:border-box}
 body{
