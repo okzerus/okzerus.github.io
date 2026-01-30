@@ -4,11 +4,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Distortion Detective [RU]</title>
-
-<!-- favicon (project pages: relative path recommended) -->
-<link rel="icon" href="favicon.ico?v=2" type="image/x-icon" sizes="16x16" />
-<link rel="shortcut icon" href="favicon.ico?v=2" type="image/x-icon" />
-
 <link rel="stylesheet" href="styles.css">
 <!-- Tippy CSS -->
 <link rel="stylesheet" href="https://unpkg.com/tippy.js@6/dist/tippy.css">
@@ -16,47 +11,34 @@
 <body>
 <header>
   <h1 id="site-title">Distortion Detective [RU]</h1>
-
   <div class="header-controls">
-    <!-- color palette opener (replaces previous light/dark toggle behavior) -->
-    <button id="theme-toggle" aria-label="Открыть палитру цветов" title="Открыть палитру цветов">☀︎</button>
-  </div>
+    <!-- color-palette opener (keeps sun icon as requested) -->
+    <div class="palette-wrapper" style="position:relative;">
+      <button id="theme-toggle" aria-haspopup="true" aria-expanded="false" title="Выбрать цвет интерфейса">☀︎</button>
 
-  <!-- Color palette modal (hidden by default) -->
-  <div id="color-modal" class="color-modal" role="dialog" aria-modal="true" aria-hidden="true">
-    <div class="color-panel" role="document">
-      <header class="color-panel-header">
-        <strong>Выберите фон</strong>
-        <button id="color-close" class="color-close" aria-label="Закрыть палитру">✕</button>
-      </header>
-
-      <div class="color-panel-body">
-        <p class="muted">Выберите цвет фона страницы.</p>
-
-        <div class="swatches" aria-label="Предустановленные цвета">
-          <!-- presets; user can change or add hexes -->
-          <button class="color-swatch" data-color="#0b0f13" style="background:#0b0f13" title="#0b0f13"></button>
-          <button class="color-swatch" data-color="#0f1520" style="background:#0f1520" title="#0f1520"></button>
-          <button class="color-swatch" data-color="#07121a" style="background:#07121a" title="#07121a"></button>
-          <button class="color-swatch" data-color="#102030" style="background:#102030" title="#102030"></button>
-          <button class="color-swatch" data-color="#1b2430" style="background:#1b2430" title="#1b2430"></button>
+      <!-- palette popup, positioned under the button -->
+      <div id="color-palette" class="color-palette" role="dialog" aria-label="Палитра цветов" aria-hidden="true">
+        <div class="palette-row">
+          <label for="color-input">Цвет интерфейса</label>
+          <input id="color-input" type="color" value="#0f1520" aria-label="Выбрать цвет"/>
         </div>
-
-        <label for="color-input" style="display:block;margin-top:12px">Точный цвет</label>
-        <input id="color-input" class="color-input" type="color" value="#0b0f13" aria-label="Цвет фона">
-
-        <div class="modal-controls" style="margin-top:12px">
-          <button id="color-apply" class="btn">Применить</button>
-          <button id="color-reset" class="btn btn-secondary">Сбросить</button>
+        <div class="palette-row">
+          <label for="darken-range">Затемнить карточку</label>
+          <input id="darken-range" type="range" min="0" max="24" value="8" aria-label="Уровень затемнения карточки"/>
+          <span id="darken-val" class="small-muted">8%</span>
+        </div>
+        <div class="palette-actions">
+          <button id="palette-reset" class="btn">Сбросить</button>
+          <button id="palette-close" class="btn secondary">Готово</button>
         </div>
       </div>
     </div>
+
   </div>
 </header>
 
 <main>
-  <!-- Chapters list (hidden off-screen until mouse near left edge) -->
-  <aside id="chapters-list" aria-hidden="false">
+  <aside id="chapters-list">
     <h2>Главы</h2>
     <ul id="chapters"></ul>
   </aside>
@@ -65,23 +47,31 @@
     <div id="chapter-title"></div>
     <article id="chapter-body">Загрузка...</article>
 
-    <!-- Bottom navigation pair: placed here so it's at the very end of chapter content -->
-    <div id="bottom-nav" class="chapter-nav bottom" aria-hidden="false">
-      <button id="bottom-prev" class="nav-btn" aria-label="Назад" disabled>◀</button>
-      <button id="bottom-next" class="nav-btn" aria-label="Вперёд" disabled>▶</button>
+    <!-- bottom nav area (buttons inserted in markup) -->
+    <div id="bottom-nav" class="chapter-nav">
+      <button id="bottom-prev" class="nav-btn" aria-label="Предыдущая глава" disabled>◀</button>
+      <button id="bottom-next" class="nav-btn" aria-label="Следующая глава" disabled>▶</button>
     </div>
   </section>
 </main>
 
-<!-- Top navigation pair (fixed, invisible by default, fades in when scrolling up) -->
-<div id="top-nav" class="chapter-nav top" aria-hidden="true">
-  <button id="top-prev" class="nav-btn" aria-label="Назад" disabled>◀</button>
-  <button id="top-next" class="nav-btn" aria-label="Вперёд" disabled>▶</button>
+<!-- top nav (fixed, centered near top line) -->
+<div id="top-nav" aria-hidden="true">
+  <button id="top-prev" class="nav-btn" aria-label="Предыдущая глава" disabled>◀</button>
+  <button id="top-next" class="nav-btn" aria-label="Следующая глава" disabled>▶</button>
 </div>
 
+<!-- image overlay viewer -->
+<div id="image-overlay" aria-hidden="true" style="display:none">
+  <div class="viewer" role="dialog" aria-modal="true"><img class="viewer-img" src="" alt=""></div>
+</div>
+
+<!-- Libraries -->
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script src="https://unpkg.com/@popperjs/core@2"></script>
 <script src="https://unpkg.com/tippy.js@6"></script>
+
+<!-- Main script -->
 <script src="script.js"></script>
 </body>
 </html>
