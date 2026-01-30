@@ -48,10 +48,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // exponential scaling factor controlling how quickly percent drops near black.
   // Higher -> percent falls off quicker for dark base colors.
-  const CONTRAST_SCALE = 0.1;
+  const CONTRAST_SCALE = 0.8;
 
   // threshold for luminance to switch to dark text (higher -> text turns black earlier)
-  const TEXT_LUMINANCE_THRESHOLD = 0.40; // user requested earlier switch to black
+  const TEXT_LUMINANCE_THRESHOLD = 0.25; // user requested earlier switch to black
 
   /* ---------------- Color conversion helpers ---------------- */
   function hexToRgb(hex) {
