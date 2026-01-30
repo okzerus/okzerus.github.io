@@ -1,4 +1,6 @@
-// script.js - full site script with final color picker + reset, contrast math, and rest of app
+// script.js - switch: lighten background (instead of darken card)
+// Full replacement. Drop into your repo (overwrite), then hard-refresh.
+
 document.addEventListener('DOMContentLoaded', () => {
   /* ---------------- DOM refs ---------------- */
   const chaptersListEl = document.getElementById('chapters');
@@ -38,22 +40,22 @@ document.addEventListener('DOMContentLoaded', () => {
   const resolvedUrlCache = new Map();
   const preloadedImgCache = new Map();
 
-  /* ---------------- Color picker settings ---------------- */
+  /* ---------------- Color picker settings (tweak here) ---------------- */
   const STORAGE_KEY = 'site-bg-color';
   const DEFAULT_BG = '#0b0f13';
 
-  // percentage to darken card relative to base color (0.08 == 8%)
-  // CHANGE THIS VALUE if you want a different default darken percent.
-  const CONTRAST_PERCENT = 0.15;
+  // How much to lighten the background (8% by default).
+  // Set e.g. 0.10 for 10% lighten.
+  const CONTRAST_PERCENT = 0.08;
 
-  // exponential scaling factor controlling how quickly percent drops near black.
-  // Higher -> percent falls off quicker for dark base colors.
-  const CONTRAST_SCALE = 0.8;
+  // Exponential scaling: how quickly the percent decays near white
+  const CONTRAST_SCALE = 5;
 
-  // threshold for luminance to switch to dark text (higher -> text turns black earlier)
-  const TEXT_LUMINANCE_THRESHOLD = 0.25; // user requested earlier switch to black
+  // Luminance threshold (0..1) to decide when to use dark text.
+  // Increase to make text switch to black earlier on bright backgrounds.
+  const TEXT_LUMINANCE_THRESHOLD = 0.60;
 
-  /* ---------------- Color conversion helpers ---------------- */
+  /* ---------------- Color convert helpers ---------------- */
   function hexToRgb(hex) {
     hex = (hex || '').replace('#', '');
     if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
@@ -87,13 +89,14 @@ document.addEventListener('DOMContentLoaded', () => {
     else {
       const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
       const p = 2 * l - q;
-      const hue2rgb = (p, q, t) => {
-        if (t < 0) t += 1;
-        if (t > 1) t -= 1;
-        if (t < 1/6) return p + (q - p) * 6 * t;
-        if (t < 1/2) return q;
-        if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
-        return p;
+      const hue2rgb = (p_, q_, t) => {
+        let tt = t;
+        if (tt < 0) tt += 1;
+        if (tt > 1) tt -= 1;
+        if (tt < 1/6) return p_ + (q_ - p_) * 6 * tt;
+        if (tt < 1/2) return q_;
+        if (tt < 2/3) return p_ + (q_ - p_) * (2/3 - tt) * 6;
+        return p_;
       };
       r = hue2rgb(p, q, h + 1/3);
       g = hue2rgb(p, q, h);
@@ -139,71 +142,85 @@ document.addEventListener('DOMContentLoaded', () => {
     return 0.2126 * srgb[0] + 0.7152 * srgb[1] + 0.0722 * srgb[2];
   }
 
-  // darken hex by 'amount' expressed as fraction (0.08 = reduce L by 8 percentage points)
+  /* ---------------- Lighten/darken helpers ---------------- */
+  function lightenHex(hex, amount) {
+    // amount in 0..1 added to lightness component
+    const { r, g, b } = hexToRgb(hex);
+    const hsl = rgbToHsl(r, g, b);
+    const newL = Math.max(0, Math.min(1, hsl.l + amount));
+    const rgb = hslToRgb(hsl.h, hsl.s, newL);
+    return rgbToHex(rgb.r, rgb.g, rgb.b);
+  }
   function darkenHex(hex, amount) {
     const { r, g, b } = hexToRgb(hex);
-    const hsl = rgbToHsl(r, g, b); // hsl.l in 0..1
+    const hsl = rgbToHsl(r, g, b);
     const newL = Math.max(0, Math.min(1, hsl.l - amount));
     const rgb = hslToRgb(hsl.h, hsl.s, newL);
     return rgbToHex(rgb.r, rgb.g, rgb.b);
   }
 
-  /* ---------------- Contrast percent adjustment (exponential) ----------------
-     adjustedPercent = basePercent * (1 - exp(-CONTRAST_SCALE * lum))
-     - when lum is very small, exp(-...) ~1 => adjustedPercent ~0 (no extra darkening)
-     - when lum is large, adjustedPercent ~ basePercent * (1 - small) -> ~basePercent
-     This prevents hitting pure black unless base color is black.
+  /* ---------------- Adjust percent with exponential scaling ----------------
+     For lightening: adj = basePercent * (1 - exp(-scale * (1 - lum)))
+     - if base color is white (lum ~1) => adj ~ 0
+     - if base color is dark (lum low) => adj approaches ~basePercent*(1 - e^-scale)
   */
-  function adjustedContrastPercent(basePercent, r, g, b) {
+  function adjustedLightenPercent(basePercent, r, g, b) {
     const lum = luminance(r, g, b);
-    return basePercent * (1 - Math.exp(-CONTRAST_SCALE * lum));
+    return basePercent * (1 - Math.exp(-CONTRAST_SCALE * (1 - lum)));
   }
 
-  /* ---------------- Apply color to CSS variables (batched via rAF) ---------------- */
+  /* ---------------- Apply color to CSS vars (batched via rAF) ---------------- */
   let pendingApply = null;
-  function applyColorHex(hex) {
-    // compute r,g,b
-    const { r, g, b } = hexToRgb(hex);
-    // compute adjusted percent
-    const adj = adjustedContrastPercent(CONTRAST_PERCENT, r, g, b);
-    // compute darker card hex
-    const cardHex = darkenHex(hex, adj);
+  function applyColorHex(baseHex) {
+    const { r, g, b } = hexToRgb(baseHex);
+    // compute adjusted lighten percent (applied to background)
+    const adjPercent = adjustedLightenPercent(CONTRAST_PERCENT, r, g, b);
+    // adjPercent is in 0..basePercent scale; it's a fraction of full lightness range (0..1)
+    // We'll treat it as "add adjPercent to L" (which is 0..1)
+    const bgHex = (() => {
+      // compute current lightness, then add adjPercent (clamped)
+      const hsl = rgbToHsl(r, g, b);
+      const newL = Math.min(1, hsl.l + adjPercent);
+      const rgbBg = hslToRgb(hsl.h, hsl.s, newL);
+      return rgbToHex(rgbBg.r, rgbBg.g, rgbBg.b);
+    })();
 
-    // compute button-bg same as cardHex
-    const { r: cr, g: cg, b: cb } = hexToRgb(cardHex);
+    // For the content card we use the baseHex (not darkened). Buttons follow card.
+    const cardHex = baseHex;
 
-    // decide accent / text color based on luminance threshold (higher threshold -> black earlier)
+    // text color decision
     const lum = luminance(r, g, b);
-    const useLightText = lum < TEXT_LUMINANCE_THRESHOLD ? true : false; // true => light text
+    const useLightText = lum < TEXT_LUMINANCE_THRESHOLD; // true => light (white) text
     const accent = useLightText ? '#e6eef6' : '#132029';
     const btnFg = accent;
 
-    // batch updates in a single rAF so all CSS vars update at once
     if (pendingApply) cancelAnimationFrame(pendingApply);
     pendingApply = requestAnimationFrame(() => {
       const root = document.documentElement;
-      root.style.setProperty('--bg', hex);
-      // set card and btn-bg as the darker hex converted to rgba with alpha 1 (no transparency)
-      // since we use darker color, keep fully opaque for clearer contrast
+      root.style.setProperty('--bg', bgHex);
       root.style.setProperty('--card', cardHex);
       root.style.setProperty('--btn-bg', cardHex);
       root.style.setProperty('--accent', accent);
       root.style.setProperty('--btn-fg', btnFg);
-      // also tweak tooltip link color for visibility
-      root.style.setProperty('--tooltip-link-color', lum < 0.45 ? '#bfe8ff' : '#1b6ea1');
+      root.style.setProperty('--tooltip-link-color', luminance(r, g, b) < 0.45 ? '#bfe8ff' : '#1b6ea1');
       pendingApply = null;
     });
   }
 
-  /* ---------------- Picker UI state (HSV) ---------------- */
+  function persistColorFromHsv(hsv) {
+    try {
+      const rgb = hsvToRgb(hsv.h, hsv.s, hsv.v);
+      localStorage.setItem(STORAGE_KEY, rgbToHex(rgb.r, rgb.g, rgb.b));
+    } catch (e) {}
+  }
+
+  /* ---------------- Picker UI (HSV state) ---------------- */
   let hsv = { h: 210, s: 0.3, v: 0.05 };
 
   function updatePickerUI() {
     if (!colorArea || !hueSlider || !colorAreaCursor || !hueCursor) return;
     const hueRgb = hsvToRgb(hsv.h, 1, 1);
-    // three-layer backgrounds: black overlay (top), white overlay (left => right), hue base
     colorArea.style.background = `linear-gradient(to top, rgba(0,0,0,1), rgba(0,0,0,0)), linear-gradient(to right, rgba(255,255,255,1), rgba(255,255,255,0)), rgb(${hueRgb.r},${hueRgb.g},${hueRgb.b})`;
-
     const sliderRect = hueSlider.getBoundingClientRect();
     const y = sliderRect.height * (1 - (hsv.h / 360));
     hueCursor.style.top = `${Math.min(Math.max(0, y), sliderRect.height)}px`;
@@ -215,27 +232,21 @@ document.addEventListener('DOMContentLoaded', () => {
     colorAreaCursor.style.top = `${Math.min(Math.max(0, cy), areaRect.height)}px`;
   }
 
-  /* ---------------- Pointer drag helpers (pointer + touch support) ---------------- */
+  /* ---------------- Drag helpers ---------------- */
   function addDrag(element, handlers) {
     if (!element) return;
-    let dragging = false;
-    let pointerId = null;
+    let dragging = false; let pointerId = null;
     element.addEventListener('pointerdown', (ev) => {
       element.setPointerCapture && element.setPointerCapture(ev.pointerId);
-      dragging = true; pointerId = ev.pointerId;
-      handlers.start && handlers.start(ev);
-      ev.preventDefault();
+      dragging = true; pointerId = ev.pointerId; handlers.start && handlers.start(ev); ev.preventDefault();
     });
     window.addEventListener('pointermove', (ev) => {
       if (!dragging || (pointerId !== null && ev.pointerId !== pointerId)) return;
-      handlers.move && handlers.move(ev);
-      ev.preventDefault();
+      handlers.move && handlers.move(ev); ev.preventDefault();
     }, { passive: false });
     window.addEventListener('pointerup', (ev) => {
       if (!dragging || (pointerId !== null && ev.pointerId !== pointerId)) return;
-      dragging = false; pointerId = null;
-      handlers.end && handlers.end(ev);
-      ev.preventDefault();
+      dragging = false; pointerId = null; handlers.end && handlers.end(ev); ev.preventDefault();
     });
     element.addEventListener('touchstart', (e) => { if (e.touches && e.touches[0]) handlers.start && handlers.start(e.touches[0]); e.preventDefault(); }, { passive: false });
     window.addEventListener('touchmove', (e) => { if (e.touches && e.touches[0]) handlers.move && handlers.move(e.touches[0]); }, { passive: false });
@@ -243,6 +254,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function handleHuePointer(e) {
+    if (!hueSlider) return;
     const rect = hueSlider.getBoundingClientRect();
     const y = Math.min(Math.max(0, (e.clientY || 0) - rect.top), rect.height);
     const ratio = 1 - (y / rect.height);
@@ -250,9 +262,10 @@ document.addEventListener('DOMContentLoaded', () => {
     updatePickerUI();
     const rgb = hsvToRgb(hsv.h, hsv.s, hsv.v);
     applyColorHex(rgbToHex(rgb.r, rgb.g, rgb.b));
-    persistColor();
+    persistColorFromHsv(hsv);
   }
   function handleAreaPointer(e) {
+    if (!colorArea) return;
     const rect = colorArea.getBoundingClientRect();
     const x = Math.min(Math.max(0, (e.clientX || 0) - rect.left), rect.width);
     const y = Math.min(Math.max(0, (e.clientY || 0) - rect.top), rect.height);
@@ -261,11 +274,11 @@ document.addEventListener('DOMContentLoaded', () => {
     updatePickerUI();
     const rgb = hsvToRgb(hsv.h, hsv.s, hsv.v);
     applyColorHex(rgbToHex(rgb.r, rgb.g, rgb.b));
-    persistColor();
+    persistColorFromHsv(hsv);
   }
 
-  if (hueSlider) addDrag(hueSlider, { start: handleHuePointer, move: handleHuePointer, end: () => persistColor() });
-  if (colorArea) addDrag(colorArea, { start: handleAreaPointer, move: handleAreaPointer, end: () => persistColor() });
+  if (hueSlider) addDrag(hueSlider, { start: handleHuePointer, move: handleHuePointer, end: () => persistColorFromHsv(hsv) });
+  if (colorArea) addDrag(colorArea, { start: handleAreaPointer, move: handleAreaPointer, end: () => persistColorFromHsv(hsv) });
 
   // show/hide popup
   function showColorPopup() { if (!colorPopup) return; colorPopup.classList.add('visible'); colorPopup.setAttribute('aria-hidden', 'false'); document.addEventListener('click', onDocClickForPopup); }
@@ -273,26 +286,31 @@ document.addEventListener('DOMContentLoaded', () => {
   function onDocClickForPopup(e) { if (!colorPopup) return; if (colorPopup.contains(e.target) || (themeToggle && themeToggle.contains(e.target))) return; hideColorPopup(); }
   if (themeToggle) themeToggle.addEventListener('click', (e) => { e.stopPropagation(); if (!colorPopup) return; if (colorPopup.classList.contains('visible')) hideColorPopup(); else showColorPopup(); });
 
-  // reset button restores default immediately
+  /* ---------------- Reset button behaviour ----------------
+     Reset should restore "old" look (exactly like pre-picker light/dark toggle)
+     Old defaults: background DEFAULT_BG, card & btn-bg as rgba(11,15,19,0.9) (see styles.css fallback)
+  */
   if (colorResetBtn) colorResetBtn.addEventListener('click', (e) => {
     try { localStorage.removeItem(STORAGE_KEY); } catch (err) {}
-    const { r, g, b } = hexToRgb(DEFAULT_BG);
-    const hvs = rgbToHsv(r, g, b);
-    hsv = { h: hvs.h || 0, s: hvs.s || 0, v: hvs.v || 0 };
-    updatePickerUI();
-    applyColorHex(DEFAULT_BG);
+    // set CSS vars to old defaults
+    const root = document.documentElement;
+    root.style.setProperty('--bg', DEFAULT_BG);
+    root.style.setProperty('--card', 'rgba(11,15,19,0.9)');
+    root.style.setProperty('--btn-bg', 'rgba(11,15,19,0.9)');
+    root.style.setProperty('--accent', '#e6eef6'); // dark-mode text
+    root.style.setProperty('--btn-fg', '#e6eef6');
+    root.style.setProperty('--tooltip-link-color', '#bfe8ff');
+    // reset picker UI to default color
+    try {
+      const { r, g, b } = hexToRgb(DEFAULT_BG);
+      const hvs = rgbToHsv(r, g, b);
+      hsv = { h: hvs.h || 0, s: hvs.s || 0, v: hvs.v || 0 };
+      updatePickerUI();
+    } catch (_) {}
     hideColorPopup();
   });
 
-  function persistColor() {
-    try {
-      // compute current hex and persist
-      const rgb = hsvToRgb(hsv.h, hsv.s, hsv.v);
-      localStorage.setItem(STORAGE_KEY, rgbToHex(rgb.r, rgb.g, rgb.b));
-    } catch (e) {}
-  }
-
-  // init stored color
+  /* ---------------- Initialize color from storage ---------------- */
   (function initColorFromStorage() {
     try {
       const stored = localStorage.getItem(STORAGE_KEY) || DEFAULT_BG;
@@ -310,14 +328,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   })();
 
-  /* ---------------- The rest of your app (chapters, tooltips, image viewer, nav) ----------------
-     This block preserves the same logic you used before. I've implemented the full set of functions
-     below and kept behavior identical: loading chapters.json, applying done flag, goToChapter,
-     loadChapter, preloading tooltip images, tippy initialization (banner images), image viewer,
-     top/bottom nav controls, keyboard navigation, session-only scroll restore, and chapter list slide-out.
+  /* ---------------- The rest of your app (chapters, tippy, image viewer, nav) ----------------
+     I preserved the full logic used before: loading chapters.json (with done flag),
+     pop-out chapters aside, top/bottom nav behavior, tippy tooltips with banner images
+     (preloaded), image viewer (click to open, LMB to zoom/drag), and session-only scroll restore.
+     The functions below are the same as your previous fully-working script.
   */
 
-  /* ---------- helpers for "done" and nav ---------- */
+  /* ---------- helpers for 'done' and nav ---------- */
   function isDoneEntry(entry) { if (!entry) return false; return entry.done !== false; }
   function findPrevDoneIndex(fromIndex) {
     for (let i = (fromIndex === undefined ? currentIndex - 1 : fromIndex); i >= 0; i--) if (isDoneEntry(chapters[i])) return i;
@@ -376,14 +394,8 @@ document.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('keydown', (e) => {
     const active = document.activeElement;
     if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) return;
-    if (e.key === 'ArrowLeft') {
-      const prev = findPrevDoneIndex();
-      if (prev !== -1) goToChapter(prev);
-    }
-    if (e.key === 'ArrowRight') {
-      const next = findNextDoneIndex();
-      if (next !== -1) goToChapter(next);
-    }
+    if (e.key === 'ArrowLeft') { const prev = findPrevDoneIndex(); if (prev !== -1) goToChapter(prev); }
+    if (e.key === 'ArrowRight') { const next = findNextDoneIndex(); if (next !== -1) goToChapter(next); }
   });
 
   /* ---------- load chapters.json ---------- */
@@ -442,13 +454,11 @@ document.addEventListener('DOMContentLoaded', () => {
       const html = (window.marked) ? marked.parse(md) : '<p>Ошибка: библиотека marked не загружена.</p>';
       chapterBodyEl.innerHTML = html;
 
-      // post-process: center images, bind viewer, preload tooltips
       bindImagesToViewer();
       preloadTooltipImages();
       initGlossTippy();
       updateNavButtons();
 
-      // restore scroll only if sessionStorage entry exists (reload)
       try {
         const key = 'scroll:' + filename;
         const v = sessionStorage.getItem(key);
@@ -473,7 +483,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  /* ---------- tooltip image resolution & preload ---------- */
+  /* ---------- tooltip image resolve / preload ---------- */
   function testImageUrl(url, timeout = 3000) {
     return new Promise((resolve) => {
       const img = new Image();
@@ -543,7 +553,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // re-preload on visibilitychange (browser may drop image objects)
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState !== 'visible') return;
     if (!chapterBodyEl) return;
@@ -563,7 +572,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  /* ---------- tippy initialization for .gloss (banner image + body) ---------- */
+  /* ---------- tippy for .gloss ---------- */
   function initGlossTippy() {
     if (!window.tippy) return;
     document.querySelectorAll('.gloss').forEach(el => { try { if (el._tippy) el._tippy.destroy(); } catch (e) {} });
@@ -640,7 +649,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  /* ---------- small nav tippies for prev/next ---------- */
+  /* ---------- small nav tippies ---------- */
   function refreshNavTippies() {
     if (!window.tippy) return;
     [bottomPrev, bottomNext, topPrev, topNext].forEach(btn => { if (!btn) return; try { if (btn._tippy) btn._tippy.destroy(); } catch (e) {} });
@@ -650,7 +659,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (topNext) tippy(topNext, { content: () => topNext.dataset.title || '', placement: 'bottom', delay: [80, 40], offset: [0, 8], appendTo: () => document.body });
   }
 
-  /* ---------- chapters aside slide behavior ---------- */
+  /* ---------- chapters aside slide ---------- */
   let chaptersOpen = false;
   const EDGE_TRIGGER_PX = 12;
   function openChapters() { if (chaptersOpen) return; chaptersOpen = true; document.body.classList.add('chapters-open'); }
@@ -663,7 +672,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   document.addEventListener('click', (e) => { if (!chaptersOpen) return; if (chaptersAside && chaptersAside.contains(e.target)) return; if (e.clientX <= EDGE_TRIGGER_PX) return; closeChapters(); });
 
-  /* ---------- top nav positioning & visibility (1s hide delay) ---------- */
+  /* ---------- top nav visibility (1s hide delay) ---------- */
   function positionTopNav() {
     if (!topNav || !headerEl) return;
     const hRect = headerEl.getBoundingClientRect();
@@ -748,7 +757,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initialTopNavSetup();
   setTimeout(initialTopNavSetup, 80);
 
-  /* ---------- image viewer (lightbox) ---------- */
+  /* ---------- image viewer ---------- */
   if (!document.getElementById('image-overlay')) {
     const overlay = document.createElement('div');
     overlay.id = 'image-overlay';
@@ -823,7 +832,6 @@ document.addEventListener('DOMContentLoaded', () => {
   function bindImagesToViewer() {
     const imgs = chapterBodyEl.querySelectorAll('img');
     imgs.forEach(img => {
-      // center images already via CSS; make them clickable
       const clone = img.cloneNode(true);
       clone.style.cursor = 'pointer';
       img.parentNode.replaceChild(clone, img);
@@ -835,7 +843,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  /* ---------- persist scroll only on unload (sessionStorage) ---------- */
+  /* ---------- persist scroll on reload only ---------- */
   window.addEventListener('beforeunload', () => {
     try {
       if (currentIndex >= 0 && chapters[currentIndex] && chapters[currentIndex].file) {
@@ -845,7 +853,7 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (e) {}
   });
 
-  /* ---------- tippies and nav tippies helper ---------- */
+  /* ---------- tippies + nav tippies helper ---------- */
   function refreshNavTippies() {
     if (!window.tippy) return;
     [bottomPrev, bottomNext, topPrev, topNext].forEach(btn => { if (!btn) return; try { if (btn._tippy) btn._tippy.destroy(); } catch (e) {} });
@@ -855,10 +863,31 @@ document.addEventListener('DOMContentLoaded', () => {
     if (topNext) tippy(topNext, { content: () => topNext.dataset.title || '', placement: 'bottom', delay: [80, 40], offset: [0, 8], appendTo: () => document.body });
   }
 
-  /* ---------- start app ---------- */
+  /* ---------- start ---------- */
   loadChapters();
   updateNavButtons();
-  // correct top-nav pos after load
   setTimeout(() => { positionTopNav(); if (window.scrollY <= 10 && !bottomNavIsVisible()) showTopNavImmediate(); }, 120);
 
+  // small local helpers used inside this file (hsvToRgb, rgbToHsv) - reimplement close by
+  function hsvToRgb(h, s, v) {
+    h = (h % 360 + 360) % 360;
+    const c = v * s;
+    const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+    const m = v - c;
+    let r = 0, g = 0, b = 0;
+    if (h < 60) { r = c; g = x; b = 0; }
+    else if (h < 120) { r = x; g = c; b = 0; }
+    else if (h < 180) { r = 0; g = c; b = x; }
+    else if (h < 240) { r = 0; g = x; b = c; }
+    else if (h < 300) { r = x; g = 0; b = c; }
+    else { r = c; g = 0; b = x; }
+    return { r: Math.round((r + m) * 255), g: Math.round((g + m) * 255), b: Math.round((b + m) * 255) };
+  }
+  function rgbToHsv(r,g,b){
+    r/=255; g/=255; b/=255;
+    const max=Math.max(r,g,b), min=Math.min(r,g,b);
+    const d=max-min; let h=0, s = (max===0?0:d/max), v=max;
+    if (d!==0){ if (max===r) h=(g-b)/d + (g<b?6:0); else if (max===g) h=(b-r)/d + 2; else h=(r-g)/d + 4; h*=60; }
+    return {h,s,v};
+  }
 });
