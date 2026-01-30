@@ -5,8 +5,7 @@
 
   --tooltip-link-color: #bfe8ff;
   --tooltip-image-height: 200px;
-  --transition-fast: 180ms;
-
+  --transition-fast: 0ms; /* immediate */
   /* runtime vars (script overrides):
      --bg, --card, --btn-bg, --accent, --btn-fg
   */
@@ -23,7 +22,7 @@ body{
   color:var(--accent);
   -webkit-font-smoothing:antialiased;
   -moz-osx-font-smoothing:grayscale;
-  transition: background var(--transition-fast) ease, color var(--transition-fast) ease, filter 220ms ease;
+  /* removed smooth transitions to make color updates immediate */
 }
 
 /* Header */
@@ -40,7 +39,6 @@ header h1{ margin:0; font-size:18px; font-weight:700; flex:1 }
 #theme-toggle{
   width:40px; height:40px; border-radius:10px; border:0; background:var(--btn-bg); color:var(--btn-fg);
   font-size:16px; cursor:pointer; box-shadow:0 6px 12px rgba(0,0,0,0.12); display:flex; align-items:center; justify-content:center;
-  transition: transform 140ms ease, background var(--transition-fast) ease, color var(--transition-fast) ease;
 }
 #theme-toggle:hover{ transform:translateY(-2px) }
 #theme-toggle:active{ transform:translateY(0) }
@@ -104,7 +102,7 @@ body.chapters-open #chapters-list{ transform:translateX(0); }
 #chapters-list a.undone { color: var(--muted-dark); text-decoration: line-through; pointer-events: none; cursor: default; opacity: 0.75; }
 
 /* content area centered */
-#content{ max-width: 960px; margin: 18px auto; background:var(--card); padding:24px; border-radius:8px; box-shadow:0 2px 6px rgba(0,0,0,0.06); transition: background var(--transition-fast) ease; }
+#content{ max-width: 960px; margin: 18px auto; background:var(--card); padding:24px; border-radius:8px; box-shadow:0 2px 6px rgba(0,0,0,0.06); }
 
 /* chapter title centered */
 #chapter-title{ font-size:40px; font-weight:700; margin: 0 0 16px; text-align:center; word-break:break-word; }
