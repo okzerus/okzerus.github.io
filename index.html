@@ -12,17 +12,25 @@
 <header>
   <h1 id="site-title">Distortion Detective [RU]</h1>
   <div class="header-controls">
-    <!-- color picker button (keeps sun symbol) -->
+    <!-- Inline color picker button (keeps sun symbol) -->
     <div class="color-picker-container">
       <button id="theme-toggle" aria-label="Выбрать цвет фона" title="Выбрать цвет фона">☀︎</button>
 
-      <!-- popup that appears under the button -->
+      <!-- popup that appears under the button - now contains our custom palette -->
       <div id="color-popup" class="color-popup" role="dialog" aria-hidden="true">
-        <label for="bg-color-picker" class="visually-hidden">Выберите цвет фона</label>
-        <input id="bg-color-picker" type="color" aria-label="Выбор цвета фона">
+        <div class="palette">
+          <canvas id="palette-sv" width="220" height="160" aria-label="Палитра цвета (перетаскивайте для выбора)"></canvas>
+          <canvas id="palette-hue" width="220" height="18" aria-label="Шкала оттенка (перетаскивайте)"></canvas>
+        </div>
         <div class="color-controls">
-          <button id="color-save" class="small">Сохранить</button>
-          <button id="color-reset" class="small">Сброс</button>
+          <div class="swatches">
+            <div id="swatch-current" class="swatch" title="Текущий цвет"></div>
+            <div id="swatch-default" class="swatch" title="Сброс к умолчанию"></div>
+          </div>
+          <div class="buttons">
+            <button id="color-save" class="small">Сохранить</button>
+            <button id="color-reset" class="small">Сброс</button>
+          </div>
         </div>
       </div>
     </div>
@@ -39,7 +47,7 @@
     <div id="chapter-title"></div>
     <article id="chapter-body">Загрузка...</article>
 
-    <!-- bottom nav area — buttons inserted here by your markup -->
+    <!-- bottom nav -->
     <div id="bottom-nav" class="chapter-nav">
       <button id="bottom-prev" class="nav-btn" aria-label="Предыдущая глава" disabled>◀</button>
       <button id="bottom-next" class="nav-btn" aria-label="Следующая глава" disabled>▶</button>
@@ -47,13 +55,12 @@
   </section>
 </main>
 
-<!-- top nav: fixed centered near header line, initially hidden -->
+<!-- top nav: fixed centered near header line -->
 <div id="top-nav" aria-hidden="true">
   <button id="top-prev" class="nav-btn" aria-label="Предыдущая глава" disabled>◀</button>
   <button id="top-next" class="nav-btn" aria-label="Следующая глава" disabled>▶</button>
 </div>
 
-<!-- image viewer overlay created/managed by script -->
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script src="https://unpkg.com/@popperjs/core@2"></script>
 <script src="https://unpkg.com/tippy.js@6"></script>
