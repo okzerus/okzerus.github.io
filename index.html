@@ -12,24 +12,17 @@
 <header>
   <h1 id="site-title">Distortion Detective [RU]</h1>
   <div class="header-controls">
-    <!-- Inline color picker button (keeps sun symbol) -->
     <div class="color-picker-container">
       <button id="theme-toggle" aria-label="Выбрать цвет фона" title="Выбрать цвет фона">☀︎</button>
 
-      <!-- popup that appears under the button - now contains our custom palette -->
+      <!-- custom inline picker panel (gradient + hue slider) -->
       <div id="color-popup" class="color-popup" role="dialog" aria-hidden="true">
-        <div class="palette">
-          <canvas id="palette-sv" width="220" height="160" aria-label="Палитра цвета (перетаскивайте для выбора)"></canvas>
-          <canvas id="palette-hue" width="220" height="18" aria-label="Шкала оттенка (перетаскивайте)"></canvas>
-        </div>
-        <div class="color-controls">
-          <div class="swatches">
-            <div id="swatch-current" class="swatch" title="Текущий цвет"></div>
-            <div id="swatch-default" class="swatch" title="Сброс к умолчанию"></div>
+        <div class="picker">
+          <div id="color-area" class="color-area" aria-label="Градиент цвета" role="application">
+            <div id="color-area-cursor" class="area-cursor"></div>
           </div>
-          <div class="buttons">
-            <button id="color-save" class="small">Сохранить</button>
-            <button id="color-reset" class="small">Сброс</button>
+          <div id="hue-slider" class="hue-slider" aria-label="Слайдер оттенка" role="application">
+            <div id="hue-cursor" class="hue-cursor"></div>
           </div>
         </div>
       </div>
@@ -47,7 +40,6 @@
     <div id="chapter-title"></div>
     <article id="chapter-body">Загрузка...</article>
 
-    <!-- bottom nav -->
     <div id="bottom-nav" class="chapter-nav">
       <button id="bottom-prev" class="nav-btn" aria-label="Предыдущая глава" disabled>◀</button>
       <button id="bottom-next" class="nav-btn" aria-label="Следующая глава" disabled>▶</button>
@@ -55,7 +47,6 @@
   </section>
 </main>
 
-<!-- top nav: fixed centered near header line -->
 <div id="top-nav" aria-hidden="true">
   <button id="top-prev" class="nav-btn" aria-label="Предыдущая глава" disabled>◀</button>
   <button id="top-next" class="nav-btn" aria-label="Следующая глава" disabled>▶</button>
