@@ -1,16 +1,9 @@
-// script.js - fixed color picker + full app logic
-// - compact hue + gradient picker, live persistence
-// - header & content use 20% transparent card (rgba(...,0.8))
-// - other app features preserved: chapters load, "done" flag, slide-out chapters,
-//   tippy tooltips (preload + banner), image viewer (click to open, LMB zoom & drag),
-//   top/bottom nav behavior, scroll-on-reload-only persistence.
-
 document.addEventListener('DOMContentLoaded', () => {
   /* ---------------- DOM refs ---------------- */
   const chaptersListEl = document.getElementById('chapters');
   const chapterBodyEl = document.getElementById('chapter-body');
   const chapterTitleEl = document.getElementById('chapter-title');
-  const themeToggle = document.getElementById('theme-toggle'); // opens picker
+  const themeToggle = document.getElementById('theme-toggle');
   const headerEl = document.querySelector('header');
 
   const bottomPrev = document.getElementById('bottom-prev');
@@ -47,9 +40,12 @@ document.addEventListener('DOMContentLoaded', () => {
   const STORAGE_KEY = 'site-bg-color';
   const DEFAULT_BG = '#0b0f13';
 
-  // HSV state
-  let hsv = { h: 210, s: 0.3, v: 0.05 };
+  // <-- Change this value to alter how opaque the header/card/buttons are.
+  // 0.8 means 80% opacity (more transparent), 0.95 is almost opaque.
+  // Default set for better contrast:
+  const CARD_ALPHA = 0.9;
 
+  // HSV helpers
   function hsvToRgb(h, s, v) {
     h = (h % 360 + 360) % 360;
     const c = v * s;
@@ -66,16 +62,23 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   function rgbToHex(r,g,b){ return '#' + [r,g,b].map(v=>v.toString(16).padStart(2,'0')).join(''); }
   function hexToRgb(hex){ hex = (hex||'').replace('#',''); if(hex.length===3) hex = hex.split('').map(c=>c+c).join(''); const n=parseInt(hex,16); return { r:(n>>16)&255, g:(n>>8)&255, b:n&255 }; }
-  function rgbToHsv(r,g,b){ r/=255; g/=255; b/=255; const max=Math.max(r,g,b), min=Math.min(r,g,b); const d=max-min; let h=0, s = (max===0?0:d/max), v=max; if(d!==0){ if(max===r) h=(g-b)/d + (g<b?6:0); else if(max===g) h=(b-r)/d + 2; else h=(r-g)/d + 4; h*=60; } return {h,s,v}; }
+  function rgbToHsv(r,g,b){ r/=255; g/=255; b/=255; const max=Math.max(r,g,b), min=Math.min(r,g,b); const d=max-min; let h=0, s = (max===0?0:d/max), v=max; if(d!==0){ if(max===r) h=(g-b)/d + (g<b?6:0); else if(max===g) h=(b-r)/d + 2; else h=(r-g)/d + 4; h *= 60; } return {h,s,v}; }
   function luminanceFromRgb(r,g,b){ const srgb=[r,g,b].map(v=>{ v/=255; return v<=0.03928 ? v/12.92 : Math.pow((v+0.055)/1.055,2.4); }); return 0.2126*srgb[0] + 0.7152*srgb[1] + 0.0722*srgb[2]; }
 
+  // current hsv state (initialized later)
+  let hsv = { h:210, s:0.3, v:0.05 };
+
+  // Apply HSV into CSS variables:
+  // --bg = chosen hex
+  // --card and --btn-bg = rgba(r,g,b,CARD_ALPHA)
+  // --accent / --btn-fg chosen for readable contrast
   function applyColorFromHsv(hsvObj) {
     const { r,g,b } = hsvToRgb(hsvObj.h, hsvObj.s, hsvObj.v);
     const hex = rgbToHex(r,g,b);
     const root = document.documentElement;
     root.style.setProperty('--bg', hex);
-    root.style.setProperty('--card', `rgba(${r},${g},${b},0.8)`);
-    root.style.setProperty('--btn-bg', `rgba(${r},${g},${b},0.8)`);
+    root.style.setProperty('--card', `rgba(${r},${g},${b},${CARD_ALPHA})`);
+    root.style.setProperty('--btn-bg', `rgba(${r},${g},${b},${CARD_ALPHA})`);
     const lum = luminanceFromRgb(r,g,b);
     if (lum < 0.45) {
       root.style.setProperty('--accent', '#e6eef6');
@@ -93,16 +96,20 @@ document.addEventListener('DOMContentLoaded', () => {
     try { localStorage.setItem(STORAGE_KEY, rgbToHex(r,g,b)); } catch (e) {}
   }
 
+  // IMPORTANT: set multi-layer background for the color area so
+  // it shows Hue base + white(left->right) + black(bottom->top) overlays.
   function updatePickerUI() {
     if (!colorArea || !hueSlider || !colorAreaCursor || !hueCursor) return;
-    // update color-area background to the pure hue (saturation/value axes overlayed via pseudo gradients)
-    const { r:gR, g:gG, b:gB } = hsvToRgb(hsv.h, 1, 1);
-    colorArea.style.background = `rgb(${gR},${gG},${gB})`;
-    // position hue cursor
+    const { r: hr, g: hg, b: hb } = hsvToRgb(hsv.h, 1, 1); // pure hue
+    // three-layer background: top = black gradient, middle = white gradient, bottom = hue base
+    colorArea.style.background = `linear-gradient(to top, rgba(0,0,0,1), rgba(0,0,0,0)), linear-gradient(to right, rgba(255,255,255,1), rgba(255,255,255,0)), rgb(${hr},${hg},${hb})`;
+
+    // hue cursor (vertical)
     const sliderRect = hueSlider.getBoundingClientRect();
     const y = sliderRect.height * (1 - (hsv.h / 360));
     hueCursor.style.top = `${Math.min(Math.max(0, y), sliderRect.height)}px`;
-    // position area cursor
+
+    // area cursor (s / v)
     const areaRect = colorArea.getBoundingClientRect();
     const cx = areaRect.width * hsv.s;
     const cy = areaRect.height * (1 - hsv.v);
@@ -110,32 +117,25 @@ document.addEventListener('DOMContentLoaded', () => {
     colorAreaCursor.style.top = `${Math.min(Math.max(0, cy), areaRect.height)}px`;
   }
 
-  // pointer drag helper using pointer events (mouse & touch)
+  // pointer drag helper (pointer events + touch fallback)
   function addDrag(element, handlers) {
     if (!element) return;
-    let dragging = false;
-    let pointerId = null;
+    let dragging = false; let pointerId = null;
     element.addEventListener('pointerdown', (ev) => {
       element.setPointerCapture && element.setPointerCapture(ev.pointerId);
-      dragging = true; pointerId = ev.pointerId;
-      handlers.start && handlers.start(ev);
-      ev.preventDefault();
+      dragging = true; pointerId = ev.pointerId; handlers.start && handlers.start(ev); ev.preventDefault();
     });
     window.addEventListener('pointermove', (ev) => {
       if (!dragging || (pointerId !== null && ev.pointerId !== pointerId)) return;
-      handlers.move && handlers.move(ev);
-      ev.preventDefault();
-    }, { passive: false });
+      handlers.move && handlers.move(ev); ev.preventDefault();
+    }, { passive:false });
     window.addEventListener('pointerup', (ev) => {
       if (!dragging || (pointerId !== null && ev.pointerId !== pointerId)) return;
-      dragging = false; pointerId = null;
-      handlers.end && handlers.end(ev);
-      ev.preventDefault();
+      dragging = false; pointerId = null; handlers.end && handlers.end(ev); ev.preventDefault();
     });
-    // fallback touch handlers if pointer events not supported (older browsers)
-    element.addEventListener('touchstart', (e) => { if (!e.touches[0]) return; handlers.start && handlers.start(e.touches[0]); e.preventDefault(); }, { passive: false });
-    window.addEventListener('touchmove', (e) => { if (!e.touches[0]) return; handlers.move && handlers.move(e.touches[0]); e.preventDefault(); }, { passive: false });
-    window.addEventListener('touchend', (e) => { handlers.end && handlers.end(e.changedTouches && e.changedTouches[0]); }, { passive: false });
+    element.addEventListener('touchstart', (e)=>{ if (e.touches && e.touches[0]) handlers.start && handlers.start(e.touches[0]); e.preventDefault(); }, { passive:false });
+    window.addEventListener('touchmove', (e)=>{ if (e.touches && e.touches[0]) handlers.move && handlers.move(e.touches[0]); }, { passive:false });
+    window.addEventListener('touchend', (e)=>{ handlers.end && handlers.end(e.changedTouches && e.changedTouches[0]); }, { passive:false });
   }
 
   function handleHuePointer(e) {
@@ -146,7 +146,7 @@ document.addEventListener('DOMContentLoaded', () => {
     hsv.h = ratio * 360;
     updatePickerUI();
     applyColorFromHsv(hsv);
-    persistColor();
+    persistColor(); // real-time persist as requested
   }
   function handleAreaPointer(e) {
     if (!colorArea) return;
@@ -163,13 +163,12 @@ document.addEventListener('DOMContentLoaded', () => {
   if (hueSlider) addDrag(hueSlider, { start: handleHuePointer, move: handleHuePointer, end: () => persistColor() });
   if (colorArea) addDrag(colorArea, { start: handleAreaPointer, move: handleAreaPointer, end: () => persistColor() });
 
-  // show/hide popup
-  function showColorPopup() { if (!colorPopup) return; colorPopup.classList.add('visible'); colorPopup.setAttribute('aria-hidden', 'false'); document.addEventListener('click', onDocClickForPopup); }
-  function hideColorPopup() { if (!colorPopup) return; colorPopup.classList.remove('visible'); colorPopup.setAttribute('aria-hidden', 'true'); document.removeEventListener('click', onDocClickForPopup); }
+  function showColorPopup() { if (!colorPopup) return; colorPopup.classList.add('visible'); colorPopup.setAttribute('aria-hidden','false'); document.addEventListener('click', onDocClickForPopup); }
+  function hideColorPopup() { if (!colorPopup) return; colorPopup.classList.remove('visible'); colorPopup.setAttribute('aria-hidden','true'); document.removeEventListener('click', onDocClickForPopup); }
   function onDocClickForPopup(e) { if (!colorPopup) return; if (colorPopup.contains(e.target) || (themeToggle && themeToggle.contains(e.target))) return; hideColorPopup(); }
   if (themeToggle) themeToggle.addEventListener('click', (e) => { e.stopPropagation(); if (!colorPopup) return; if (colorPopup.classList.contains('visible')) hideColorPopup(); else showColorPopup(); });
 
-  // initialize color from storage (or default)
+  // initialize color from storage
   (function initColorFromStorage() {
     try {
       const storedHex = localStorage.getItem(STORAGE_KEY) || DEFAULT_BG;
@@ -181,8 +180,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const hvs = rgbToHsv(r,g,b);
       hsv = { h: hvs.h || 0, s: hvs.s || 0, v: hvs.v || 0 };
     }
-    applyColorFromHsv(hsv);
-    requestAnimationFrame(updatePickerUI);
+    applyColorFromHsv(hsv); requestAnimationFrame(updatePickerUI);
   })();
 
   /* ---------------- Now the rest of app: chapters, tippy, image viewer, nav ---------------- */
