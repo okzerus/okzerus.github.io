@@ -12,28 +12,20 @@
 <header>
   <h1 id="site-title">Distortion Detective [RU]</h1>
   <div class="header-controls">
-    <!-- color-palette opener (keeps sun icon as requested) -->
-    <div class="palette-wrapper" style="position:relative;">
-      <button id="theme-toggle" aria-haspopup="true" aria-expanded="false" title="Выбрать цвет интерфейса">☀︎</button>
+    <!-- color picker button (keeps sun symbol) -->
+    <div class="color-picker-container">
+      <button id="theme-toggle" aria-label="Выбрать цвет фона" title="Выбрать цвет фона">☀︎</button>
 
-      <!-- palette popup, positioned under the button -->
-      <div id="color-palette" class="color-palette" role="dialog" aria-label="Палитра цветов" aria-hidden="true">
-        <div class="palette-row">
-          <label for="color-input">Цвет интерфейса</label>
-          <input id="color-input" type="color" value="#0f1520" aria-label="Выбрать цвет"/>
-        </div>
-        <div class="palette-row">
-          <label for="darken-range">Затемнить карточку</label>
-          <input id="darken-range" type="range" min="0" max="24" value="8" aria-label="Уровень затемнения карточки"/>
-          <span id="darken-val" class="small-muted">8%</span>
-        </div>
-        <div class="palette-actions">
-          <button id="palette-reset" class="btn">Сбросить</button>
-          <button id="palette-close" class="btn secondary">Готово</button>
+      <!-- popup that appears under the button -->
+      <div id="color-popup" class="color-popup" role="dialog" aria-hidden="true">
+        <label for="bg-color-picker" class="visually-hidden">Выберите цвет фона</label>
+        <input id="bg-color-picker" type="color" aria-label="Выбор цвета фона">
+        <div class="color-controls">
+          <button id="color-save" class="small">Сохранить</button>
+          <button id="color-reset" class="small">Сброс</button>
         </div>
       </div>
     </div>
-
   </div>
 </header>
 
@@ -47,7 +39,7 @@
     <div id="chapter-title"></div>
     <article id="chapter-body">Загрузка...</article>
 
-    <!-- bottom nav area (buttons inserted in markup) -->
+    <!-- bottom nav area — buttons inserted here by your markup -->
     <div id="bottom-nav" class="chapter-nav">
       <button id="bottom-prev" class="nav-btn" aria-label="Предыдущая глава" disabled>◀</button>
       <button id="bottom-next" class="nav-btn" aria-label="Следующая глава" disabled>▶</button>
@@ -55,23 +47,16 @@
   </section>
 </main>
 
-<!-- top nav (fixed, centered near top line) -->
+<!-- top nav: fixed centered near header line, initially hidden -->
 <div id="top-nav" aria-hidden="true">
   <button id="top-prev" class="nav-btn" aria-label="Предыдущая глава" disabled>◀</button>
   <button id="top-next" class="nav-btn" aria-label="Следующая глава" disabled>▶</button>
 </div>
 
-<!-- image overlay viewer -->
-<div id="image-overlay" aria-hidden="true" style="display:none">
-  <div class="viewer" role="dialog" aria-modal="true"><img class="viewer-img" src="" alt=""></div>
-</div>
-
-<!-- Libraries -->
+<!-- image viewer overlay created/managed by script -->
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script src="https://unpkg.com/@popperjs/core@2"></script>
 <script src="https://unpkg.com/tippy.js@6"></script>
-
-<!-- Main script -->
 <script src="script.js"></script>
 </body>
 </html>
