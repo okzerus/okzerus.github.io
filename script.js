@@ -44,14 +44,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // percentage to darken card relative to base color (0.08 == 8%)
   // CHANGE THIS VALUE if you want a different default darken percent.
-  const CONTRAST_PERCENT = 0.08;
+  const CONTRAST_PERCENT = 0.15;
 
   // exponential scaling factor controlling how quickly percent drops near black.
   // Higher -> percent falls off quicker for dark base colors.
-  const CONTRAST_SCALE = 5;
+  const CONTRAST_SCALE = 0;
 
   // threshold for luminance to switch to dark text (higher -> text turns black earlier)
-  const TEXT_LUMINANCE_THRESHOLD = 0.60; // user requested earlier switch to black
+  const TEXT_LUMINANCE_THRESHOLD = 0.80; // user requested earlier switch to black
 
   /* ---------------- Color conversion helpers ---------------- */
   function hexToRgb(hex) {
