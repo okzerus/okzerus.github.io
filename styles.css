@@ -1,18 +1,18 @@
 :root{
   --bg-dark:#0b0f13;
+  --card-dark:#0f1520;
   --accent-dark:#e6eef6;
   --muted-dark:#9aa6b2;
 
   --tooltip-link-color: #bfe8ff;
   --tooltip-image-height: 200px;
-  --transition-fast: 0ms; /* immediate */
-  /* runtime vars (script overrides):
-     --bg, --card, --btn-bg, --accent, --btn-fg
-  */
+
+  /* runtime vars (set by script) */
+  /* --bg, --card, --btn-bg, --accent, --btn-fg are set by script */
 }
 
-/* fallback defaults */
-html { --bg: var(--bg-dark); --card: rgba(11,15,19,0.9); --btn-bg: rgba(11,15,19,0.9); --accent: var(--accent-dark); --btn-fg: var(--accent-dark); }
+/* sensible initial defaults (in case script hasn't run yet) */
+html { --bg: var(--bg-dark); --card: #0f1520; --btn-bg: #0f1520; --accent: var(--accent-dark); --btn-fg: var(--accent-dark); }
 
 *{box-sizing:border-box}
 body{
@@ -22,7 +22,9 @@ body{
   color:var(--accent);
   -webkit-font-smoothing:antialiased;
   -moz-osx-font-smoothing:grayscale;
-  /* removed smooth transitions to make color updates immediate */
+
+  /* remove transitions for color/background so changes apply instantly */
+  transition: none !important;
 }
 
 /* Header */
@@ -31,6 +33,7 @@ header{
   padding:10px 16px;
   box-shadow:0 1px 0 rgba(0,0,0,0.06);
   display:flex; align-items:center; gap:12px;
+  transition: none !important;
 }
 header h1{ margin:0; font-size:18px; font-weight:700; flex:1 }
 .header-controls{ display:flex; gap:8px; align-items:center; position:relative }
@@ -39,6 +42,7 @@ header h1{ margin:0; font-size:18px; font-weight:700; flex:1 }
 #theme-toggle{
   width:40px; height:40px; border-radius:10px; border:0; background:var(--btn-bg); color:var(--btn-fg);
   font-size:16px; cursor:pointer; box-shadow:0 6px 12px rgba(0,0,0,0.12); display:flex; align-items:center; justify-content:center;
+  transition: none !important;
 }
 #theme-toggle:hover{ transform:translateY(-2px) }
 #theme-toggle:active{ transform:translateY(0) }
@@ -60,13 +64,15 @@ header h1{ margin:0; font-size:18px; font-weight:700; flex:1 }
 .color-popup.visible { display:block; }
 
 /* picker layout: gradient area (left), hue slider (right) */
-.picker { display:flex; gap:10px; align-items:center; }
+.picker { display:flex; gap:10px; align-items:center; flex-direction:column; }
+.picker-row { display:flex; gap:10px; align-items:center; }
 .color-area {
   width: 200px; height: 160px; border-radius: 6px; position: relative;
   cursor: crosshair; user-select:none;
   box-shadow: inset 0 0 0 1px rgba(255,255,255,0.03);
   overflow: hidden;
 }
+/* the white and black overlay are applied via CSS layers (script also writes the hue base) */
 .area-cursor {
   position:absolute; width:12px; height:12px; border-radius:50%; border:2px solid #fff; box-shadow:0 2px 6px rgba(0,0,0,0.5);
   transform: translate(-6px, -6px); pointer-events:none;
@@ -76,9 +82,12 @@ header h1{ margin:0; font-size:18px; font-weight:700; flex:1 }
 .hue-slider { width: 20px; height: 160px; border-radius:6px; position:relative; cursor: ns-resize; background: linear-gradient(to top, red, yellow, lime, cyan, blue, magenta, red); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.03); }
 .hue-cursor { position:absolute; left: -4px; right: -4px; height:6px; border-radius:4px; background:#fff; box-shadow:0 2px 6px rgba(0,0,0,0.35); transform: translateY(-3px); pointer-events:none; }
 
-/* reset button container */
-.picker-reset-wrap { display:flex; justify-content:center; margin-top:10px; }
-.small{ padding:6px 12px; border-radius:8px; border:0; background:var(--btn-bg); color:var(--btn-fg); cursor:pointer; }
+/* centered reset button below picker */
+.color-popup .reset-row { display:flex; justify-content:center; margin-top:10px; }
+.reset-btn {
+  padding:8px 12px; border-radius:8px; border:0; background:var(--btn-bg); color:var(--btn-fg); cursor:pointer;
+  box-shadow:0 6px 12px rgba(0,0,0,0.12);
+}
 
 /* Layout - centered content */
 main{ display:block; padding:18px; }
@@ -130,9 +139,6 @@ body.chapters-open header, body.chapters-open main > *:not(#chapters-list) { fil
 
 /* Tippy tooltip link color override */
 .tippy-box .tippy-content a, .tippy-box a { color: var(--tooltip-link-color) !important; text-decoration: underline; }
-
-/* Tooltip container high z-index */
-.tippy-box { z-index: 99999 !important; }
 
 /* Tooltip content: image banner + confined text area */
 .tippy-box .tippy-content { padding: 0; box-sizing: border-box; overflow: visible; }
