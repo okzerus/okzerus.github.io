@@ -4,7 +4,6 @@
   --accent-dark:#e6eef6;
   --muted-dark:#9aa6b2;
 
-  /* background RGB fallback (used for outlines) */
   --bg-r: 11;
   --bg-g: 15;
   --bg-b: 19;
@@ -41,12 +40,13 @@ header h1{ margin:0; font-size:18px; font-weight:700; flex:1 }
 #theme-toggle{
   width:40px; height:40px; border-radius:10px; border:0; background:var(--btn-bg); color:var(--btn-fg);
   font-size:16px; cursor:pointer; display:flex; align-items:center; justify-content:center;
-  /* shadow alpha quadrupled (capped) */
-  box-shadow: 0 12px 28px rgba(0,0,0,0.96), inset 0 1px 0 rgba(255,255,255,0.12);
+  /* softer shadow */
+  box-shadow: 0 8px 20px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.08);
   transition: box-shadow 180ms ease, transform 120ms ease;
-  border: 1px solid rgba(var(--bg-r), var(--bg-g), var(--bg-b), 0.72);
+  /* thicker, more visible outline */
+  border: 2px solid rgba(var(--bg-r), var(--bg-g), var(--bg-b), 0.50);
 }
-#theme-toggle:hover{ transform: translateY(-2px); box-shadow: 0 18px 40px rgba(0,0,0,0.60); }
+#theme-toggle:hover{ transform: translateY(-2px); box-shadow: 0 12px 28px rgba(0,0,0,0.26), inset 0 1px 0 rgba(255,255,255,0.10); }
 #theme-toggle:active{ transform: translateY(0) }
 
 /* Color popup panel - animate from above (opacity + translateY) */
@@ -58,7 +58,7 @@ header h1{ margin:0; font-size:18px; font-weight:700; flex:1 }
   background: var(--card);
   border-radius: 8px;
   padding: 10px;
-  box-shadow: 0 12px 28px rgba(0,0,0,0.96);
+  box-shadow: 0 10px 24px rgba(0,0,0,0.20);
   z-index: 1400;
   min-width: 280px;
 
@@ -82,7 +82,7 @@ header h1{ margin:0; font-size:18px; font-weight:700; flex:1 }
   overflow: hidden;
 }
 .area-cursor {
-  position:absolute; width:12px; height:12px; border-radius:50%; border:2px solid #fff; box-shadow:0 2px 6px rgba(0,0,0,0.5);
+  position:absolute; width:12px; height:12px; border-radius:50%; border:2px solid #fff; box-shadow:0 2px 6px rgba(0,0,0,0.45);
   transform: translate(-6px, -6px); pointer-events:none;
 }
 
@@ -94,11 +94,12 @@ header h1{ margin:0; font-size:18px; font-weight:700; flex:1 }
 .picker-reset-wrap { display:flex; justify-content:center; margin-top:10px; }
 .small {
   padding:6px 10px; border-radius:8px; border:0; background:var(--btn-bg); color:var(--btn-fg); cursor:pointer;
-  box-shadow: 0 18px 44px rgba(0,0,0,0.96), inset 0 1px 0 rgba(255,255,255,0.12);
+  /* softer shadow, thicker outline */
+  box-shadow: 0 8px 20px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.08);
   transition: box-shadow 180ms ease, transform 120ms ease;
-  border: 1px solid rgba(var(--bg-r), var(--bg-g), var(--bg-b), 0.72);
+  border: 2px solid rgba(var(--bg-r), var(--bg-g), var(--bg-b), 0.50);
 }
-.small:hover { transform: translateY(-2px); box-shadow: 0 24px 52px rgba(0,0,0,0.96), inset 0 1px 0 rgba(255,255,255,0.16); }
+.small:hover { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(0,0,0,0.26), inset 0 1px 0 rgba(255,255,255,0.10); }
 
 /* Layout - centered content */
 main{ display:block; padding:18px; }
@@ -136,12 +137,13 @@ body.chapters-open #chapters-list{ transform:translateX(0); }
 .chapter-nav{ display:flex; gap:12px; align-items:center; }
 .nav-btn{
   width:56px; height:40px; border-radius:8px; border:0; background:var(--btn-bg); color:var(--btn-fg); font-size:16px; cursor:pointer;
-  box-shadow: 0 18px 44px rgba(0,0,0,0.96), inset 0 1px 0 rgba(255,255,255,0.12);
+  /* softer shadow, thicker outline, inner highlight */
+  box-shadow: 0 8px 20px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.08);
   transition: box-shadow 200ms ease, transform 120ms ease, opacity 160ms ease;
-  border: 1px solid rgba(var(--bg-r), var(--bg-g), var(--bg-b), 0.72);
+  border: 2px solid rgba(var(--bg-r), var(--bg-g), var(--bg-b), 0.50);
 }
 .nav-btn:disabled{ opacity:0.35; pointer-events:none }
-.nav-btn:hover { transform: translateY(-2px); box-shadow: 0 24px 52px rgba(0,0,0,0.96), inset 0 1px 0 rgba(255,255,255,0.16); }
+.nav-btn:hover { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(0,0,0,0.26), inset 0 1px 0 rgba(255,255,255,0.10); }
 
 /* bottom nav */
 #bottom-nav{ margin-top:24px; display:flex; justify-content:center; transition: opacity 180ms ease; }
