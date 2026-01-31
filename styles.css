@@ -4,29 +4,29 @@
   --accent-dark:#e6eef6;
   --muted-dark:#9aa6b2;
 
+  /* background RGB fallback (used for outlines) */
+  --bg-r: 11;
+  --bg-g: 15;
+  --bg-b: 19;
+
   --tooltip-link-color: #bfe8ff;
   --tooltip-image-height: 200px;
   --transition-fast: 180ms;
 
   /* runtime vars script sets:
-     --bg
-     --card
-     --btn-bg
+     --bg (hex)
+     --card (hex)
+     --btn-bg (hex)
      --accent
      --btn-fg
+     --bg-r, --bg-g, --bg-b (integers 0..255)
   */
 }
 
-/* fallback defaults */
+/* sensible defaults */
 html { --bg: var(--bg-dark); --card: var(--card-dark); --btn-bg: var(--card-dark); --accent: var(--accent-dark); --btn-fg: var(--accent-dark); }
 
-*{box-sizing:border-box}
-
-/* Important: disable transitions for immediate color changes */
-body, header, #content, #chapters-list, .nav-btn {
-  transition: none !important;
-}
-
+/* Body uses the chosen background immediately; no transition on background/color */
 body{
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
   margin:0;
@@ -42,6 +42,8 @@ header{
   padding:10px 16px;
   box-shadow:0 1px 0 rgba(0,0,0,0.06);
   display:flex; align-items:center; gap:12px;
+  /* allow smooth transform changes for header but not color/background */
+  transition: transform 180ms ease;
 }
 header h1{ margin:0; font-size:18px; font-weight:700; flex:1 }
 .header-controls{ display:flex; gap:8px; align-items:center; position:relative }
@@ -49,12 +51,17 @@ header h1{ margin:0; font-size:18px; font-weight:700; flex:1 }
 /* Color-picker button */
 #theme-toggle{
   width:40px; height:40px; border-radius:10px; border:0; background:var(--btn-bg); color:var(--btn-fg);
-  font-size:16px; cursor:pointer; box-shadow:0 6px 12px rgba(0,0,0,0.12); display:flex; align-items:center; justify-content:center;
+  font-size:16px; cursor:pointer; display:flex; align-items:center; justify-content:center;
+  box-shadow: 0 10px 20px rgba(0,0,0,0.16);
+  /* small transition for lift/shadow but NOT for background/color */
+  transition: box-shadow 180ms ease, transform 120ms ease;
+  /* subtle outline using background color (rgba) */
+  border: 1px solid rgba(var(--bg-r), var(--bg-g), var(--bg-b), 0.06);
 }
-#theme-toggle:hover{ transform:translateY(-2px) }
-#theme-toggle:active{ transform:translateY(0) }
+#theme-toggle:hover{ transform: translateY(-2px); box-shadow: 0 14px 28px rgba(0,0,0,0.18); }
+#theme-toggle:active{ transform: translateY(0); }
 
-/* Color popup panel */
+/* Color popup panel - animate from above (opacity + translateY) */
 .color-picker-container { position: relative; display:inline-block; }
 .color-popup{
   position: absolute;
@@ -63,12 +70,20 @@ header h1{ margin:0; font-size:18px; font-weight:700; flex:1 }
   background: var(--card);
   border-radius: 8px;
   padding: 10px;
-  box-shadow: 0 8px 20px rgba(0,0,0,0.25);
-  display: none;
+  box-shadow: 0 12px 28px rgba(0,0,0,0.28);
   z-index: 1400;
   min-width: 280px;
+
+  opacity: 0;
+  transform: translateY(-8px) scale(0.99);
+  pointer-events: none;
+  transition: opacity 160ms ease, transform 160ms ease;
 }
-.color-popup.visible { display:block; }
+.color-popup.visible {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
+}
 
 /* picker layout: gradient area (left), hue slider (right) */
 .picker { display:flex; gap:10px; align-items:center; }
@@ -78,7 +93,6 @@ header h1{ margin:0; font-size:18px; font-weight:700; flex:1 }
   box-shadow: inset 0 0 0 1px rgba(255,255,255,0.03);
   overflow: hidden;
 }
-/* overlay effects handled by script background layers */
 .area-cursor {
   position:absolute; width:12px; height:12px; border-radius:50%; border:2px solid #fff; box-shadow:0 2px 6px rgba(0,0,0,0.5);
   transform: translate(-6px, -6px); pointer-events:none;
@@ -90,7 +104,14 @@ header h1{ margin:0; font-size:18px; font-weight:700; flex:1 }
 
 /* reset button wrapper */
 .picker-reset-wrap { display:flex; justify-content:center; margin-top:10px; }
-.small { padding:6px 10px; border-radius:8px; border:0; background:var(--btn-bg); color:var(--btn-fg); cursor:pointer; box-shadow:0 4px 10px rgba(0,0,0,0.08); }
+.small {
+  padding:6px 10px; border-radius:8px; border:0; background:var(--btn-bg); color:var(--btn-fg); cursor:pointer;
+  box-shadow: 0 10px 20px rgba(0,0,0,0.16);
+  transition: box-shadow 180ms ease, transform 120ms ease;
+  /* subtle dark outline using background rgb */
+  border: 1px solid rgba(var(--bg-r), var(--bg-g), var(--bg-b), 0.06);
+}
+.small:hover { transform: translateY(-2px); box-shadow: 0 14px 28px rgba(0,0,0,0.18); }
 
 /* Layout - centered content */
 main{ display:block; padding:18px; }
@@ -99,7 +120,9 @@ main{ display:block; padding:18px; }
 #chapters-list{
   width:220px; background:var(--card); padding:12px; border-radius:8px; box-shadow:0 2px 6px rgba(0,0,0,0.06);
   position:fixed; left:0; top:72px; bottom:18px; overflow:auto; z-index:1200;
-  transform:translateX(calc(-100% + 12px)); transition: transform 220ms cubic-bezier(.2,.9,.3,1); will-change: transform;
+  transform:translateX(calc(-100% + 12px));
+  transition: transform 220ms cubic-bezier(.2,.9,.3,1);
+  will-change: transform;
 }
 body.chapters-open #chapters-list{ transform:translateX(0); }
 
@@ -124,14 +147,24 @@ body.chapters-open #chapters-list{ transform:translateX(0); }
 
 /* nav buttons */
 .chapter-nav{ display:flex; gap:12px; align-items:center; }
-.nav-btn{ width:56px; height:40px; border-radius:8px; border:0; background:var(--btn-bg); color:var(--btn-fg); font-size:16px; cursor:pointer; box-shadow:0 6px 12px rgba(0,0,0,0.12); }
+.nav-btn{
+  width:56px; height:40px; border-radius:8px; border:0; background:var(--btn-bg); color:var(--btn-fg); font-size:16px; cursor:pointer;
+  box-shadow: 0 12px 28px rgba(0,0,0,0.18);
+  transition: box-shadow 200ms ease, transform 120ms ease, opacity 160ms ease;
+  /* outline using chosen background color */
+  border: 1px solid rgba(var(--bg-r), var(--bg-g), var(--bg-b), 0.06);
+}
 .nav-btn:disabled{ opacity:0.35; pointer-events:none }
+.nav-btn:hover { transform: translateY(-2px); box-shadow: 0 18px 36px rgba(0,0,0,0.22); }
 
 /* bottom nav */
 #bottom-nav{ margin-top:24px; display:flex; justify-content:center; transition: opacity 180ms ease; }
 
 /* top nav */
-#top-nav{ position:fixed; left:50%; transform: translateX(-50%) translateY(-6px); z-index:1300; opacity:0; transition: opacity 260ms ease, transform 260ms ease; pointer-events:none; display:flex; gap:12px; }
+#top-nav{
+  position:fixed; left:50%; transform: translateX(-50%) translateY(-6px); z-index:1300; opacity:0; pointer-events:none; display:flex; gap:12px;
+  transition: opacity 260ms ease, transform 260ms ease;
+}
 #top-nav.visible-top{ opacity:1; transform: translateX(-50%) translateY(0); pointer-events:auto; }
 
 /* blur effect when chapters open */
