@@ -54,7 +54,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const CARD_LIGHTNESS_DELTA = 0.03333333333333333;
 
   // When to switch text to dark: higher -> dark text appears earlier (for brighter backgrounds)
-  const CONTRAST_LUMINANCE_THRESHOLD = 0.50;
+  const CONTRAST_LUMINANCE_THRESHOLD = 0.30;
 
   /* ---------- Color helpers ---------- */
   function hexToRgb(hex) {
