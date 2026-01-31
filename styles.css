@@ -46,7 +46,7 @@ header h1{ margin:0; font-size:18px; font-weight:700; flex:1 }
   transition: box-shadow 180ms ease, transform 120ms ease;
   border: 1px solid rgba(var(--bg-r), var(--bg-g), var(--bg-b), 0.72);
 }
-#theme-toggle:hover{ transform: translateY(-2px); box-shadow: 0 18px 40px rgba(0,0,0,0.96); }
+#theme-toggle:hover{ transform: translateY(-2px); box-shadow: 0 18px 40px rgba(0,0,0,0.60); }
 #theme-toggle:active{ transform: translateY(0) }
 
 /* Color popup panel - animate from above (opacity + translateY) */
