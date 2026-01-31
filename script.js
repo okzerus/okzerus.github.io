@@ -1,12 +1,8 @@
-/* script.js - single-file app logic
-   - custom hue+gradient color picker with Reset button
-   - card color computed by HSL lightness delta instead of transparency
-   - immediate color updates (no smoothing)
-   - adjustable constants:
-       CARD_LIGHTNESS_DELTA (how much brighter the content card is than selected bg)
-       CONTRAST_LUMINANCE_THRESHOLD (when to switch accent text color to dark)
-   - preserves: chapters loading, "done" flag, slide-out list, tooltip preloading, image viewer,
-     top/bottom nav rules, session-only scroll restore.
+/* script.js - final: outlines & shadows for nav buttons + immediate color changes + UI transitions kept smooth
+   - sets --bg-r, --bg-g, --bg-b CSS variables for outline usage
+   - keeps color/background/text updates instantaneous
+   - keeps transitions for UX elements (chapters slide, top nav opacity, picker pop)
+   - preserves all previous functionality (chapters, 'done' flag, tooltip images & preload, image viewer, top/bottom nav)
 */
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -53,30 +49,23 @@ document.addEventListener('DOMContentLoaded', () => {
   // Default background (your previous dark default)
   const DEFAULT_BG_HEX = '#0b0f13';
 
-  // This is the lightness delta applied to the chosen background to produce the card color.
-  // The value below was computed from your original dark theme (#0b0f13 -> #0f1520).
-  // To change how much lighter the card is than the background, edit this decimal (0..1).
-  // Example: 0.03333 is the default (small difference). Increase to make card lighter.
-  const CARD_LIGHTNESS_DELTA = 0.03333333333333333; // change this value to tweak card contrast
+  // Lightness delta used to compute the card color from the chosen background.
+  // Edit this decimal to change card contrast (positive => card is lighter).
+  const CARD_LIGHTNESS_DELTA = 0.03333333333333333;
 
-  // Luminance threshold for switching text color from light to dark.
-  // Higher = text switches to dark earlier (for brighter backgrounds).
-  // Set between 0 and 1. I set it higher to make dark text appear earlier for readability.
-  const CONTRAST_LUMINANCE_THRESHOLD = 0.50; // change to taste (was 0.45 earlier)
+  // When to switch text to dark: higher -> dark text appears earlier (for brighter backgrounds)
+  const CONTRAST_LUMINANCE_THRESHOLD = 0.50;
 
-  /* ---------- Color math helpers (RGB <-> HSL/HSV) ---------- */
-
+  /* ---------- Color helpers ---------- */
   function hexToRgb(hex) {
     hex = (hex || '').replace('#', '');
     if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
     const n = parseInt(hex, 16);
     return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
   }
-
   function rgbToHex(r, g, b) {
     return '#' + [r, g, b].map(v => Math.round(v).toString(16).padStart(2, '0')).join('');
   }
-
   function rgbToHsl(r, g, b) {
     r /= 255; g /= 255; b /= 255;
     const max = Math.max(r, g, b), min = Math.min(r, g, b);
@@ -94,7 +83,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     return { h, s, l };
   }
-
   function hslToRgb(h, s, l) {
     h = ((h % 360) + 360) % 360;
     if (s === 0) {
@@ -117,7 +105,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const b = hue2rgb(p, q, hk - 1 / 3);
     return { r: Math.round(r * 255), g: Math.round(g * 255), b: Math.round(b * 255) };
   }
-
   function luminanceFromRgb(r, g, b) {
     const srgb = [r, g, b].map(v => {
       v = v / 255;
@@ -126,9 +113,7 @@ document.addEventListener('DOMContentLoaded', () => {
     return 0.2126 * srgb[0] + 0.7152 * srgb[1] + 0.0722 * srgb[2];
   }
 
-  /* ---------- Color application: background and card ---------- */
-
-  // compute card color from base bg hex by applying a HSL lightness delta
+  // compute card hex from bg hex using HSL lightness delta
   function computeCardFromBgHex(bgHex) {
     const { r, g, b } = hexToRgb(bgHex);
     const hsl = rgbToHsl(r, g, b);
@@ -139,19 +124,21 @@ document.addEventListener('DOMContentLoaded', () => {
     return { rgb: cardRgb, hex: rgbToHex(cardRgb.r, cardRgb.g, cardRgb.b) };
   }
 
-  // Apply chosen background color and derived card/buttons color and text color.
+  // Apply chosen bg hex synchronously & set RGB CSS variables for outlines
   function applyColorHex(hex) {
     const root = document.documentElement;
-    // background root variable
+    const { r, g, b } = hexToRgb(hex);
+    // set raw bg color (instant)
     root.style.setProperty('--bg', hex);
-
-    // card computed from bg
+    // expose rgb components for outline usage
+    root.style.setProperty('--bg-r', String(r));
+    root.style.setProperty('--bg-g', String(g));
+    root.style.setProperty('--bg-b', String(b));
+    // compute card color and button bg (instant)
     const card = computeCardFromBgHex(hex);
     root.style.setProperty('--card', card.hex);
     root.style.setProperty('--btn-bg', card.hex);
-
-    // Decide accent color based on luminance threshold (user-configurable)
-    const { r, g, b } = hexToRgb(hex);
+    // choose accent/fg based on luminance threshold
     const lum = luminanceFromRgb(r, g, b);
     if (lum < CONTRAST_LUMINANCE_THRESHOLD) {
       root.style.setProperty('--accent', '#e6eef6');
@@ -164,15 +151,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  /* ---------- Color picker: HSV model + UI ---------- */
-
-  // We'll store color as hex in localStorage
+  /* ---------- Color picker (HSV) ---------- */
   const STORAGE_KEY = 'site-bg-color';
-
-  // hsv state derived from initial hex
   let hsv = { h: 210, s: 0.3, v: 0.05 };
 
-  // helpers for hsv conversion (used in picker)
   function hsvToRgb(h, s, v) {
     h = (h % 360 + 360) % 360;
     const c = v * s;
@@ -204,29 +186,23 @@ document.addEventListener('DOMContentLoaded', () => {
     return { h, s, v };
   }
 
-  // Persist hex to storage
   function persistHex(hex) {
     try { localStorage.setItem(STORAGE_KEY, hex); } catch (e) {}
   }
 
-  // Apply HSV (via hex) to page
   function applyHsvState() {
     const { r, g, b } = hsvToRgb(hsv.h, hsv.s, hsv.v);
     const hex = rgbToHex(r, g, b);
     applyColorHex(hex);
   }
 
-  // UI updater: set multi-layer background for colorArea (hue base + white + black)
   function updatePickerUI() {
     if (!colorArea || !hueSlider || !colorAreaCursor || !hueCursor) return;
     const { r: hr, g: hg, b: hb } = hsvToRgb(hsv.h, 1, 1);
-    // bottom: hue base; middle: white->transparent (left->right); top: black->transparent (bottom->top)
     colorArea.style.background = `linear-gradient(to top, rgba(0,0,0,1), rgba(0,0,0,0)), linear-gradient(to right, rgba(255,255,255,1), rgba(255,255,255,0)), rgb(${hr},${hg},${hb})`;
-
     const sliderRect = hueSlider.getBoundingClientRect();
     const y = sliderRect.height * (1 - (hsv.h / 360));
     hueCursor.style.top = `${Math.min(Math.max(0, y), sliderRect.height)}px`;
-
     const areaRect = colorArea.getBoundingClientRect();
     const cx = areaRect.width * hsv.s;
     const cy = areaRect.height * (1 - hsv.v);
@@ -234,34 +210,31 @@ document.addEventListener('DOMContentLoaded', () => {
     colorAreaCursor.style.top = `${Math.min(Math.max(0, cy), areaRect.height)}px`;
   }
 
-  // Pointer drag helper (pointer events + touch fallback)
   function addDrag(element, handlers) {
     if (!element) return;
-    let dragging = false; let id = null;
+    let dragging = false; let pointerId = null;
     element.addEventListener('pointerdown', (ev) => {
       element.setPointerCapture && element.setPointerCapture(ev.pointerId);
-      dragging = true; id = ev.pointerId;
+      dragging = true; pointerId = ev.pointerId;
       handlers.start && handlers.start(ev);
       ev.preventDefault();
     });
     window.addEventListener('pointermove', (ev) => {
-      if (!dragging || (id !== null && ev.pointerId !== id)) return;
+      if (!dragging || (pointerId !== null && ev.pointerId !== pointerId)) return;
       handlers.move && handlers.move(ev);
       ev.preventDefault();
     }, { passive: false });
     window.addEventListener('pointerup', (ev) => {
-      if (!dragging || (id !== null && ev.pointerId !== id)) return;
-      dragging = false; id = null;
+      if (!dragging || (pointerId !== null && ev.pointerId !== pointerId)) return;
+      dragging = false; pointerId = null;
       handlers.end && handlers.end(ev);
       ev.preventDefault();
     });
-    // fallback touch
     element.addEventListener('touchstart', (e) => { if (e.touches && e.touches[0]) handlers.start && handlers.start(e.touches[0]); e.preventDefault(); }, { passive: false });
     window.addEventListener('touchmove', (e) => { if (e.touches && e.touches[0]) handlers.move && handlers.move(e.touches[0]); }, { passive: false });
     window.addEventListener('touchend', (e) => { handlers.end && handlers.end(e.changedTouches && e.changedTouches[0]); }, { passive: false });
   }
 
-  // handlers
   function handleHuePointer(e) {
     if (!hueSlider) return;
     const rect = hueSlider.getBoundingClientRect();
@@ -288,26 +261,22 @@ document.addEventListener('DOMContentLoaded', () => {
   if (hueSlider) addDrag(hueSlider, { start: handleHuePointer, move: handleHuePointer, end: () => persistHex(rgbToHex(...Object.values(hsvToRgb(hsv.h, hsv.s, hsv.v)))) });
   if (colorArea) addDrag(colorArea, { start: handleAreaPointer, move: handleAreaPointer, end: () => persistHex(rgbToHex(...Object.values(hsvToRgb(hsv.h, hsv.s, hsv.v)))) });
 
-  // show/hide popup & outside click
-  function showColorPopup() { if (!colorPopup) return; colorPopup.classList.add('visible'); colorPopup.setAttribute('aria-hidden', 'false'); document.addEventListener('click', onDocClickForPopup); }
-  function hideColorPopup() { if (!colorPopup) return; colorPopup.classList.remove('visible'); colorPopup.setAttribute('aria-hidden', 'true'); document.removeEventListener('click', onDocClickForPopup); }
+  function showColorPopup() { if (!colorPopup) return; colorPopup.classList.add('visible'); colorPopup.setAttribute('aria-hidden','false'); document.addEventListener('click', onDocClickForPopup); }
+  function hideColorPopup() { if (!colorPopup) return; colorPopup.classList.remove('visible'); colorPopup.setAttribute('aria-hidden','true'); document.removeEventListener('click', onDocClickForPopup); }
   function onDocClickForPopup(e) { if (!colorPopup) return; if (colorPopup.contains(e.target) || (themeToggle && themeToggle.contains(e.target))) return; hideColorPopup(); }
   if (themeToggle) themeToggle.addEventListener('click', (e) => { e.stopPropagation(); if (!colorPopup) return; if (colorPopup.classList.contains('visible')) hideColorPopup(); else showColorPopup(); });
 
-  // Reset to original defaults
   if (colorResetBtn) colorResetBtn.addEventListener('click', (e) => {
     e.stopPropagation();
-    // reset hex
     try { localStorage.setItem(STORAGE_KEY, DEFAULT_BG_HEX); } catch (err) {}
     const { r, g, b } = hexToRgb(DEFAULT_BG_HEX);
-    const hsv0 = rgbToHsv(r, g, b);
-    hsv.h = hsv0.h; hsv.s = hsv0.s; hsv.v = hsv0.v;
+    const hv = rgbToHsv(r, g, b);
+    hsv.h = hv.h; hsv.s = hv.s; hsv.v = hv.v;
     applyHsvState();
     updatePickerUI();
     hideColorPopup();
   });
 
-  // init color from storage or default
   (function initColor() {
     try {
       const stored = localStorage.getItem(STORAGE_KEY) || DEFAULT_BG_HEX;
@@ -323,7 +292,7 @@ document.addEventListener('DOMContentLoaded', () => {
     requestAnimationFrame(updatePickerUI);
   })();
 
-  /* ---------- Remaining app logic (chapters, tippy, image viewer, nav) ---------- */
+  /* ---------- The rest of your app: chapters, tooltips, image viewer, nav ---------- */
 
   function isDoneEntry(entry) { if (!entry) return false; return entry.done !== false; }
   function findPrevDoneIndex(fromIndex) { for (let i = (fromIndex === undefined ? currentIndex - 1 : fromIndex); i >= 0; i--) if (isDoneEntry(chapters[i])) return i; return -1; }
@@ -377,17 +346,11 @@ document.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('keydown', (e) => {
     const active = document.activeElement;
     if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) return;
-    if (e.key === 'ArrowLeft') {
-      const prev = findPrevDoneIndex();
-      if (prev !== -1) goToChapter(prev);
-    }
-    if (e.key === 'ArrowRight') {
-      const next = findNextDoneIndex();
-      if (next !== -1) goToChapter(next);
-    }
+    if (e.key === 'ArrowLeft') { const prev = findPrevDoneIndex(); if (prev !== -1) goToChapter(prev); }
+    if (e.key === 'ArrowRight') { const next = findNextDoneIndex(); if (next !== -1) goToChapter(next); }
   });
 
-  /* ---------- Chapters list ---------- */
+  /* ---------- Load chapters ---------- */
   async function loadChapters() {
     chapterBodyEl.textContent = 'Загрузка...';
     try {
@@ -420,10 +383,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const first = findFirstDoneIndex();
       if (first !== -1) goToChapter(first);
-      else {
-        chapterBodyEl.textContent = 'В репозитории нет доступных (done) глав.';
-        updateNavButtons();
-      }
+      else { chapterBodyEl.textContent = 'В репозитории нет доступных (done) глав.'; updateNavButtons(); }
     } catch (err) {
       chapterBodyEl.textContent = 'Ошибка загрузки chapters.json: ' + err.message;
       console.error('loadChapters error:', err);
@@ -431,7 +391,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  /* ---------- Load single chapter ---------- */
+  /* ---------- Load chapter ---------- */
   async function loadChapter(filename, title) {
     chapterTitleEl.textContent = title || '';
     chapterBodyEl.textContent = 'Загрузка главы...';
@@ -464,9 +424,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
           if (window.scrollY <= 10 && !bottomNavIsVisible()) showTopNavImmediate();
         }
-      } catch (e) {
-        if (window.scrollY <= 10 && !bottomNavIsVisible()) showTopNavImmediate();
-      }
+      } catch (e) { if (window.scrollY <= 10 && !bottomNavIsVisible()) showTopNavImmediate(); }
 
     } catch (err) {
       chapterBodyEl.textContent = 'Ошибка загрузки главы: ' + err.message;
@@ -474,9 +432,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  /* ---------- Tooltip image resolution & preload ---------- */
+  /* ---------- Image resolve & preload for tooltips ---------- */
   function testImageUrl(url, timeout = 3000) {
-    return new Promise((resolve) => {
+    return new Promise(resolve => {
       const img = new Image();
       let done = false;
       const onLoad = () => { if (done) return; done = true; cleanup(); resolve(true); };
@@ -515,7 +473,6 @@ document.addEventListener('DOMContentLoaded', () => {
     for (const u of unique) {
       if (await testImageUrl(u)) { resolvedUrlCache.set(srcCandidate, u); return u; }
     }
-
     resolvedUrlCache.set(srcCandidate, null);
     return null;
   }
@@ -532,9 +489,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const resolved = await resolveTooltipImage(dataImg);
         if (resolved) {
           if (preloadedImgCache.has(resolved)) continue;
-          const pimg = new Image();
-          pimg.crossOrigin = 'anonymous';
-          pimg.decoding = 'async';
+          const pimg = new Image(); pimg.crossOrigin = 'anonymous'; pimg.decoding = 'async';
           preloadedImgCache.set(resolved, pimg);
           pimg.onload = () => {};
           pimg.onerror = () => { preloadedImgCache.delete(resolved); };
@@ -549,14 +504,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!chapterBodyEl) return;
     const glossEls = Array.from(chapterBodyEl.querySelectorAll('.gloss'));
     glossEls.forEach(async (el) => {
-      const dataImg = el.getAttribute('data-img');
-      if (!dataImg) return;
+      const dataImg = el.getAttribute('data-img'); if (!dataImg) return;
       const resolved = resolvedUrlCache.has(dataImg) ? resolvedUrlCache.get(dataImg) : await resolveTooltipImage(dataImg);
       if (resolved && (!preloadedImgCache.has(resolved) || !preloadedImgCache.get(resolved).complete)) {
         try {
-          const pimg = new Image();
-          pimg.crossOrigin = 'anonymous';
-          pimg.decoding = 'async';
+          const pimg = new Image(); pimg.crossOrigin = 'anonymous'; pimg.decoding = 'async';
           preloadedImgCache.set(resolved, pimg);
           pimg.onload = () => {};
           pimg.onerror = () => { preloadedImgCache.delete(resolved); };
@@ -566,18 +518,13 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  /* ---------- Tippy init for .gloss ---------- */
+  /* ---------- Tippy (gloss tooltips) ---------- */
   function initGlossTippy() {
     if (!window.tippy) return;
     document.querySelectorAll('.gloss').forEach(el => { try { if (el._tippy) el._tippy.destroy(); } catch (e) {} });
 
     tippy('.gloss', {
-      allowHTML: true,
-      interactive: true,
-      delay: [60, 80],
-      maxWidth: 520,
-      placement: 'top',
-      offset: [0, 8],
+      allowHTML: true, interactive: true, delay: [60, 80], maxWidth: 520, placement: 'top', offset: [0, 8],
       appendTo: () => document.body,
       popperOptions: {
         strategy: 'fixed',
@@ -592,74 +539,46 @@ document.addEventListener('DOMContentLoaded', () => {
         const reference = instance.reference;
         let contentHTML = reference.getAttribute('data-tippy-content') || reference.getAttribute('data-tip') || reference.getAttribute('title') || reference.innerHTML || '';
         if (reference.getAttribute('title')) reference.removeAttribute('title');
-
         const dataImg = reference.getAttribute('data-img');
         const imgAlt = reference.getAttribute('data-img-alt') || '';
-
         const wrapper = document.createElement('div');
-
         let resolved = null;
         if (dataImg) {
           if (resolvedUrlCache.has(dataImg)) resolved = resolvedUrlCache.get(dataImg);
           else resolved = await resolveTooltipImage(dataImg);
         }
-
         if (resolved) {
           if (!preloadedImgCache.has(resolved) || !preloadedImgCache.get(resolved).complete) {
             try {
-              const pimg = new Image();
-              pimg.crossOrigin = 'anonymous';
-              pimg.decoding = 'async';
+              const pimg = new Image(); pimg.crossOrigin = 'anonymous'; pimg.decoding = 'async';
               preloadedImgCache.set(resolved, pimg);
               pimg.onload = () => {};
               pimg.onerror = () => { preloadedImgCache.delete(resolved); };
               pimg.src = resolved;
             } catch (e) {}
           }
-
           const imgEl = document.createElement('img');
-          imgEl.className = 'tooltip-img';
-          imgEl.src = resolved;
-          imgEl.alt = imgAlt;
-          imgEl.loading = 'eager';
-          imgEl.style.cursor = 'pointer';
-          imgEl.addEventListener('click', (ev) => {
-            ev.stopPropagation();
-            try { openImageViewer(resolved, imgAlt); } catch (e) {}
-            try { instance.hide(); } catch (e) {}
-          });
-          imgEl.addEventListener('load', () => {
-            try {
-              if (instance.popperInstance && typeof instance.popperInstance.update === 'function') instance.popperInstance.update();
-              else if (typeof instance.update === 'function') instance.update();
-            } catch (e) {}
-          });
-
+          imgEl.className = 'tooltip-img'; imgEl.src = resolved; imgEl.alt = imgAlt; imgEl.loading = 'eager'; imgEl.style.cursor='pointer';
+          imgEl.addEventListener('click', (ev) => { ev.stopPropagation(); try { openImageViewer(resolved, imgAlt); } catch (e) {} try { instance.hide(); } catch (e) {} });
+          imgEl.addEventListener('load', () => { try { if (instance.popperInstance && typeof instance.popperInstance.update === 'function') instance.popperInstance.update(); else if (typeof instance.update === 'function') instance.update(); } catch (e) {} });
           wrapper.appendChild(imgEl);
         }
-
-        const contentDiv = document.createElement('div');
-        contentDiv.className = 'tooltip-body';
-        contentDiv.innerHTML = contentHTML;
-        wrapper.appendChild(contentDiv);
-
+        const contentDiv = document.createElement('div'); contentDiv.className = 'tooltip-body'; contentDiv.innerHTML = contentHTML; wrapper.appendChild(contentDiv);
         try { instance.setContent(wrapper); } catch (e) { instance.setContent(wrapper.outerHTML); }
       }
     });
   }
 
-  /* ---------- Navigation tooltip hints ---------- */
   function refreshNavTippies() {
     if (!window.tippy) return;
     [bottomPrev, bottomNext, topPrev, topNext].forEach(btn => { if (!btn) return; try { if (btn._tippy) btn._tippy.destroy(); } catch (e) {} });
-
     if (bottomPrev) tippy(bottomPrev, { content: () => bottomPrev.dataset.title || '', placement: 'top', delay: [80, 40], offset: [0, 8], appendTo: () => document.body });
     if (bottomNext) tippy(bottomNext, { content: () => bottomNext.dataset.title || '', placement: 'top', delay: [80, 40], offset: [0, 8], appendTo: () => document.body });
     if (topPrev) tippy(topPrev, { content: () => topPrev.dataset.title || '', placement: 'bottom', delay: [80, 40], offset: [0, 8], appendTo: () => document.body });
     if (topNext) tippy(topNext, { content: () => topNext.dataset.title || '', placement: 'bottom', delay: [80, 40], offset: [0, 8], appendTo: () => document.body });
   }
 
-  /* ---------- Chapters aside slide behavior ---------- */
+  /* ---------- Chapters aside slide ---------- */
   let chaptersOpen = false;
   const EDGE_TRIGGER_PX = 12;
   function openChapters() { if (chaptersOpen) return; chaptersOpen = true; document.body.classList.add('chapters-open'); }
@@ -686,9 +605,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let hideDelayTimer = null;
   const HIDE_DELAY_MS = 1000;
 
-  function clearHideTimer() {
-    if (hideDelayTimer) { clearTimeout(hideDelayTimer); hideDelayTimer = null; }
-  }
+  function clearHideTimer() { if (hideDelayTimer) { clearTimeout(hideDelayTimer); hideDelayTimer = null; } }
 
   function bottomNavIsVisible() {
     if (!bottomNav) return false;
@@ -723,17 +640,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const curY = window.scrollY;
     const scrollingUp = curY < lastScrollY;
     const atTop = curY <= 10;
-
-    if (bottomNavIsVisible()) {
-      hideTopNavImmediate();
-      clearHideTimer();
-    } else if (atTop || scrollingUp) {
-      clearHideTimer();
-      showTopNavImmediate();
-    } else {
-      scheduleHideTopNav();
-    }
-
+    if (bottomNavIsVisible()) { hideTopNavImmediate(); clearHideTimer(); }
+    else if (atTop || scrollingUp) { clearHideTimer(); showTopNavImmediate(); }
+    else { scheduleHideTopNav(); }
     lastScrollY = curY;
   }
 
@@ -769,45 +678,18 @@ document.addEventListener('DOMContentLoaded', () => {
   const overlay = document.getElementById('image-overlay');
   const overlayImg = overlay.querySelector('.viewer-img');
 
-  let isZoomed = false;
-  let pointerDown = false;
-  let pointerStart = { x: 0, y: 0 };
-  let imgPos = { x: 0, y: 0 };
-  let dragMoved = false;
-  let suppressClick = false;
+  let isZoomed = false, pointerDown = false, pointerStart = { x: 0, y: 0 }, imgPos = { x: 0, y: 0 }, dragMoved = false, suppressClick = false;
   const DRAG_THRESHOLD = 4;
 
   function openImageViewer(src, alt = '') {
-    overlayImg.src = src;
-    overlayImg.alt = alt || '';
-
+    overlayImg.src = src; overlayImg.alt = alt || '';
     const marginPx = 40;
-    overlayImg.style.maxWidth = `calc(100vw - ${marginPx}px)`;
-    overlayImg.style.maxHeight = `calc(100vh - ${Math.round(marginPx * 1.5)}px)`;
-
-    overlay.classList.add('visible');
-    isZoomed = false;
-    imgPos = { x: 0, y: 0 };
-    overlayImg.style.transform = `translate(0px, 0px) scale(1)`;
-    overlayImg.classList.remove('zoomed');
-    overlay.style.cursor = 'default';
-    document.body.style.overflow = 'hidden';
-
-    const viewer = overlay.querySelector('.viewer');
-    if (viewer) { viewer.scrollTop = 0; viewer.scrollLeft = 0; }
+    overlayImg.style.maxWidth = `calc(100vw - ${marginPx}px)`; overlayImg.style.maxHeight = `calc(100vh - ${Math.round(marginPx * 1.5)}px)`;
+    overlay.classList.add('visible'); isZoomed = false; imgPos = { x: 0, y: 0 }; overlayImg.style.transform = `translate(0px, 0px) scale(1)`; overlayImg.classList.remove('zoomed'); overlay.style.cursor = 'default'; document.body.style.overflow = 'hidden';
+    const viewer = overlay.querySelector('.viewer'); if (viewer) { viewer.scrollTop = 0; viewer.scrollLeft = 0; }
   }
 
-  function closeImageViewer() {
-    overlay.classList.remove('visible');
-    overlayImg.src = '';
-    isZoomed = false;
-    pointerDown = false;
-    dragMoved = false;
-    suppressClick = false;
-    document.body.style.overflow = '';
-    overlayImg.style.maxWidth = '';
-    overlayImg.style.maxHeight = '';
-  }
+  function closeImageViewer() { overlay.classList.remove('visible'); overlayImg.src = ''; isZoomed = false; pointerDown = false; dragMoved = false; suppressClick = false; document.body.style.overflow = ''; overlayImg.style.maxWidth = ''; overlayImg.style.maxHeight = ''; }
 
   function applyImageTransform() {
     const scale = isZoomed ? 2 : 1;
@@ -823,34 +705,19 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   overlayImg.addEventListener('mousedown', (ev) => {
-    if (!isZoomed) return;
-    ev.preventDefault();
-    pointerDown = true;
-    dragMoved = false;
-    pointerStart = { x: ev.clientX, y: ev.clientY };
-    overlayImg.style.cursor = 'grabbing';
+    if (!isZoomed) return; ev.preventDefault(); pointerDown = true; dragMoved = false; pointerStart = { x: ev.clientX, y: ev.clientY }; overlayImg.style.cursor = 'grabbing';
   });
 
   window.addEventListener('mousemove', (ev) => {
     if (!pointerDown || !isZoomed) return;
-    const dx = ev.clientX - pointerStart.x;
-    const dy = ev.clientY - pointerStart.y;
+    const dx = ev.clientX - pointerStart.x; const dy = ev.clientY - pointerStart.y;
     if (!dragMoved && (Math.abs(dx) + Math.abs(dy) >= DRAG_THRESHOLD)) dragMoved = true;
-    if (dragMoved) {
-      pointerStart = { x: ev.clientX, y: ev.clientY };
-      imgPos.x += dx;
-      imgPos.y += dy;
-      applyImageTransform();
-    }
+    if (dragMoved) { pointerStart = { x: ev.clientX, y: ev.clientY }; imgPos.x += dx; imgPos.y += dy; applyImageTransform(); }
   });
 
   window.addEventListener('mouseup', (ev) => {
-    if (pointerDown && dragMoved) {
-      suppressClick = true;
-      setTimeout(() => { suppressClick = false; }, 0);
-    }
-    pointerDown = false;
-    overlayImg.style.cursor = isZoomed ? 'grab' : 'zoom-in';
+    if (pointerDown && dragMoved) { suppressClick = true; setTimeout(() => { suppressClick = false; }, 0); }
+    pointerDown = false; overlayImg.style.cursor = isZoomed ? 'grab' : 'zoom-in';
   });
 
   overlay.addEventListener('click', (ev) => { if (ev.target === overlay) closeImageViewer(); });
@@ -884,7 +751,6 @@ document.addEventListener('DOMContentLoaded', () => {
   function refreshNavTippies() {
     if (!window.tippy) return;
     [bottomPrev, bottomNext, topPrev, topNext].forEach(btn => { if (!btn) return; try { if (btn._tippy) btn._tippy.destroy(); } catch (e) {} });
-
     if (bottomPrev) tippy(bottomPrev, { content: () => bottomPrev.dataset.title || '', placement: 'top', delay: [80, 40], offset: [0, 8], appendTo: () => document.body });
     if (bottomNext) tippy(bottomNext, { content: () => bottomNext.dataset.title || '', placement: 'top', delay: [80, 40], offset: [0, 8], appendTo: () => document.body });
     if (topPrev) tippy(topPrev, { content: () => topPrev.dataset.title || '', placement: 'bottom', delay: [80, 40], offset: [0, 8], appendTo: () => document.body });
@@ -894,7 +760,6 @@ document.addEventListener('DOMContentLoaded', () => {
   /* ---------- Start ---------- */
   loadChapters();
   updateNavButtons();
-  // ensure top nav position & visibility after page load
   setTimeout(() => { positionTopNav(); if (window.scrollY <= 10 && !bottomNavIsVisible()) showTopNavImmediate(); }, 120);
 
 });
