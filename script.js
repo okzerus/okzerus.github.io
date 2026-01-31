@@ -1,11 +1,16 @@
-// script.js - full replacement
-// - Reset button under picker
-// - card color computed by applying the exact lightness delta from original dark theme
-// - immediate color updates (no smoothing), threshold for contrast exposed
-// - preserves all app features: chapters load, done-flag, slide-out list, tippy tooltips, image viewer, top/bottom nav, session-only scroll restore
+/* script.js - single-file app logic
+   - custom hue+gradient color picker with Reset button
+   - card color computed by HSL lightness delta instead of transparency
+   - immediate color updates (no smoothing)
+   - adjustable constants:
+       CARD_LIGHTNESS_DELTA (how much brighter the content card is than selected bg)
+       CONTRAST_LUMINANCE_THRESHOLD (when to switch accent text color to dark)
+   - preserves: chapters loading, "done" flag, slide-out list, tooltip preloading, image viewer,
+     top/bottom nav rules, session-only scroll restore.
+*/
 
 document.addEventListener('DOMContentLoaded', () => {
-  /* ---------------- DOM refs ---------------- */
+  /* ---------- DOM references ---------- */
   const chaptersListEl = document.getElementById('chapters');
   const chapterBodyEl = document.getElementById('chapter-body');
   const chapterTitleEl = document.getElementById('chapter-title');
@@ -27,26 +32,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const colorAreaCursor = document.getElementById('color-area-cursor');
   const hueSlider = document.getElementById('hue-slider');
   const hueCursor = document.getElementById('hue-cursor');
-
-  // reset button (inserted dynamically in case markup doesn't include it)
-  let resetBtn = null;
-  if (colorPopup) {
-    // ensure reset row exists
-    let rr = colorPopup.querySelector('.reset-row');
-    if (!rr) {
-      rr = document.createElement('div');
-      rr.className = 'reset-row';
-      colorPopup.appendChild(rr);
-    }
-    resetBtn = colorPopup.querySelector('.reset-btn');
-    if (!resetBtn) {
-      resetBtn = document.createElement('button');
-      resetBtn.className = 'reset-btn';
-      resetBtn.type = 'button';
-      resetBtn.textContent = 'Сбросить';
-      rr.appendChild(resetBtn);
-    }
-  }
+  const colorResetBtn = document.getElementById('color-reset');
 
   if (!chaptersListEl || !chapterBodyEl || !chapterTitleEl) {
     console.error('Essential DOM elements missing. Check index.html IDs.');
@@ -54,7 +40,7 @@ document.addEventListener('DOMContentLoaded', () => {
     return;
   }
 
-  /* ---------------- App state ---------------- */
+  /* ---------- App state ---------- */
   let chapters = [];
   let currentIndex = -1;
   let lastChapterFile = null;
@@ -62,26 +48,41 @@ document.addEventListener('DOMContentLoaded', () => {
   const resolvedUrlCache = new Map();
   const preloadedImgCache = new Map();
 
-  /* ---------------- Color configuration ---------------- */
+  /* ---------- Configurable constants (edit here) ---------- */
 
-  const STORAGE_KEY = 'site-bg-color';
-  const DEFAULT_BG = '#0b0f13'; // original dark background
-  const ORIGINAL_BG_DARK = '#0b0f13';
-  const ORIGINAL_CARD_DARK = '#0f1520';
+  // Default background (your previous dark default)
+  const DEFAULT_BG_HEX = '#0b0f13';
 
-  // Compute the exact lightness delta between original bg and card in dark theme
-  // We'll apply that delta to any chosen background: card_lightness = bg_lightness + delta
+  // This is the lightness delta applied to the chosen background to produce the card color.
+  // The value below was computed from your original dark theme (#0b0f13 -> #0f1520).
+  // To change how much lighter the card is than the background, edit this decimal (0..1).
+  // Example: 0.03333 is the default (small difference). Increase to make card lighter.
+  const CARD_LIGHTNESS_DELTA = 0.03333333333333333; // change this value to tweak card contrast
+
+  // Luminance threshold for switching text color from light to dark.
+  // Higher = text switches to dark earlier (for brighter backgrounds).
+  // Set between 0 and 1. I set it higher to make dark text appear earlier for readability.
+  const CONTRAST_LUMINANCE_THRESHOLD = 0.50; // change to taste (was 0.45 earlier)
+
+  /* ---------- Color math helpers (RGB <-> HSL/HSV) ---------- */
+
   function hexToRgb(hex) {
     hex = (hex || '').replace('#', '');
     if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
     const n = parseInt(hex, 16);
     return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
   }
+
+  function rgbToHex(r, g, b) {
+    return '#' + [r, g, b].map(v => Math.round(v).toString(16).padStart(2, '0')).join('');
+  }
+
   function rgbToHsl(r, g, b) {
     r /= 255; g /= 255; b /= 255;
     const max = Math.max(r, g, b), min = Math.min(r, g, b);
-    let h = 0, s = 0, l = (max + min) / 2;
-    if (max === min) { h = s = 0; } else {
+    let h = 0, s = 0;
+    const l = (max + min) / 2;
+    if (max !== min) {
       const d = max - min;
       s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
       switch (max) {
@@ -93,60 +94,85 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     return { h, s, l };
   }
+
   function hslToRgb(h, s, l) {
-    h /= 360;
-    let r, g, b;
-    if (s === 0) { r = g = b = l; }
-    else {
-      function hue2rgb(p, q, t) {
-        if (t < 0) t += 1;
-        if (t > 1) t -= 1;
-        if (t < 1/6) return p + (q - p) * 6 * t;
-        if (t < 1/2) return q;
-        if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
-        return p;
-      }
-      const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-      const p = 2 * l - q;
-      r = hue2rgb(p, q, h + 1/3);
-      g = hue2rgb(p, q, h);
-      b = hue2rgb(p, q, h - 1/3);
+    h = ((h % 360) + 360) % 360;
+    if (s === 0) {
+      const v = Math.round(l * 255);
+      return { r: v, g: v, b: v };
     }
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    const p = 2 * l - q;
+    function hue2rgb(p, q, t) {
+      if (t < 0) t += 1;
+      if (t > 1) t -= 1;
+      if (t < 1 / 6) return p + (q - p) * 6 * t;
+      if (t < 1 / 2) return q;
+      if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+      return p;
+    }
+    const hk = h / 360;
+    const r = hue2rgb(p, q, hk + 1 / 3);
+    const g = hue2rgb(p, q, hk);
+    const b = hue2rgb(p, q, hk - 1 / 3);
     return { r: Math.round(r * 255), g: Math.round(g * 255), b: Math.round(b * 255) };
-  }
-
-  const obg = hexToRgb(ORIGINAL_BG_DARK);
-  const ocard = hexToRgb(ORIGINAL_CARD_DARK);
-  const obg_hsl = rgbToHsl(obg.r, obg.g, obg.b);
-  const ocard_hsl = rgbToHsl(ocard.r, ocard.g, ocard.b);
-  // delta: how much the original card's lightness differs from original background
-  // We'll reuse this exact delta.
-  const DEFAULT_LIGHTNESS_DELTA = ocard_hsl.l - obg_hsl.l; // ~ +0.03333333333333334
-
-  // ---- Configurable constants (easy to change) ----
-  // Apply the same delta as original by default. You can change this value if you want.
-  // If you prefer "8% darker" instead, set this to 0.08 (8% absolute lightness).
-  let CARD_LIGHTNESS_DELTA = DEFAULT_LIGHTNESS_DELTA;
-
-  // Luminance threshold (0..1) for choosing dark text vs light text.
-  // If luminance >= this threshold => use dark text (#132029), otherwise light text (#e6eef6).
-  // Increase this value to make text switch to black earlier on *darker* backgrounds.
-  let CONTRAST_LUMINANCE_THRESHOLD = 0.5; // change this to tweak when text turns black
-
-  // ---------------- Color math helpers ----------------
-  function rgbToHex(r, g, b) {
-    return '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('');
   }
 
   function luminanceFromRgb(r, g, b) {
     const srgb = [r, g, b].map(v => {
-      v /= 255;
+      v = v / 255;
       return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
     });
     return 0.2126 * srgb[0] + 0.7152 * srgb[1] + 0.0722 * srgb[2];
   }
 
-  // HSV converters for picker
+  /* ---------- Color application: background and card ---------- */
+
+  // compute card color from base bg hex by applying a HSL lightness delta
+  function computeCardFromBgHex(bgHex) {
+    const { r, g, b } = hexToRgb(bgHex);
+    const hsl = rgbToHsl(r, g, b);
+    let newL = hsl.l + CARD_LIGHTNESS_DELTA;
+    if (newL > 1) newL = 1;
+    if (newL < 0) newL = 0;
+    const cardRgb = hslToRgb(hsl.h, hsl.s, newL);
+    return { rgb: cardRgb, hex: rgbToHex(cardRgb.r, cardRgb.g, cardRgb.b) };
+  }
+
+  // Apply chosen background color and derived card/buttons color and text color.
+  function applyColorHex(hex) {
+    const root = document.documentElement;
+    // background root variable
+    root.style.setProperty('--bg', hex);
+
+    // card computed from bg
+    const card = computeCardFromBgHex(hex);
+    root.style.setProperty('--card', card.hex);
+    root.style.setProperty('--btn-bg', card.hex);
+
+    // Decide accent color based on luminance threshold (user-configurable)
+    const { r, g, b } = hexToRgb(hex);
+    const lum = luminanceFromRgb(r, g, b);
+    if (lum < CONTRAST_LUMINANCE_THRESHOLD) {
+      root.style.setProperty('--accent', '#e6eef6');
+      root.style.setProperty('--btn-fg', '#e6eef6');
+      root.style.setProperty('--tooltip-link-color', '#bfe8ff');
+    } else {
+      root.style.setProperty('--accent', '#132029');
+      root.style.setProperty('--btn-fg', '#132029');
+      root.style.setProperty('--tooltip-link-color', '#1b6ea1');
+    }
+  }
+
+  /* ---------- Color picker: HSV model + UI ---------- */
+
+  // We'll store color as hex in localStorage
+  const STORAGE_KEY = 'site-bg-color';
+
+  // hsv state derived from initial hex
+  let hsv = { h: 210, s: 0.3, v: 0.05 };
+
+  // helpers for hsv conversion (used in picker)
   function hsvToRgb(h, s, v) {
     h = (h % 360 + 360) % 360;
     const c = v * s;
@@ -161,11 +187,14 @@ document.addEventListener('DOMContentLoaded', () => {
     else { r = c; g = 0; b = x; }
     return { r: Math.round((r + m) * 255), g: Math.round((g + m) * 255), b: Math.round((b + m) * 255) };
   }
+
   function rgbToHsv(r, g, b) {
     r /= 255; g /= 255; b /= 255;
     const max = Math.max(r, g, b), min = Math.min(r, g, b);
     const d = max - min;
-    let h = 0, s = (max === 0 ? 0 : d / max), v = max;
+    let h = 0;
+    const s = max === 0 ? 0 : d / max;
+    const v = max;
     if (d !== 0) {
       if (max === r) h = (g - b) / d + (g < b ? 6 : 0);
       else if (max === g) h = (b - r) / d + 2;
@@ -175,104 +204,73 @@ document.addEventListener('DOMContentLoaded', () => {
     return { h, s, v };
   }
 
-  // ---------------- Apply chosen color (central function) ----------------
-  function applyColorHex(hex) {
-    // hex -> rgb
-    const { r, g, b } = hexToRgb(hex);
-    // compute HSL of the chosen background
-    const hsl = rgbToHsl(r, g, b);
-    // compute card HSL by applying the stored delta to lightness
-    let cardLightness = hsl.l + CARD_LIGHTNESS_DELTA;
-    // clamp between 0 and 1
-    if (cardLightness < 0) cardLightness = 0;
-    if (cardLightness > 1) cardLightness = 1;
-    // create rgb for card
-    const cardRgb = hslToRgb(hsl.h, hsl.s, cardLightness);
-
-    // set CSS vars *immediately* (no transition)
-    const root = document.documentElement;
-    root.style.setProperty('--bg', hex);
-    root.style.setProperty('--card', rgbToHex(cardRgb.r, cardRgb.g, cardRgb.b));
-    root.style.setProperty('--btn-bg', rgbToHex(cardRgb.r, cardRgb.g, cardRgb.b));
-
-    // Choose readable accent color based on luminance threshold
-    const lum = luminanceFromRgb(r, g, b);
-    if (lum >= CONTRAST_LUMINANCE_THRESHOLD) {
-      root.style.setProperty('--accent', '#132029'); // dark text
-      root.style.setProperty('--btn-fg', '#132029');
-      root.style.setProperty('--tooltip-link-color', '#1b6ea1');
-    } else {
-      root.style.setProperty('--accent', '#e6eef6'); // light text
-      root.style.setProperty('--btn-fg', '#e6eef6');
-      root.style.setProperty('--tooltip-link-color', '#bfe8ff');
-    }
+  // Persist hex to storage
+  function persistHex(hex) {
+    try { localStorage.setItem(STORAGE_KEY, hex); } catch (e) {}
   }
 
-  // wrapper: apply HSV state
-  function applyColorFromHsv(hsv) {
+  // Apply HSV (via hex) to page
+  function applyHsvState() {
     const { r, g, b } = hsvToRgb(hsv.h, hsv.s, hsv.v);
     const hex = rgbToHex(r, g, b);
     applyColorHex(hex);
   }
 
-  function persistColorHex(hex) {
-    try { localStorage.setItem(STORAGE_KEY, hex); } catch (e) {}
-  }
-
-  /* ---------------- Picker UI ---------------- */
-  // HSV initial state
-  let hsvState = { h: 210, s: 0.3, v: 0.05 };
-
+  // UI updater: set multi-layer background for colorArea (hue base + white + black)
   function updatePickerUI() {
     if (!colorArea || !hueSlider || !colorAreaCursor || !hueCursor) return;
-    const { r: hr, g: hg, b: hb } = hsvToRgb(hsvState.h, 1, 1);
-    // three-layer background: black gradient (top), white gradient (left), hue base (bottom)
+    const { r: hr, g: hg, b: hb } = hsvToRgb(hsv.h, 1, 1);
+    // bottom: hue base; middle: white->transparent (left->right); top: black->transparent (bottom->top)
     colorArea.style.background = `linear-gradient(to top, rgba(0,0,0,1), rgba(0,0,0,0)), linear-gradient(to right, rgba(255,255,255,1), rgba(255,255,255,0)), rgb(${hr},${hg},${hb})`;
 
-    // position hue cursor
     const sliderRect = hueSlider.getBoundingClientRect();
-    const y = sliderRect.height * (1 - (hsvState.h / 360));
+    const y = sliderRect.height * (1 - (hsv.h / 360));
     hueCursor.style.top = `${Math.min(Math.max(0, y), sliderRect.height)}px`;
 
-    // position area cursor
     const areaRect = colorArea.getBoundingClientRect();
-    const cx = areaRect.width * hsvState.s;
-    const cy = areaRect.height * (1 - hsvState.v);
+    const cx = areaRect.width * hsv.s;
+    const cy = areaRect.height * (1 - hsv.v);
     colorAreaCursor.style.left = `${Math.min(Math.max(0, cx), areaRect.width)}px`;
     colorAreaCursor.style.top = `${Math.min(Math.max(0, cy), areaRect.height)}px`;
   }
 
-  // pointer drag helper
+  // Pointer drag helper (pointer events + touch fallback)
   function addDrag(element, handlers) {
     if (!element) return;
-    let dragging = false, pid = null;
+    let dragging = false; let id = null;
     element.addEventListener('pointerdown', (ev) => {
       element.setPointerCapture && element.setPointerCapture(ev.pointerId);
-      dragging = true; pid = ev.pointerId; handlers.start && handlers.start(ev); ev.preventDefault();
+      dragging = true; id = ev.pointerId;
+      handlers.start && handlers.start(ev);
+      ev.preventDefault();
     });
     window.addEventListener('pointermove', (ev) => {
-      if (!dragging || (pid !== null && ev.pointerId !== pid)) return;
-      handlers.move && handlers.move(ev); ev.preventDefault();
-    }, { passive:false });
+      if (!dragging || (id !== null && ev.pointerId !== id)) return;
+      handlers.move && handlers.move(ev);
+      ev.preventDefault();
+    }, { passive: false });
     window.addEventListener('pointerup', (ev) => {
-      if (!dragging || (pid !== null && ev.pointerId !== pid)) return;
-      dragging = false; pid = null; handlers.end && handlers.end(ev); ev.preventDefault();
+      if (!dragging || (id !== null && ev.pointerId !== id)) return;
+      dragging = false; id = null;
+      handlers.end && handlers.end(ev);
+      ev.preventDefault();
     });
-    // touch fallback
-    element.addEventListener('touchstart', (e) => { if (e.touches && e.touches[0]) handlers.start && handlers.start(e.touches[0]); e.preventDefault(); }, { passive:false });
-    window.addEventListener('touchmove', (e) => { if (e.touches && e.touches[0]) handlers.move && handlers.move(e.touches[0]); }, { passive:false });
-    window.addEventListener('touchend', (e) => { handlers.end && handlers.end(e.changedTouches && e.changedTouches[0]); }, { passive:false });
+    // fallback touch
+    element.addEventListener('touchstart', (e) => { if (e.touches && e.touches[0]) handlers.start && handlers.start(e.touches[0]); e.preventDefault(); }, { passive: false });
+    window.addEventListener('touchmove', (e) => { if (e.touches && e.touches[0]) handlers.move && handlers.move(e.touches[0]); }, { passive: false });
+    window.addEventListener('touchend', (e) => { handlers.end && handlers.end(e.changedTouches && e.changedTouches[0]); }, { passive: false });
   }
 
+  // handlers
   function handleHuePointer(e) {
     if (!hueSlider) return;
     const rect = hueSlider.getBoundingClientRect();
     const y = Math.min(Math.max(0, (e.clientY || 0) - rect.top), rect.height);
     const ratio = 1 - (y / rect.height);
-    hsvState.h = ratio * 360;
+    hsv.h = ratio * 360;
     updatePickerUI();
-    applyColorFromHsv(hsvState);
-    persistColorHex(rgbToHex(...Object.values(hsvToRgb(hsvState.h, hsvState.s, hsvState.v))));
+    applyHsvState();
+    persistHex(rgbToHex(...Object.values(hsvToRgb(hsv.h, hsv.s, hsv.v))));
   }
 
   function handleAreaPointer(e) {
@@ -280,86 +278,56 @@ document.addEventListener('DOMContentLoaded', () => {
     const rect = colorArea.getBoundingClientRect();
     const x = Math.min(Math.max(0, (e.clientX || 0) - rect.left), rect.width);
     const y = Math.min(Math.max(0, (e.clientY || 0) - rect.top), rect.height);
-    hsvState.s = (x / rect.width);
-    hsvState.v = 1 - (y / rect.height);
+    hsv.s = (x / rect.width);
+    hsv.v = 1 - (y / rect.height);
     updatePickerUI();
-    applyColorFromHsv(hsvState);
-    persistColorHex(rgbToHex(...Object.values(hsvToRgb(hsvState.h, hsvState.s, hsvState.v))));
+    applyHsvState();
+    persistHex(rgbToHex(...Object.values(hsvToRgb(hsv.h, hsv.s, hsv.v))));
   }
 
-  if (hueSlider) addDrag(hueSlider, { start: handleHuePointer, move: handleHuePointer, end: () => {} });
-  if (colorArea) addDrag(colorArea, { start: handleAreaPointer, move: handleAreaPointer, end: () => {} });
+  if (hueSlider) addDrag(hueSlider, { start: handleHuePointer, move: handleHuePointer, end: () => persistHex(rgbToHex(...Object.values(hsvToRgb(hsv.h, hsv.s, hsv.v)))) });
+  if (colorArea) addDrag(colorArea, { start: handleAreaPointer, move: handleAreaPointer, end: () => persistHex(rgbToHex(...Object.values(hsvToRgb(hsv.h, hsv.s, hsv.v)))) });
 
-  // show/hide popup
+  // show/hide popup & outside click
   function showColorPopup() { if (!colorPopup) return; colorPopup.classList.add('visible'); colorPopup.setAttribute('aria-hidden', 'false'); document.addEventListener('click', onDocClickForPopup); }
   function hideColorPopup() { if (!colorPopup) return; colorPopup.classList.remove('visible'); colorPopup.setAttribute('aria-hidden', 'true'); document.removeEventListener('click', onDocClickForPopup); }
   function onDocClickForPopup(e) { if (!colorPopup) return; if (colorPopup.contains(e.target) || (themeToggle && themeToggle.contains(e.target))) return; hideColorPopup(); }
   if (themeToggle) themeToggle.addEventListener('click', (e) => { e.stopPropagation(); if (!colorPopup) return; if (colorPopup.classList.contains('visible')) hideColorPopup(); else showColorPopup(); });
 
-  // reset to defaults handler
-  if (resetBtn) {
-    resetBtn.addEventListener('click', (e) => {
-      e.preventDefault();
-      // restore stored default colors exactly as original dark theme
-      try { localStorage.removeItem(STORAGE_KEY); } catch (ex) {}
-      // compute HSV for default and set UI
-      const { r, g, b } = hexToRgb(DEFAULT_BG);
-      const hsvDefault = rgbToHsv(r, g, b);
-      hsvState = { h: hsvDefault.h || 0, s: hsvDefault.s || 0, v: hsvDefault.v || 0 };
-      applyColorFromHsv(hsvState);
-      updatePickerUI();
-      // also persist (so page reload keeps it)
-      persistColorHex(DEFAULT_BG);
-      // hide popup for visual cleanness
-      hideColorPopup();
-    });
-  }
+  // Reset to original defaults
+  if (colorResetBtn) colorResetBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    // reset hex
+    try { localStorage.setItem(STORAGE_KEY, DEFAULT_BG_HEX); } catch (err) {}
+    const { r, g, b } = hexToRgb(DEFAULT_BG_HEX);
+    const hsv0 = rgbToHsv(r, g, b);
+    hsv.h = hsv0.h; hsv.s = hsv0.s; hsv.v = hsv0.v;
+    applyHsvState();
+    updatePickerUI();
+    hideColorPopup();
+  });
 
-  // initialize picker from storage or default
-  (function initPickerFromStorage() {
+  // init color from storage or default
+  (function initColor() {
     try {
-      const stored = localStorage.getItem(STORAGE_KEY) || DEFAULT_BG;
-      const rgb = hexToRgb(stored);
-      const hv = rgbToHsv(rgb.r, rgb.g, rgb.b);
-      hsvState = { h: hv.h || 0, s: hv.s || 0, v: hv.v || 0 };
+      const stored = localStorage.getItem(STORAGE_KEY) || DEFAULT_BG_HEX;
+      const { r, g, b } = hexToRgb(stored);
+      const v = rgbToHsv(r, g, b);
+      hsv.h = v.h || 0; hsv.s = v.s || 0; hsv.v = v.v || 0;
     } catch (e) {
-      const rgb = hexToRgb(DEFAULT_BG);
-      const hv = rgbToHsv(rgb.r, rgb.g, rgb.b);
-      hsvState = { h: hv.h || 0, s: hv.s || 0, v: hv.v || 0 };
+      const { r, g, b } = hexToRgb(DEFAULT_BG_HEX);
+      const v = rgbToHsv(r, g, b);
+      hsv.h = v.h || 0; hsv.s = v.s || 0; hsv.v = v.v || 0;
     }
-    // apply and update UI
-    applyColorFromHsv(hsvState);
+    applyHsvState();
     requestAnimationFrame(updatePickerUI);
   })();
 
-  /* ---------------- THEME attribute fallback (no-op but preserved) ---------------- */
-  (function initThemeAttr() {
-    const savedTheme = localStorage.getItem('site-theme');
-    document.documentElement.setAttribute('data-theme', savedTheme === 'light' ? 'light' : 'dark');
-  })();
-
-  /* ---------------- Remaining app: chapters, tippy, image viewer, nav ---------------- */
-  // Functions below are equivalent to your previous working code: they load chapters.json,
-  // display chapter content, init tippy tooltips with banner images and preloading,
-  // implement top/bottom nav, keyboard nav, slide-out chapters list, image viewer, and
-  // scroll restoration on page reload only.
-
-  // For brevity I keep the function names and behavior the same. If anything fails
-  // please paste console output and I will patch quickly.
+  /* ---------- Remaining app logic (chapters, tippy, image viewer, nav) ---------- */
 
   function isDoneEntry(entry) { if (!entry) return false; return entry.done !== false; }
-  function findPrevDoneIndex(fromIndex) {
-    for (let i = (fromIndex === undefined ? currentIndex - 1 : fromIndex); i >= 0; i--) {
-      if (isDoneEntry(chapters[i])) return i;
-    }
-    return -1;
-  }
-  function findNextDoneIndex(fromIndex) {
-    for (let i = (fromIndex === undefined ? currentIndex + 1 : fromIndex); i < chapters.length; i++) {
-      if (isDoneEntry(chapters[i])) return i;
-    }
-    return -1;
-  }
+  function findPrevDoneIndex(fromIndex) { for (let i = (fromIndex === undefined ? currentIndex - 1 : fromIndex); i >= 0; i--) if (isDoneEntry(chapters[i])) return i; return -1; }
+  function findNextDoneIndex(fromIndex) { for (let i = (fromIndex === undefined ? currentIndex + 1 : fromIndex); i < chapters.length; i++) if (isDoneEntry(chapters[i])) return i; return -1; }
   function findFirstDoneIndex() { return findNextDoneIndex(0); }
 
   function updateNavButtons() {
@@ -396,8 +364,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadChapter(c.file, c.title);
     updateNavButtons();
     window.scrollTo({ top: 0, behavior: 'auto' });
-    if (window.scrollY <= 10 && !bottomNavIsVisible()) showTopNavImmediate();
-    else clearHideTimer();
+    if (window.scrollY <= 10 && !bottomNavIsVisible()) showTopNavImmediate(); else clearHideTimer();
     closeChapters();
     try { localStorage.setItem('last-chapter-file', c.file); } catch (e) {}
   }
@@ -420,7 +387,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  /* ---------------- LOAD CHAPTERS ---------------- */
+  /* ---------- Chapters list ---------- */
   async function loadChapters() {
     chapterBodyEl.textContent = 'Загрузка...';
     try {
@@ -445,7 +412,6 @@ document.addEventListener('DOMContentLoaded', () => {
         chaptersListEl.appendChild(li);
       });
 
-      // restore last chapter (by filename) if present and allowed
       const saved = localStorage.getItem('last-chapter-file');
       if (saved) {
         const idx = chapters.findIndex(ch => ch && ch.file === saved && isDoneEntry(ch));
@@ -465,7 +431,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  /* ---------------- LOAD SINGLE CHAPTER ---------------- */
+  /* ---------- Load single chapter ---------- */
   async function loadChapter(filename, title) {
     chapterTitleEl.textContent = title || '';
     chapterBodyEl.textContent = 'Загрузка главы...';
@@ -482,7 +448,7 @@ document.addEventListener('DOMContentLoaded', () => {
       bindImagesToViewer();
       updateNavButtons();
 
-      // Restore scroll only if a sessionStorage entry exists (reload)
+      // restore scroll only if sessionStorage entry exists (reload)
       try {
         const key = 'scroll:' + filename;
         const v = sessionStorage.getItem(key);
@@ -508,9 +474,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  /* ---------------- IMAGE resolving and preload for tippy ---------------- */
+  /* ---------- Tooltip image resolution & preload ---------- */
   function testImageUrl(url, timeout = 3000) {
-    return new Promise(resolve => {
+    return new Promise((resolve) => {
       const img = new Image();
       let done = false;
       const onLoad = () => { if (done) return; done = true; cleanup(); resolve(true); };
@@ -542,15 +508,14 @@ document.addEventListener('DOMContentLoaded', () => {
     bases.push(window.location.origin + '/');
 
     const candidates = [];
-    for (const base of bases) {
-      try { const u = new URL(srcCandidate, base); candidates.push(u.href); } catch (e) {}
-    }
+    for (const base of bases) { try { const u = new URL(srcCandidate, base); candidates.push(u.href); } catch (e) {} }
     const seen = new Set();
     const unique = candidates.filter(c => { if (seen.has(c)) return false; seen.add(c); return true; });
 
     for (const u of unique) {
       if (await testImageUrl(u)) { resolvedUrlCache.set(srcCandidate, u); return u; }
     }
+
     resolvedUrlCache.set(srcCandidate, null);
     return null;
   }
@@ -568,7 +533,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (resolved) {
           if (preloadedImgCache.has(resolved)) continue;
           const pimg = new Image();
-          pimg.crossOrigin = 'anonymous'; pimg.decoding = 'async';
+          pimg.crossOrigin = 'anonymous';
+          pimg.decoding = 'async';
           preloadedImgCache.set(resolved, pimg);
           pimg.onload = () => {};
           pimg.onerror = () => { preloadedImgCache.delete(resolved); };
@@ -600,7 +566,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  /* ---------------- TIPPY init for .gloss ---------------- */
+  /* ---------- Tippy init for .gloss ---------- */
   function initGlossTippy() {
     if (!window.tippy) return;
     document.querySelectorAll('.gloss').forEach(el => { try { if (el._tippy) el._tippy.destroy(); } catch (e) {} });
@@ -682,6 +648,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  /* ---------- Navigation tooltip hints ---------- */
   function refreshNavTippies() {
     if (!window.tippy) return;
     [bottomPrev, bottomNext, topPrev, topNext].forEach(btn => { if (!btn) return; try { if (btn._tippy) btn._tippy.destroy(); } catch (e) {} });
@@ -692,7 +659,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (topNext) tippy(topNext, { content: () => topNext.dataset.title || '', placement: 'bottom', delay: [80, 40], offset: [0, 8], appendTo: () => document.body });
   }
 
-  /* ---------------- Chapters aside slide ---------------- */
+  /* ---------- Chapters aside slide behavior ---------- */
   let chaptersOpen = false;
   const EDGE_TRIGGER_PX = 12;
   function openChapters() { if (chaptersOpen) return; chaptersOpen = true; document.body.classList.add('chapters-open'); }
@@ -705,7 +672,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   document.addEventListener('click', (e) => { if (!chaptersOpen) return; if (chaptersAside && chaptersAside.contains(e.target)) return; if (e.clientX <= EDGE_TRIGGER_PX) return; closeChapters(); });
 
-  /* ---------------- Top nav visibility (1s hide delay) ---------------- */
+  /* ---------- Top nav visibility (1s hide delay) ---------- */
   function positionTopNav() {
     if (!topNav || !headerEl) return;
     const hRect = headerEl.getBoundingClientRect();
@@ -717,7 +684,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let lastScrollY = window.scrollY;
   let scheduled = false;
   let hideDelayTimer = null;
-  const HIDE_DELAY_MS = 1000; // 1s
+  const HIDE_DELAY_MS = 1000;
 
   function clearHideTimer() {
     if (hideDelayTimer) { clearTimeout(hideDelayTimer); hideDelayTimer = null; }
@@ -766,6 +733,7 @@ document.addEventListener('DOMContentLoaded', () => {
     } else {
       scheduleHideTopNav();
     }
+
     lastScrollY = curY;
   }
 
@@ -791,7 +759,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initialTopNavSetup();
   setTimeout(initialTopNavSetup, 80);
 
-  /* ---------------- Image viewer ---------------- */
+  /* ---------- Image viewer (lightbox) ---------- */
   if (!document.getElementById('image-overlay')) {
     const overlay = document.createElement('div');
     overlay.id = 'image-overlay';
@@ -812,9 +780,11 @@ document.addEventListener('DOMContentLoaded', () => {
   function openImageViewer(src, alt = '') {
     overlayImg.src = src;
     overlayImg.alt = alt || '';
+
     const marginPx = 40;
     overlayImg.style.maxWidth = `calc(100vw - ${marginPx}px)`;
     overlayImg.style.maxHeight = `calc(100vh - ${Math.round(marginPx * 1.5)}px)`;
+
     overlay.classList.add('visible');
     isZoomed = false;
     imgPos = { x: 0, y: 0 };
@@ -822,6 +792,7 @@ document.addEventListener('DOMContentLoaded', () => {
     overlayImg.classList.remove('zoomed');
     overlay.style.cursor = 'default';
     document.body.style.overflow = 'hidden';
+
     const viewer = overlay.querySelector('.viewer');
     if (viewer) { viewer.scrollTop = 0; viewer.scrollLeft = 0; }
   }
@@ -899,7 +870,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  /* ---------------- Persist scroll only on unload (sessionStorage) ---------------- */
+  /* ---------- Persist scroll only on reload (sessionStorage) ---------- */
   window.addEventListener('beforeunload', () => {
     try {
       if (currentIndex >= 0 && chapters[currentIndex] && chapters[currentIndex].file) {
@@ -909,29 +880,21 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (e) {}
   });
 
-  /* ---------------- Utility: tippies & nav initialization ---------------- */
+  /* ---------- tippies/nav helper ---------- */
   function refreshNavTippies() {
     if (!window.tippy) return;
     [bottomPrev, bottomNext, topPrev, topNext].forEach(btn => { if (!btn) return; try { if (btn._tippy) btn._tippy.destroy(); } catch (e) {} });
+
     if (bottomPrev) tippy(bottomPrev, { content: () => bottomPrev.dataset.title || '', placement: 'top', delay: [80, 40], offset: [0, 8], appendTo: () => document.body });
     if (bottomNext) tippy(bottomNext, { content: () => bottomNext.dataset.title || '', placement: 'top', delay: [80, 40], offset: [0, 8], appendTo: () => document.body });
     if (topPrev) tippy(topPrev, { content: () => topPrev.dataset.title || '', placement: 'bottom', delay: [80, 40], offset: [0, 8], appendTo: () => document.body });
     if (topNext) tippy(topNext, { content: () => topNext.dataset.title || '', placement: 'bottom', delay: [80, 40], offset: [0, 8], appendTo: () => document.body });
   }
 
-  /* ---------------- START ---------------- */
+  /* ---------- Start ---------- */
   loadChapters();
   updateNavButtons();
+  // ensure top nav position & visibility after page load
   setTimeout(() => { positionTopNav(); if (window.scrollY <= 10 && !bottomNavIsVisible()) showTopNavImmediate(); }, 120);
 
-  // expose constants for quick tweaking in console (optional)
-  window.__SITE_COLOR_CONFIG = {
-    setCardLightnessDelta: (v) => { CARD_LIGHTNESS_DELTA = Number(v); applyColorFromHsv(hsvState); },
-    setContrastThreshold: (v) => { CONTRAST_LUMINANCE_THRESHOLD = Number(v); applyColorFromHsv(hsvState); },
-    resetToDefault: () => { try { localStorage.removeItem(STORAGE_KEY); } catch(e){} const rgb = hexToRgb(DEFAULT_BG); const hv = rgbToHsv(rgb.r,rgb.g,rgb.b); hsvState = { h: hv.h || 0, s: hv.s || 0, v: hv.v || 0 }; applyColorFromHsv(hsvState); updatePickerUI(); }
-  };
-
-  // helper needed in global scope (used earlier)
-  function applyColorFromHsv(h) { applyColorFromHsv /* placeholder */ } // no-op placeholder to keep earlier calls valid
-  // NOTE: actual function implementations are above; the placeholder won't be used.
 });
