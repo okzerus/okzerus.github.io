@@ -15,7 +15,7 @@
     <div class="color-picker-container">
       <button id="theme-toggle" aria-label="Выбрать цвет фона" title="Выбрать цвет фона">☀︎</button>
 
-      <!-- picker: gradient + hue slider + reset button -->
+      <!-- custom inline picker panel (gradient + hue slider + reset) -->
       <div id="color-popup" class="color-popup" role="dialog" aria-hidden="true">
         <div class="picker">
           <div id="color-area" class="color-area" aria-label="Градиент цвета" role="application">
@@ -26,6 +26,7 @@
           </div>
         </div>
 
+        <!-- Reset button centered under picker -->
         <div class="picker-reset-wrap">
           <button id="color-reset" class="small">Сброс</button>
         </div>
