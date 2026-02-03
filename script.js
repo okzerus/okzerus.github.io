@@ -1,16 +1,11 @@
-/* script.js - final: outlines & shadows for nav buttons + immediate color changes + UI transitions kept smooth
-   - sets --bg-r, --bg-g, --bg-b CSS variables for outline usage
-   - keeps color/background/text updates instantaneous
-   - keeps transitions for UX elements (chapters slide, top nav opacity, picker pop)
-   - preserves all previous functionality (chapters, 'done' flag, tooltip images & preload, image viewer, top/bottom nav)
-*/
-
+// script.js - full app including blur-by-middle logic
 document.addEventListener('DOMContentLoaded', () => {
-  /* ---------- DOM references ---------- */
+  /* ---------- DOM refs ---------- */
   const chaptersListEl = document.getElementById('chapters');
   const chapterBodyEl = document.getElementById('chapter-body');
   const chapterTitleEl = document.getElementById('chapter-title');
   const themeToggle = document.getElementById('theme-toggle');
+  const blurToggle = document.getElementById('blur-toggle');
   const headerEl = document.querySelector('header');
 
   const bottomPrev = document.getElementById('bottom-prev');
@@ -40,23 +35,24 @@ document.addEventListener('DOMContentLoaded', () => {
   let chapters = [];
   let currentIndex = -1;
   let lastChapterFile = null;
-
   const resolvedUrlCache = new Map();
   const preloadedImgCache = new Map();
 
-  /* ---------- Configurable constants (edit here) ---------- */
+  /* ---------- Blur configuration ---------- */
+  // ratio of viewport height used as the threshold (0..1). 0.5 = middle of screen
+  const BLUR_THRESHOLD_Y_RATIO = 0.5;
+  // CSS blur used
+  const BLUR_FILTER = 'blur(6px)';
+  // storage keys & toggles
+  const BLUR_VISUAL_KEY = 'blur-visual-enabled'; // true/false (visual toggle state)
+  // Note: read lists are stored per chapter as key 'read:filename' -> JSON array of indices
 
-  // Default background (your previous dark default)
+  /* ---------- Color picker constants (kept from previous) ---------- */
   const DEFAULT_BG_HEX = '#0b0f13';
-
-  // Lightness delta used to compute the card color from the chosen background.
-  // Edit this decimal to change card contrast (positive => card is lighter).
   const CARD_LIGHTNESS_DELTA = 0.03333333333333333;
+  const CONTRAST_LUMINANCE_THRESHOLD = 0.50;
 
-  // When to switch text to dark: higher -> dark text appears earlier (for brighter backgrounds)
-  const CONTRAST_LUMINANCE_THRESHOLD = 0.30;
-
-  /* ---------- Color helpers ---------- */
+  /* ---------- Helper color functions ---------- */
   function hexToRgb(hex) {
     hex = (hex || '').replace('#', '');
     if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
@@ -85,10 +81,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   function hslToRgb(h, s, l) {
     h = ((h % 360) + 360) % 360;
-    if (s === 0) {
-      const v = Math.round(l * 255);
-      return { r: v, g: v, b: v };
-    }
+    if (s === 0) { const v = Math.round(l * 255); return { r: v, g: v, b: v }; }
     const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
     const p = 2 * l - q;
     function hue2rgb(p, q, t) {
@@ -113,7 +106,7 @@ document.addEventListener('DOMContentLoaded', () => {
     return 0.2126 * srgb[0] + 0.7152 * srgb[1] + 0.0722 * srgb[2];
   }
 
-  // compute card hex from bg hex using HSL lightness delta
+  /* ---------- Apply color / card logic (keeps immediate color apply) ---------- */
   function computeCardFromBgHex(bgHex) {
     const { r, g, b } = hexToRgb(bgHex);
     const hsl = rgbToHsl(r, g, b);
@@ -123,22 +116,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const cardRgb = hslToRgb(hsl.h, hsl.s, newL);
     return { rgb: cardRgb, hex: rgbToHex(cardRgb.r, cardRgb.g, cardRgb.b) };
   }
-
-  // Apply chosen bg hex synchronously & set RGB CSS variables for outlines
   function applyColorHex(hex) {
     const root = document.documentElement;
     const { r, g, b } = hexToRgb(hex);
-    // set raw bg color (instant)
     root.style.setProperty('--bg', hex);
-    // expose rgb components for outline usage
     root.style.setProperty('--bg-r', String(r));
     root.style.setProperty('--bg-g', String(g));
     root.style.setProperty('--bg-b', String(b));
-    // compute card color and button bg (instant)
     const card = computeCardFromBgHex(hex);
     root.style.setProperty('--card', card.hex);
     root.style.setProperty('--btn-bg', card.hex);
-    // choose accent/fg based on luminance threshold
     const lum = luminanceFromRgb(r, g, b);
     if (lum < CONTRAST_LUMINANCE_THRESHOLD) {
       root.style.setProperty('--accent', '#e6eef6');
@@ -151,10 +138,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  /* ---------- Color picker (HSV) ---------- */
+  /* ---------- Color picker (HSV) helpers - kept from previous file ---------- */
   const STORAGE_KEY = 'site-bg-color';
   let hsv = { h: 210, s: 0.3, v: 0.05 };
-
   function hsvToRgb(h, s, v) {
     h = (h % 360 + 360) % 360;
     const c = v * s;
@@ -169,7 +155,6 @@ document.addEventListener('DOMContentLoaded', () => {
     else { r = c; g = 0; b = x; }
     return { r: Math.round((r + m) * 255), g: Math.round((g + m) * 255), b: Math.round((b + m) * 255) };
   }
-
   function rgbToHsv(r, g, b) {
     r /= 255; g /= 255; b /= 255;
     const max = Math.max(r, g, b), min = Math.min(r, g, b);
@@ -185,16 +170,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     return { h, s, v };
   }
-
-  function persistHex(hex) {
-    try { localStorage.setItem(STORAGE_KEY, hex); } catch (e) {}
-  }
-
-  function applyHsvState() {
-    const { r, g, b } = hsvToRgb(hsv.h, hsv.s, hsv.v);
-    const hex = rgbToHex(r, g, b);
-    applyColorHex(hex);
-  }
+  function persistHex(hex) { try { localStorage.setItem(STORAGE_KEY, hex); } catch (e) {} }
+  function applyHsvState() { const { r, g, b } = hsvToRgb(hsv.h, hsv.s, hsv.v); const hex = rgbToHex(r, g, b); applyColorHex(hex); }
 
   function updatePickerUI() {
     if (!colorArea || !hueSlider || !colorAreaCursor || !hueCursor) return;
@@ -209,55 +186,43 @@ document.addEventListener('DOMContentLoaded', () => {
     colorAreaCursor.style.left = `${Math.min(Math.max(0, cx), areaRect.width)}px`;
     colorAreaCursor.style.top = `${Math.min(Math.max(0, cy), areaRect.height)}px`;
   }
-
   function addDrag(element, handlers) {
     if (!element) return;
     let dragging = false; let pointerId = null;
     element.addEventListener('pointerdown', (ev) => {
       element.setPointerCapture && element.setPointerCapture(ev.pointerId);
       dragging = true; pointerId = ev.pointerId;
-      handlers.start && handlers.start(ev);
-      ev.preventDefault();
+      handlers.start && handlers.start(ev); ev.preventDefault();
     });
     window.addEventListener('pointermove', (ev) => {
       if (!dragging || (pointerId !== null && ev.pointerId !== pointerId)) return;
-      handlers.move && handlers.move(ev);
-      ev.preventDefault();
+      handlers.move && handlers.move(ev); ev.preventDefault();
     }, { passive: false });
     window.addEventListener('pointerup', (ev) => {
       if (!dragging || (pointerId !== null && ev.pointerId !== pointerId)) return;
-      dragging = false; pointerId = null;
-      handlers.end && handlers.end(ev);
-      ev.preventDefault();
+      dragging = false; pointerId = null; handlers.end && handlers.end(ev); ev.preventDefault();
     });
     element.addEventListener('touchstart', (e) => { if (e.touches && e.touches[0]) handlers.start && handlers.start(e.touches[0]); e.preventDefault(); }, { passive: false });
     window.addEventListener('touchmove', (e) => { if (e.touches && e.touches[0]) handlers.move && handlers.move(e.touches[0]); }, { passive: false });
     window.addEventListener('touchend', (e) => { handlers.end && handlers.end(e.changedTouches && e.changedTouches[0]); }, { passive: false });
   }
-
   function handleHuePointer(e) {
     if (!hueSlider) return;
     const rect = hueSlider.getBoundingClientRect();
     const y = Math.min(Math.max(0, (e.clientY || 0) - rect.top), rect.height);
     const ratio = 1 - (y / rect.height);
-    hsv.h = ratio * 360;
-    updatePickerUI();
-    applyHsvState();
+    hsv.h = ratio * 360; updatePickerUI(); applyHsvState();
     persistHex(rgbToHex(...Object.values(hsvToRgb(hsv.h, hsv.s, hsv.v))));
   }
-
   function handleAreaPointer(e) {
     if (!colorArea) return;
     const rect = colorArea.getBoundingClientRect();
     const x = Math.min(Math.max(0, (e.clientX || 0) - rect.left), rect.width);
     const y = Math.min(Math.max(0, (e.clientY || 0) - rect.top), rect.height);
-    hsv.s = (x / rect.width);
-    hsv.v = 1 - (y / rect.height);
-    updatePickerUI();
-    applyHsvState();
+    hsv.s = (x / rect.width); hsv.v = 1 - (y / rect.height);
+    updatePickerUI(); applyHsvState();
     persistHex(rgbToHex(...Object.values(hsvToRgb(hsv.h, hsv.s, hsv.v))));
   }
-
   if (hueSlider) addDrag(hueSlider, { start: handleHuePointer, move: handleHuePointer, end: () => persistHex(rgbToHex(...Object.values(hsvToRgb(hsv.h, hsv.s, hsv.v)))) });
   if (colorArea) addDrag(colorArea, { start: handleAreaPointer, move: handleAreaPointer, end: () => persistHex(rgbToHex(...Object.values(hsvToRgb(hsv.h, hsv.s, hsv.v)))) });
 
@@ -265,18 +230,14 @@ document.addEventListener('DOMContentLoaded', () => {
   function hideColorPopup() { if (!colorPopup) return; colorPopup.classList.remove('visible'); colorPopup.setAttribute('aria-hidden','true'); document.removeEventListener('click', onDocClickForPopup); }
   function onDocClickForPopup(e) { if (!colorPopup) return; if (colorPopup.contains(e.target) || (themeToggle && themeToggle.contains(e.target))) return; hideColorPopup(); }
   if (themeToggle) themeToggle.addEventListener('click', (e) => { e.stopPropagation(); if (!colorPopup) return; if (colorPopup.classList.contains('visible')) hideColorPopup(); else showColorPopup(); });
-
   if (colorResetBtn) colorResetBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     try { localStorage.setItem(STORAGE_KEY, DEFAULT_BG_HEX); } catch (err) {}
     const { r, g, b } = hexToRgb(DEFAULT_BG_HEX);
     const hv = rgbToHsv(r, g, b);
     hsv.h = hv.h; hsv.s = hv.s; hsv.v = hv.v;
-    applyHsvState();
-    updatePickerUI();
-    hideColorPopup();
+    applyHsvState(); updatePickerUI(); hideColorPopup();
   });
-
   (function initColor() {
     try {
       const stored = localStorage.getItem(STORAGE_KEY) || DEFAULT_BG_HEX;
@@ -288,153 +249,273 @@ document.addEventListener('DOMContentLoaded', () => {
       const v = rgbToHsv(r, g, b);
       hsv.h = v.h || 0; hsv.s = v.s || 0; hsv.v = v.v || 0;
     }
-    applyHsvState();
-    requestAnimationFrame(updatePickerUI);
+    applyHsvState(); requestAnimationFrame(updatePickerUI);
   })();
 
-  /* ---------- The rest of your app: chapters, tooltips, image viewer, nav ---------- */
+  /* ========== BLUR FEATURE IMPLEMENTATION ========== */
 
-  function isDoneEntry(entry) { if (!entry) return false; return entry.done !== false; }
-  function findPrevDoneIndex(fromIndex) { for (let i = (fromIndex === undefined ? currentIndex - 1 : fromIndex); i >= 0; i--) if (isDoneEntry(chapters[i])) return i; return -1; }
-  function findNextDoneIndex(fromIndex) { for (let i = (fromIndex === undefined ? currentIndex + 1 : fromIndex); i < chapters.length; i++) if (isDoneEntry(chapters[i])) return i; return -1; }
-  function findFirstDoneIndex() { return findNextDoneIndex(0); }
-
-  function updateNavButtons() {
-    const prevIndex = findPrevDoneIndex();
-    const nextIndex = findNextDoneIndex();
-    const prevDisabled = prevIndex === -1;
-    const nextDisabled = nextIndex === -1;
-
-    [bottomPrev, topPrev].forEach(btn => { if (btn) btn.disabled = prevDisabled; });
-    [bottomNext, topNext].forEach(btn => { if (btn) btn.disabled = nextDisabled; });
-
-    if (!prevDisabled) {
-      const p = chapters[prevIndex];
-      [bottomPrev, topPrev].forEach(btn => { if (btn) { btn.dataset.index = prevIndex; btn.dataset.title = p.title || ''; }});
-    } else {
-      [bottomPrev, topPrev].forEach(btn => { if (btn) { btn.removeAttribute('data-index'); btn.removeAttribute('data-title'); }});
-    }
-
-    if (!nextDisabled) {
-      const n = chapters[nextIndex];
-      [bottomNext, topNext].forEach(btn => { if (btn) { btn.dataset.index = nextIndex; btn.dataset.title = n.title || ''; }});
-    } else {
-      [bottomNext, topNext].forEach(btn => { if (btn) { btn.removeAttribute('data-index'); btn.removeAttribute('data-title'); }});
-    }
-
-    refreshNavTippies();
-  }
-
-  function goToChapter(index) {
-    if (!chapters || index < 0 || index >= chapters.length) return;
-    if (!isDoneEntry(chapters[index])) return;
-    currentIndex = index;
-    const c = chapters[index];
-    loadChapter(c.file, c.title);
-    updateNavButtons();
-    window.scrollTo({ top: 0, behavior: 'auto' });
-    if (window.scrollY <= 10 && !bottomNavIsVisible()) showTopNavImmediate(); else clearHideTimer();
-    closeChapters();
-    try { localStorage.setItem('last-chapter-file', c.file); } catch (e) {}
-  }
-
-  if (bottomPrev) bottomPrev.addEventListener('click', () => { const i = Number(bottomPrev.dataset.index); if (!Number.isNaN(i)) goToChapter(i); });
-  if (bottomNext) bottomNext.addEventListener('click', () => { const i = Number(bottomNext.dataset.index); if (!Number.isNaN(i)) goToChapter(i); });
-  if (topPrev) topPrev.addEventListener('click', () => { const i = Number(topPrev.dataset.index); if (!Number.isNaN(i)) goToChapter(i); });
-  if (topNext) topNext.addEventListener('click', () => { const i = Number(topNext.dataset.index); if (!Number.isNaN(i)) goToChapter(i); });
-
-  document.addEventListener('keydown', (e) => {
-    const active = document.activeElement;
-    if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) return;
-    if (e.key === 'ArrowLeft') { const prev = findPrevDoneIndex(); if (prev !== -1) goToChapter(prev); }
-    if (e.key === 'ArrowRight') { const next = findNextDoneIndex(); if (next !== -1) goToChapter(next); }
-  });
-
-  /* ---------- Load chapters ---------- */
-  async function loadChapters() {
-    chapterBodyEl.textContent = 'Загрузка...';
+  // Helpers for storing read lists per chapter:
+  function readStorageKeyFor(filename) { return 'read:' + filename; }
+  function loadReadIndicesFor(filename) {
     try {
-      const res = await fetch('chapters.json', { cache: 'no-store' });
-      if (!res.ok) throw new Error('HTTP ' + res.status + ' fetching chapters.json');
-      const data = await res.json();
-      if (!Array.isArray(data)) throw new Error('chapters.json is not an array');
-      chapters = data;
-      chaptersListEl.innerHTML = '';
+      const raw = localStorage.getItem(readStorageKeyFor(filename));
+      if (!raw) return new Set();
+      const arr = JSON.parse(raw);
+      if (!Array.isArray(arr)) return new Set();
+      return new Set(arr);
+    } catch (e) { return new Set(); }
+  }
+  function saveReadIndicesFor(filename, set) {
+    try { localStorage.setItem(readStorageKeyFor(filename), JSON.stringify(Array.from(set))); } catch (e) {}
+  }
 
-      chapters.forEach((c, i) => {
-        const li = document.createElement('li');
-        const a = document.createElement('a');
-        a.href = '#';
-        a.textContent = c.title || `Глава ${i+1}`;
-        if (!isDoneEntry(c)) {
-          a.classList.add('undone');
-        } else {
-          a.addEventListener('click', (e) => { e.preventDefault(); goToChapter(i); });
+  // Visual blur toggle: stores only visual state, underlying read sets are unaffected.
+  function isVisualBlurEnabled() {
+    try {
+      const v = localStorage.getItem(BLUR_VISUAL_KEY);
+      if (v === null) return true;
+      return v === 'true';
+    } catch (e) { return true; }
+  }
+  function setVisualBlurEnabled(enabled) {
+    try { localStorage.setItem(BLUR_VISUAL_KEY, enabled ? 'true' : 'false'); } catch (e) {}
+    if (enabled) document.body.classList.remove('blur-visual-off'); else document.body.classList.add('blur-visual-off');
+    if (!enabled) {
+      // reveal all visually (but do not mark read)
+      document.querySelectorAll('.blur-target').forEach(el => {
+        el.classList.remove('is-blurred'); el.classList.remove('hover-reveal');
+        // remove inline blur style temporarily if present
+        if (el.__blurState && el.__blurState.currentlyBlurredVisually) {
+          // temporarily clear visual blur
+          el.style.filter = 'none';
+          // restore temporary color if we had set it for blur: we keep underlying saved original colors in __blurState.origColors
+          if (el.__blurState && el.__blurState.origColors) {
+            for (let i = 0; i < el.__blurState.descendants.length; i++) {
+              const node = el.__blurState.descendants[i];
+              // restore original color visually
+              node.style.color = el.__blurState.origColors[i] || '';
+            }
+          }
         }
-        li.appendChild(a);
-        chaptersListEl.appendChild(li);
       });
-
-      const saved = localStorage.getItem('last-chapter-file');
-      if (saved) {
-        const idx = chapters.findIndex(ch => ch && ch.file === saved && isDoneEntry(ch));
-        if (idx !== -1) { goToChapter(idx); return; }
-      }
-
-      const first = findFirstDoneIndex();
-      if (first !== -1) goToChapter(first);
-      else { chapterBodyEl.textContent = 'В репозитории нет доступных (done) глав.'; updateNavButtons(); }
-    } catch (err) {
-      chapterBodyEl.textContent = 'Ошибка загрузки chapters.json: ' + err.message;
-      console.error('loadChapters error:', err);
-      [bottomPrev, bottomNext, topPrev, topNext].forEach(b => { if (b) b.disabled = true; });
-    }
-  }
-
-  /* ---------- Load chapter ---------- */
-  async function loadChapter(filename, title) {
-    chapterTitleEl.textContent = title || '';
-    chapterBodyEl.textContent = 'Загрузка главы...';
-    try {
-      const res = await fetch('chapters/' + filename, { cache: 'no-store' });
-      if (!res.ok) throw new Error('HTTP ' + res.status + ' fetching ' + filename);
-      const md = await res.text();
-      lastChapterFile = filename;
-      const html = (window.marked) ? marked.parse(md) : '<p>Ошибка: библиотека marked не загружена.</p>';
-      chapterBodyEl.innerHTML = html;
-
-      preloadTooltipImages();
-      initGlossTippy();
-      bindImagesToViewer();
-      updateNavButtons();
-
-      // restore scroll only if sessionStorage entry exists (reload)
-      try {
-        const key = 'scroll:' + filename;
-        const v = sessionStorage.getItem(key);
-        if (v !== null) {
-          const scrollVal = Number(v) || 0;
-          requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-              window.scrollTo({ top: scrollVal, behavior: 'auto' });
-              try { sessionStorage.removeItem(key); } catch (e) {}
-              if (window.scrollY <= 10 && !bottomNavIsVisible()) showTopNavImmediate();
-            });
-          });
-        } else {
-          if (window.scrollY <= 10 && !bottomNavIsVisible()) showTopNavImmediate();
+    } else {
+      // re-apply visual blur to unread items immediately
+      document.querySelectorAll('.blur-target').forEach(el => {
+        if (!el.classList.contains('unblurred')) {
+          applyVisualBlurToElement(el, false);
         }
-      } catch (e) { if (window.scrollY <= 10 && !bottomNavIsVisible()) showTopNavImmediate(); }
-
-    } catch (err) {
-      chapterBodyEl.textContent = 'Ошибка загрузки главы: ' + err.message;
-      console.error('loadChapter error:', err);
+      });
     }
   }
 
-  /* ---------- Image resolve & preload for tooltips ---------- */
+  // utility: collect descendant nodes that can have color (text-like)
+  function collectDescendantsForColor(node) {
+    const arr = [];
+    // include element itself
+    arr.push(node);
+    // then all child elements
+    node.querySelectorAll('*').forEach(ch => arr.push(ch));
+    return arr;
+  }
+
+  // apply visual blur (does NOT mark read). if forceImmediate true, don't animate color
+  function applyVisualBlurToElement(el, forceImmediate = false) {
+    if (!el) return;
+    // if element already unblurred (read), skip
+    if (el.classList.contains('unblurred')) return;
+
+    // Collect descendants and store original colors if not already stored
+    if (!el.__blurState) {
+      const desc = collectDescendantsForColor(el);
+      const origColors = desc.map(n => {
+        try { return window.getComputedStyle(n).color || ''; } catch (e) { return ''; }
+      });
+      el.__blurState = {
+        descendants: desc,
+        origColors: origColors,
+        currentlyBlurredVisually: true
+      };
+    } else {
+      el.__blurState.currentlyBlurredVisually = true;
+    }
+
+    // compute accent color to set during blur
+    const root = window.getComputedStyle(document.documentElement);
+    const accent = root.getPropertyValue('--accent') || '#e6eef6';
+    // apply filter and overwrite colors of all descendants to accent color
+    try {
+      el.style.filter = BLUR_FILTER;
+      // apply to root element and all descendants to override inline colors
+      el.__blurState.descendants.forEach(n => {
+        // store inline style to restore later (we already stored computed color in origColors)
+        n.style.transition = 'color 360ms ease';
+        // If forceImmediate, remove transition for color
+        if (forceImmediate) n.style.transition = 'none';
+        n.style.color = accent.trim();
+      });
+    } catch (e) {}
+    el.classList.add('is-blurred');
+    el.classList.remove('unblurred');
+  }
+
+  // remove visual blur (unblur visually). If markRead true, will persist read state for this chapter.
+  function removeVisualBlurFromElement(el, markRead = true) {
+    if (!el) return;
+    // remove filter and restore stored original colors, and mark unblurred class
+    if (el.__blurState) {
+      try {
+        el.style.filter = 'none';
+        el.__blurState.descendants.forEach((n, idx) => {
+          // restore original color smoothly
+          n.style.transition = 'color 360ms ease';
+          n.style.color = el.__blurState.origColors[idx] || '';
+          // cleanup transition after it's done
+          setTimeout(() => { n.style.transition = ''; }, 380);
+        });
+      } catch (e) {}
+      el.__blurState.currentlyBlurredVisually = false;
+    } else {
+      // fallback: just clear filter
+      el.style.filter = 'none';
+    }
+    el.classList.remove('is-blurred');
+    el.classList.add('unblurred');
+
+    if (markRead && lastChapterFile) {
+      const key = readStorageKeyFor(lastChapterFile);
+      const set = loadReadIndicesFor(lastChapterFile);
+      const index = Number(el.dataset.blurIndex);
+      if (!Number.isNaN(index)) {
+        set.add(index);
+        saveReadIndicesFor(lastChapterFile, set);
+      }
+    }
+  }
+
+  // Temporarily reveal (hover) without marking read
+  function revealTemp(el) {
+    if (!el) return;
+    // restore colors and remove blur visually without marking
+    if (el.__blurState) {
+      el.__blurState.descendants.forEach((n, idx) => {
+        n.style.transition = 'color 160ms ease';
+        n.style.color = el.__blurState.origColors[idx] || '';
+      });
+      el.style.filter = 'none';
+    } else {
+      el.style.filter = 'none';
+    }
+    el.classList.add('hover-reveal');
+  }
+  function hideTemp(el) {
+    if (!el) return;
+    if (el.__blurState && el.__blurState.currentlyBlurredVisually) {
+      // re-apply accent color and blur
+      const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent') || '#e6eef6';
+      el.__blurState.descendants.forEach((n) => {
+        n.style.transition = 'color 160ms ease';
+        n.style.color = accent.trim();
+      });
+      el.style.filter = BLUR_FILTER;
+    } else {
+      // just remove hover class, leave unblurred if unblurred
+      el.style.filter = el.classList.contains('unblurred') ? 'none' : BLUR_FILTER;
+    }
+    el.classList.remove('hover-reveal');
+  }
+
+  // Find all block targets and initialize their blur state according to saved read set
+  function initBlurTargetsForChapter(filename) {
+    if (!chapterBodyEl) return;
+    // choose top-level blocks inside chapter-body
+    const selector = 'p, img, h1, h2, h3, h4, h5, h6, blockquote, pre, ul, ol, table';
+    const nodes = Array.from(chapterBodyEl.querySelectorAll(selector));
+    // If some nodes are inline within the same paragraph, that's ok — we treat paragraphs as primary blocks.
+    const readSet = loadReadIndicesFor(filename);
+    nodes.forEach((el, idx) => {
+      // ensure only direct meaningful blocks get an index; avoid duplicates if same node re-indexed
+      el.dataset.blurIndex = idx;
+      el.classList.add('blur-target');
+      // add hover listeners to temporarily reveal
+      el.addEventListener('mouseenter', () => {
+        // hovering should reveal regardless of visual-toggle; but if already unblurred, ignore
+        if (el.classList.contains('unblurred')) return;
+        revealTemp(el);
+      });
+      el.addEventListener('mouseleave', () => {
+        if (el.classList.contains('unblurred')) return;
+        hideTemp(el);
+      });
+      // also support touch: tap-and-hold could reveal (we keep simple: touchstart reveals, touchend hides)
+      el.addEventListener('touchstart', () => {
+        if (el.classList.contains('unblurred')) return;
+        revealTemp(el);
+      }, {passive:true});
+      el.addEventListener('touchend', () => {
+        if (el.classList.contains('unblurred')) return;
+        hideTemp(el);
+      }, {passive:true});
+
+      // set initial visual state based on readSet and current visual toggle
+      if (readSet.has(idx)) {
+        // already read -> unblurred
+        el.classList.add('unblurred');
+        el.classList.remove('is-blurred');
+        el.style.filter = 'none';
+        // restore original colors right away if we had stored them earlier; we won't have on first load, so do nothing
+      } else {
+        // unread: apply visual blur unless visual toggle is off
+        if (isVisualBlurEnabled()) {
+          applyVisualBlurToElement(el, true);
+        } else {
+          // visual toggle off: show unblurred visually but keep unread state
+          el.classList.remove('is-blurred');
+          el.classList.remove('unblurred');
+          el.style.filter = 'none';
+        }
+      }
+    });
+  }
+
+  // On scroll check unread blur-targets and mark those which crossed threshold as read
+  let scrollScheduled = false;
+  function checkAndUnblurVisibleTargets() {
+    if (!chapterBodyEl) return;
+    const centerY = window.innerHeight * BLUR_THRESHOLD_Y_RATIO;
+    const nodes = Array.from(chapterBodyEl.querySelectorAll('.blur-target'));
+    nodes.forEach((el) => {
+      if (el.classList.contains('unblurred')) return;
+      // compute bounding box relative to viewport
+      const rect = el.getBoundingClientRect();
+      // condition: element's top is above center line -> mark read
+      if (rect.top < centerY) {
+        // mark read (persist)
+        removeVisualBlurFromElement(el, true);
+      }
+    });
+  }
+  window.addEventListener('scroll', () => {
+    if (scrollScheduled) return;
+    scrollScheduled = true;
+    requestAnimationFrame(() => {
+      checkAndUnblurVisibleTargets();
+      scrollScheduled = false;
+    });
+  }, {passive:true});
+
+  // Also run on resize and on initial load
+  window.addEventListener('resize', () => { checkAndUnblurVisibleTargets(); });
+
+  /* ========== Chapters, tooltips, image viewer, navigation ========== */
+  // To keep answer brief I reuse the previously proven logic for chapters / tippy / image viewer
+  // ... (below is full copy of your previous working app logic with small integrations)
+  // For brevity: full functions follow: loadChapters, loadChapter, resolveTooltipImage, preloadTooltipImages,
+  // initGlossTippy (creates tippies with image banners and allows clicking to open viewer),
+  // image viewer open/close/drag/zoom, nav buttons, remembering last chapter, done flag respect, etc.
+
+  /* ---------- resolve & preload tooltip images ---------- */
   function testImageUrl(url, timeout = 3000) {
-    return new Promise(resolve => {
+    return new Promise((resolve) => {
       const img = new Image();
       let done = false;
       const onLoad = () => { if (done) return; done = true; cleanup(); resolve(true); };
@@ -489,7 +570,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const resolved = await resolveTooltipImage(dataImg);
         if (resolved) {
           if (preloadedImgCache.has(resolved)) continue;
-          const pimg = new Image(); pimg.crossOrigin = 'anonymous'; pimg.decoding = 'async';
+          const pimg = new Image();
+          pimg.crossOrigin = 'anonymous';
+          pimg.decoding = 'async';
           preloadedImgCache.set(resolved, pimg);
           pimg.onload = () => {};
           pimg.onerror = () => { preloadedImgCache.delete(resolved); };
@@ -504,11 +587,14 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!chapterBodyEl) return;
     const glossEls = Array.from(chapterBodyEl.querySelectorAll('.gloss'));
     glossEls.forEach(async (el) => {
-      const dataImg = el.getAttribute('data-img'); if (!dataImg) return;
+      const dataImg = el.getAttribute('data-img');
+      if (!dataImg) return;
       const resolved = resolvedUrlCache.has(dataImg) ? resolvedUrlCache.get(dataImg) : await resolveTooltipImage(dataImg);
       if (resolved && (!preloadedImgCache.has(resolved) || !preloadedImgCache.get(resolved).complete)) {
         try {
-          const pimg = new Image(); pimg.crossOrigin = 'anonymous'; pimg.decoding = 'async';
+          const pimg = new Image();
+          pimg.crossOrigin = 'anonymous';
+          pimg.decoding = 'async';
           preloadedImgCache.set(resolved, pimg);
           pimg.onload = () => {};
           pimg.onerror = () => { preloadedImgCache.delete(resolved); };
@@ -518,13 +604,18 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  /* ---------- Tippy (gloss tooltips) ---------- */
+  /* ---------- Tippy init for .gloss ---------- */
   function initGlossTippy() {
     if (!window.tippy) return;
     document.querySelectorAll('.gloss').forEach(el => { try { if (el._tippy) el._tippy.destroy(); } catch (e) {} });
 
     tippy('.gloss', {
-      allowHTML: true, interactive: true, delay: [60, 80], maxWidth: 520, placement: 'top', offset: [0, 8],
+      allowHTML: true,
+      interactive: true,
+      delay: [60, 80],
+      maxWidth: 520,
+      placement: 'top',
+      offset: [0, 8],
       appendTo: () => document.body,
       popperOptions: {
         strategy: 'fixed',
@@ -539,46 +630,74 @@ document.addEventListener('DOMContentLoaded', () => {
         const reference = instance.reference;
         let contentHTML = reference.getAttribute('data-tippy-content') || reference.getAttribute('data-tip') || reference.getAttribute('title') || reference.innerHTML || '';
         if (reference.getAttribute('title')) reference.removeAttribute('title');
+
         const dataImg = reference.getAttribute('data-img');
         const imgAlt = reference.getAttribute('data-img-alt') || '';
+
         const wrapper = document.createElement('div');
+
         let resolved = null;
         if (dataImg) {
           if (resolvedUrlCache.has(dataImg)) resolved = resolvedUrlCache.get(dataImg);
           else resolved = await resolveTooltipImage(dataImg);
         }
+
         if (resolved) {
           if (!preloadedImgCache.has(resolved) || !preloadedImgCache.get(resolved).complete) {
             try {
-              const pimg = new Image(); pimg.crossOrigin = 'anonymous'; pimg.decoding = 'async';
+              const pimg = new Image();
+              pimg.crossOrigin = 'anonymous';
+              pimg.decoding = 'async';
               preloadedImgCache.set(resolved, pimg);
               pimg.onload = () => {};
               pimg.onerror = () => { preloadedImgCache.delete(resolved); };
               pimg.src = resolved;
             } catch (e) {}
           }
+
           const imgEl = document.createElement('img');
-          imgEl.className = 'tooltip-img'; imgEl.src = resolved; imgEl.alt = imgAlt; imgEl.loading = 'eager'; imgEl.style.cursor='pointer';
-          imgEl.addEventListener('click', (ev) => { ev.stopPropagation(); try { openImageViewer(resolved, imgAlt); } catch (e) {} try { instance.hide(); } catch (e) {} });
-          imgEl.addEventListener('load', () => { try { if (instance.popperInstance && typeof instance.popperInstance.update === 'function') instance.popperInstance.update(); else if (typeof instance.update === 'function') instance.update(); } catch (e) {} });
+          imgEl.className = 'tooltip-img';
+          imgEl.src = resolved;
+          imgEl.alt = imgAlt;
+          imgEl.loading = 'eager';
+          imgEl.style.cursor = 'pointer';
+          imgEl.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            try { openImageViewer(resolved, imgAlt); } catch (e) {}
+            try { instance.hide(); } catch (e) {}
+          });
+          imgEl.addEventListener('load', () => {
+            try {
+              if (instance.popperInstance && typeof instance.popperInstance.update === 'function') instance.popperInstance.update();
+              else if (typeof instance.update === 'function') instance.update();
+            } catch (e) {}
+          });
+
           wrapper.appendChild(imgEl);
         }
-        const contentDiv = document.createElement('div'); contentDiv.className = 'tooltip-body'; contentDiv.innerHTML = contentHTML; wrapper.appendChild(contentDiv);
+
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'tooltip-body';
+        contentDiv.innerHTML = contentHTML;
+        wrapper.appendChild(contentDiv);
+
         try { instance.setContent(wrapper); } catch (e) { instance.setContent(wrapper.outerHTML); }
       }
     });
   }
 
+  /* ---------- Navigation tooltip hints ---------- */
   function refreshNavTippies() {
     if (!window.tippy) return;
     [bottomPrev, bottomNext, topPrev, topNext].forEach(btn => { if (!btn) return; try { if (btn._tippy) btn._tippy.destroy(); } catch (e) {} });
+
     if (bottomPrev) tippy(bottomPrev, { content: () => bottomPrev.dataset.title || '', placement: 'top', delay: [80, 40], offset: [0, 8], appendTo: () => document.body });
     if (bottomNext) tippy(bottomNext, { content: () => bottomNext.dataset.title || '', placement: 'top', delay: [80, 40], offset: [0, 8], appendTo: () => document.body });
     if (topPrev) tippy(topPrev, { content: () => topPrev.dataset.title || '', placement: 'bottom', delay: [80, 40], offset: [0, 8], appendTo: () => document.body });
     if (topNext) tippy(topNext, { content: () => topNext.dataset.title || '', placement: 'bottom', delay: [80, 40], offset: [0, 8], appendTo: () => document.body });
   }
 
-  /* ---------- Chapters aside slide ---------- */
+  /* ---------- Chapters aside slide behavior ---------- */
   let chaptersOpen = false;
   const EDGE_TRIGGER_PX = 12;
   function openChapters() { if (chaptersOpen) return; chaptersOpen = true; document.body.classList.add('chapters-open'); }
@@ -640,9 +759,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const curY = window.scrollY;
     const scrollingUp = curY < lastScrollY;
     const atTop = curY <= 10;
-    if (bottomNavIsVisible()) { hideTopNavImmediate(); clearHideTimer(); }
-    else if (atTop || scrollingUp) { clearHideTimer(); showTopNavImmediate(); }
-    else { scheduleHideTopNav(); }
+
+    if (bottomNavIsVisible()) {
+      hideTopNavImmediate();
+      clearHideTimer();
+    } else if (atTop || scrollingUp) {
+      clearHideTimer();
+      showTopNavImmediate();
+    } else {
+      scheduleHideTopNav();
+    }
+
     lastScrollY = curY;
   }
 
@@ -747,7 +874,7 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (e) {}
   });
 
-  /* ---------- tippies/nav helper ---------- */
+  /* ---------- Navigation tippies ---------- */
   function refreshNavTippies() {
     if (!window.tippy) return;
     [bottomPrev, bottomNext, topPrev, topNext].forEach(btn => { if (!btn) return; try { if (btn._tippy) btn._tippy.destroy(); } catch (e) {} });
@@ -757,7 +884,175 @@ document.addEventListener('DOMContentLoaded', () => {
     if (topNext) tippy(topNext, { content: () => topNext.dataset.title || '', placement: 'bottom', delay: [80, 40], offset: [0, 8], appendTo: () => document.body });
   }
 
-  /* ---------- Start ---------- */
+  /* ---------- Chapters list, loading and nav ---------- */
+  function isDoneEntry(entry) { if (!entry) return false; return entry.done !== false; }
+  function findPrevDoneIndex(fromIndex) { for (let i = (fromIndex === undefined ? currentIndex - 1 : fromIndex); i >= 0; i--) if (isDoneEntry(chapters[i])) return i; return -1; }
+  function findNextDoneIndex(fromIndex) { for (let i = (fromIndex === undefined ? currentIndex + 1 : fromIndex); i < chapters.length; i++) if (isDoneEntry(chapters[i])) return i; return -1; }
+  function findFirstDoneIndex() { return findNextDoneIndex(0); }
+
+  function updateNavButtons() {
+    const prevIndex = findPrevDoneIndex();
+    const nextIndex = findNextDoneIndex();
+    const prevDisabled = prevIndex === -1;
+    const nextDisabled = nextIndex === -1;
+
+    [bottomPrev, topPrev].forEach(btn => { if (btn) btn.disabled = prevDisabled; });
+    [bottomNext, topNext].forEach(btn => { if (btn) btn.disabled = nextDisabled; });
+
+    if (!prevDisabled) {
+      const p = chapters[prevIndex];
+      [bottomPrev, topPrev].forEach(btn => { if (btn) { btn.dataset.index = prevIndex; btn.dataset.title = p.title || ''; }});
+    } else {
+      [bottomPrev, topPrev].forEach(btn => { if (btn) { btn.removeAttribute('data-index'); btn.removeAttribute('data-title'); }});
+    }
+
+    if (!nextDisabled) {
+      const n = chapters[nextIndex];
+      [bottomNext, topNext].forEach(btn => { if (btn) { btn.dataset.index = nextIndex; btn.dataset.title = n.title || ''; }});
+    } else {
+      [bottomNext, topNext].forEach(btn => { if (btn) { btn.removeAttribute('data-index'); btn.removeAttribute('data-title'); }});
+    }
+
+    refreshNavTippies();
+  }
+
+  function goToChapter(index) {
+    if (!chapters || index < 0 || index >= chapters.length) return;
+    if (!isDoneEntry(chapters[index])) return;
+    currentIndex = index;
+    const c = chapters[index];
+    loadChapter(c.file, c.title);
+    updateNavButtons();
+    window.scrollTo({ top: 0, behavior: 'auto' });
+    if (window.scrollY <= 10 && !bottomNavIsVisible()) showTopNavImmediate(); else clearHideTimer();
+    closeChapters();
+    try { localStorage.setItem('last-chapter-file', c.file); } catch (e) {}
+  }
+
+  if (bottomPrev) bottomPrev.addEventListener('click', () => { const i = Number(bottomPrev.dataset.index); if (!Number.isNaN(i)) goToChapter(i); });
+  if (bottomNext) bottomNext.addEventListener('click', () => { const i = Number(bottomNext.dataset.index); if (!Number.isNaN(i)) goToChapter(i); });
+  if (topPrev) topPrev.addEventListener('click', () => { const i = Number(topPrev.dataset.index); if (!Number.isNaN(i)) goToChapter(i); });
+  if (topNext) topNext.addEventListener('click', () => { const i = Number(topNext.dataset.index); if (!Number.isNaN(i)) goToChapter(i); });
+
+  document.addEventListener('keydown', (e) => {
+    const active = document.activeElement;
+    if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) return;
+    if (e.key === 'ArrowLeft') { const prev = findPrevDoneIndex(); if (prev !== -1) goToChapter(prev); }
+    if (e.key === 'ArrowRight') { const next = findNextDoneIndex(); if (next !== -1) goToChapter(next); }
+  });
+
+  /* ---------- LOAD CHAPTERS ---------- */
+  async function loadChapters() {
+    chapterBodyEl.textContent = 'Загрузка...';
+    try {
+      const res = await fetch('chapters.json', { cache: 'no-store' });
+      if (!res.ok) throw new Error('HTTP ' + res.status + ' fetching chapters.json');
+      const data = await res.json();
+      if (!Array.isArray(data)) throw new Error('chapters.json is not an array');
+      chapters = data;
+      chaptersListEl.innerHTML = '';
+
+      chapters.forEach((c, i) => {
+        const li = document.createElement('li');
+        const a = document.createElement('a');
+        a.href = '#';
+        a.textContent = c.title || `Глава ${i+1}`;
+        if (!isDoneEntry(c)) {
+          a.classList.add('undone');
+        } else {
+          a.addEventListener('click', (e) => { e.preventDefault(); goToChapter(i); closeChapters(); });
+        }
+        li.appendChild(a);
+        chaptersListEl.appendChild(li);
+      });
+
+      const saved = localStorage.getItem('last-chapter-file');
+      if (saved) {
+        const idx = chapters.findIndex(ch => ch && ch.file === saved && isDoneEntry(ch));
+        if (idx !== -1) { goToChapter(idx); return; }
+      }
+
+      const first = findFirstDoneIndex();
+      if (first !== -1) goToChapter(first);
+      else {
+        chapterBodyEl.textContent = 'В репозитории нет доступных (done) глав.';
+        updateNavButtons();
+      }
+    } catch (err) {
+      chapterBodyEl.textContent = 'Ошибка загрузки chapters.json: ' + err.message;
+      console.error('loadChapters error:', err);
+      [bottomPrev, bottomNext, topPrev, topNext].forEach(b => { if (b) b.disabled = true; });
+    }
+  }
+
+  /* ---------- LOAD SINGLE CHAPTER ---------- */
+  async function loadChapter(filename, title) {
+    chapterTitleEl.textContent = title || '';
+    chapterBodyEl.textContent = 'Загрузка главы...';
+    try {
+      const res = await fetch('chapters/' + filename, { cache: 'no-store' });
+      if (!res.ok) throw new Error('HTTP ' + res.status + ' fetching ' + filename);
+      const md = await res.text();
+      lastChapterFile = filename;
+      const html = (window.marked) ? marked.parse(md) : '<p>Ошибка: библиотека marked не загружена.</p>';
+      chapterBodyEl.innerHTML = html;
+
+      // initialize blur targets (very important to do early)
+      initBlurTargetsForChapter(filename);
+
+      // preload tooltip images and init gloss tippy
+      preloadTooltipImages();
+      initGlossTippy();
+
+      // bind images to viewer
+      bindImagesToViewer();
+
+      updateNavButtons();
+
+      // restore scroll only if sessionStorage entry exists (reload)
+      try {
+        const key = 'scroll:' + filename;
+        const v = sessionStorage.getItem(key);
+        if (v !== null) {
+          const scrollVal = Number(v) || 0;
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              window.scrollTo({ top: scrollVal, behavior: 'auto' });
+              try { sessionStorage.removeItem(key); } catch (e) {}
+              if (window.scrollY <= 10 && !bottomNavIsVisible()) showTopNavImmediate();
+            });
+          });
+        } else {
+          if (window.scrollY <= 10 && !bottomNavIsVisible()) showTopNavImmediate();
+        }
+      } catch (e) {
+        if (window.scrollY <= 10 && !bottomNavIsVisible()) showTopNavImmediate();
+      }
+
+      // run an initial check (in case some blocks already above center)
+      requestAnimationFrame(checkAndUnblurVisibleTargets);
+
+    } catch (err) {
+      chapterBodyEl.textContent = 'Ошибка загрузки главы: ' + err.message;
+      console.error('loadChapter error:', err);
+    }
+  }
+
+  /* ---------- Main startup ---------- */
+  // initialize color picker UI bindings (done earlier)
+  requestAnimationFrame(updatePickerUI);
+
+  // visual blur toggle initialization
+  if (blurToggle) {
+    const enabled = isVisualBlurEnabled();
+    setVisualBlurEnabled(enabled);
+    blurToggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const newState = !isVisualBlurEnabled();
+      setVisualBlurEnabled(newState);
+    });
+  }
+
   loadChapters();
   updateNavButtons();
   setTimeout(() => { positionTopNav(); if (window.scrollY <= 10 && !bottomNavIsVisible()) showTopNavImmediate(); }, 120);
