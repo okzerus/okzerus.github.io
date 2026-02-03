@@ -36,20 +36,28 @@ header{
 header h1{ margin:0; font-size:18px; font-weight:700; flex:1 }
 .header-controls{ display:flex; gap:8px; align-items:center; position:relative }
 
+/* Blur toggle (left of the color button) */
+#blur-toggle{
+  width:40px; height:40px; border-radius:10px; border:0; background:var(--btn-bg); color:var(--btn-fg);
+  font-size:16px; cursor:pointer; display:flex; align-items:center; justify-content:center;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.08);
+  transition: box-shadow 180ms ease, transform 120ms ease;
+  border: 2px solid rgba(var(--bg-r), var(--bg-g), var(--bg-b), 0.50);
+  margin-right: 6px;
+}
+#blur-toggle:hover{ transform: translateY(-2px); box-shadow: 0 12px 28px rgba(0,0,0,0.26), inset 0 1px 0 rgba(255,255,255,0.10); }
+
 /* Color-picker button */
 #theme-toggle{
   width:40px; height:40px; border-radius:10px; border:0; background:var(--btn-bg); color:var(--btn-fg);
   font-size:16px; cursor:pointer; display:flex; align-items:center; justify-content:center;
-  /* softer shadow */
   box-shadow: 0 8px 20px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.08);
   transition: box-shadow 180ms ease, transform 120ms ease;
-  /* thicker, more visible outline */
   border: 2px solid rgba(var(--bg-r), var(--bg-g), var(--bg-b), 0.50);
 }
 #theme-toggle:hover{ transform: translateY(-2px); box-shadow: 0 12px 28px rgba(0,0,0,0.26), inset 0 1px 0 rgba(255,255,255,0.10); }
-#theme-toggle:active{ transform: translateY(0) }
 
-/* Color popup panel - animate from above (opacity + translateY) */
+/* Color popup panel */
 .color-picker-container { position: relative; display:inline-block; }
 .color-popup{
   position: absolute;
@@ -94,14 +102,13 @@ header h1{ margin:0; font-size:18px; font-weight:700; flex:1 }
 .picker-reset-wrap { display:flex; justify-content:center; margin-top:10px; }
 .small {
   padding:6px 10px; border-radius:8px; border:0; background:var(--btn-bg); color:var(--btn-fg); cursor:pointer;
-  /* softer shadow, thicker outline */
   box-shadow: 0 8px 20px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.08);
   transition: box-shadow 180ms ease, transform 120ms ease;
   border: 2px solid rgba(var(--bg-r), var(--bg-g), var(--bg-b), 0.50);
 }
 .small:hover { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(0,0,0,0.26), inset 0 1px 0 rgba(255,255,255,0.10); }
 
-/* Layout - centered content */
+/* Layout */
 main{ display:block; padding:18px; }
 
 /* Chapters aside */
@@ -133,11 +140,10 @@ body.chapters-open #chapters-list{ transform:translateX(0); }
 /* inline images centered & clickable cursor */
 #chapter-body img{ display:block; margin:18px auto; max-width:100%; height:auto; cursor:pointer; }
 
-/* nav buttons */
+/* NAV buttons */
 .chapter-nav{ display:flex; gap:12px; align-items:center; }
 .nav-btn{
   width:56px; height:40px; border-radius:8px; border:0; background:var(--btn-bg); color:var(--btn-fg); font-size:16px; cursor:pointer;
-  /* softer shadow, thicker outline, inner highlight */
   box-shadow: 0 8px 20px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.08);
   transition: box-shadow 200ms ease, transform 120ms ease, opacity 160ms ease;
   border: 2px solid rgba(var(--bg-r), var(--bg-g), var(--bg-b), 0.50);
@@ -155,32 +161,37 @@ body.chapters-open #chapters-list{ transform:translateX(0); }
 }
 #top-nav.visible-top{ opacity:1; transform: translateX(-50%) translateY(0); pointer-events:auto; }
 
-/* blur effect when chapters open */
-body.chapters-open header, body.chapters-open main > *:not(#chapters-list) { filter: blur(4px); transition: filter 220ms ease; }
+/* blur CSS helpers */
+/* base for each target block: keep transitions on color and filter */
+.blur-target { transition: filter 360ms ease, color 360ms ease, opacity 200ms ease; -webkit-font-smoothing:antialiased; }
+
+/* when element is marked as visually blurred by JS, we also add .is-blurred class
+   CSS fallback for non-JS (kept conservative) */
+.blur-target.is-blurred { filter: blur(6px); }
+
+/* hover visual reveal (JS also does this for robust override) */
+.blur-target.hover-reveal { filter: none !important; }
+
+/* permanently unblurred marker (read) */
+.blur-target.unblurred { filter: none !important; }
+
+/* when user turns visual blur off, we add .blur-visual-off to body:
+   keep read state untouched, but visually remove blur for unread items */
+body.blur-visual-off .blur-target:not(.unblurred) { filter: none !important; }
 
 /* Gloss styling */
 .gloss{ text-decoration:underline dotted; cursor:help; }
 
-/* Tippy tooltip link color override */
+/* Tippy override for tooltip links */
 .tippy-box .tippy-content a, .tippy-box a { color: var(--tooltip-link-color) !important; text-decoration: underline; }
 
-/* Tooltip container high z-index */
 .tippy-box { z-index: 99999 !important; }
 
-/* Tooltip content: image banner + confined text area */
 .tippy-box .tippy-content { padding: 0; box-sizing: border-box; overflow: visible; }
+.tippy-box .tippy-content img.tooltip-img { display: block; width: 100%; height: var(--tooltip-image-height); object-fit: cover; border-top-left-radius: 8px; border-top-right-radius: 8px; margin: 0; user-select: none; cursor: pointer; }
+.tippy-box .tippy-content .tooltip-body { padding: 10px 12px; box-sizing: border-box; max-height: calc(80vh - var(--tooltip-image-height)); overflow:auto; -webkit-overflow-scrolling: touch; }
 
-/* Banner-style image that fills top of tooltip */
-.tippy-box .tippy-content img.tooltip-img {
-  display: block; width: 100%; height: var(--tooltip-image-height); object-fit: cover; border-top-left-radius: 8px; border-top-right-radius: 8px; margin: 0; user-select: none; cursor: pointer;
-}
-
-/* textual body below the banner */
-.tippy-box .tippy-content .tooltip-body {
-  padding: 10px 12px; box-sizing: border-box; max-height: calc(80vh - var(--tooltip-image-height)); overflow:auto; -webkit-overflow-scrolling: touch;
-}
-
-/* image viewer styles */
+/* image viewer */
 #image-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: none; align-items: center; justify-content: center; z-index: 2000; cursor: default; }
 #image-overlay.visible { display:flex; }
 #image-overlay .viewer { position: relative; max-width: calc(100vw - 40px); max-height: calc(100vh - 60px); overflow: auto; display:flex; align-items:center; justify-content:center; touch-action: none; }
