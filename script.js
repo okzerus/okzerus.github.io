@@ -1,4 +1,7 @@
-// script.js - full app including blur-by-middle logic
+/* script.js - updated: smooth unblur, image midpoint trigger, unblur-on-page-end
+   Replace your existing script.js with this file.
+*/
+
 document.addEventListener('DOMContentLoaded', () => {
   /* ---------- DOM refs ---------- */
   const chaptersListEl = document.getElementById('chapters');
@@ -39,20 +42,16 @@ document.addEventListener('DOMContentLoaded', () => {
   const preloadedImgCache = new Map();
 
   /* ---------- Blur configuration ---------- */
-  // ratio of viewport height used as the threshold (0..1). 0.5 = middle of screen
-  const BLUR_THRESHOLD_Y_RATIO = 0.5;
-  // CSS blur used
+  const BLUR_THRESHOLD_Y_RATIO = 0.5; // middle of viewport
   const BLUR_FILTER = 'blur(6px)';
-  // storage keys & toggles
-  const BLUR_VISUAL_KEY = 'blur-visual-enabled'; // true/false (visual toggle state)
-  // Note: read lists are stored per chapter as key 'read:filename' -> JSON array of indices
+  const UNBLUR_TRANS_MS = 360; // transition time in ms for filter & color
+  const BLUR_VISUAL_KEY = 'blur-visual-enabled';
 
-  /* ---------- Color picker constants (kept from previous) ---------- */
+  /* ---------- Color picker / global color logic (kept from before) ---------- */
   const DEFAULT_BG_HEX = '#0b0f13';
   const CARD_LIGHTNESS_DELTA = 0.03333333333333333;
   const CONTRAST_LUMINANCE_THRESHOLD = 0.50;
 
-  /* ---------- Helper color functions ---------- */
   function hexToRgb(hex) {
     hex = (hex || '').replace('#', '');
     if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
@@ -106,7 +105,6 @@ document.addEventListener('DOMContentLoaded', () => {
     return 0.2126 * srgb[0] + 0.7152 * srgb[1] + 0.0722 * srgb[2];
   }
 
-  /* ---------- Apply color / card logic (keeps immediate color apply) ---------- */
   function computeCardFromBgHex(bgHex) {
     const { r, g, b } = hexToRgb(bgHex);
     const hsl = rgbToHsl(r, g, b);
@@ -116,6 +114,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const cardRgb = hslToRgb(hsl.h, hsl.s, newL);
     return { rgb: cardRgb, hex: rgbToHex(cardRgb.r, cardRgb.g, cardRgb.b) };
   }
+
   function applyColorHex(hex) {
     const root = document.documentElement;
     const { r, g, b } = hexToRgb(hex);
@@ -138,9 +137,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  /* ---------- Color picker (HSV) helpers - kept from previous file ---------- */
+  /* ---------- Color picker (HSV) kept as before (omitted here for brevity in analysis) ---------- */
+  // ... (color picker functions are included below in full code — left intact from earlier working version)
+  // For clarity we will include them unchanged so the script remains self-contained.
+
+  /* ---------- Color picker implementation (same as before) ---------- */
   const STORAGE_KEY = 'site-bg-color';
   let hsv = { h: 210, s: 0.3, v: 0.05 };
+
   function hsvToRgb(h, s, v) {
     h = (h % 360 + 360) % 360;
     const c = v * s;
@@ -158,8 +162,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function rgbToHsv(r, g, b) {
     r /= 255; g /= 255; b /= 255;
     const max = Math.max(r, g, b), min = Math.min(r, g, b);
-    const d = max - min;
-    let h = 0;
+    const d = max - min; let h = 0;
     const s = max === 0 ? 0 : d / max;
     const v = max;
     if (d !== 0) {
@@ -170,6 +173,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     return { h, s, v };
   }
+  function rgbToHexArr(rgb) { return rgbToHex(rgb.r, rgb.g, rgb.b); }
   function persistHex(hex) { try { localStorage.setItem(STORAGE_KEY, hex); } catch (e) {} }
   function applyHsvState() { const { r, g, b } = hsvToRgb(hsv.h, hsv.s, hsv.v); const hex = rgbToHex(r, g, b); applyColorHex(hex); }
 
@@ -186,6 +190,7 @@ document.addEventListener('DOMContentLoaded', () => {
     colorAreaCursor.style.left = `${Math.min(Math.max(0, cx), areaRect.width)}px`;
     colorAreaCursor.style.top = `${Math.min(Math.max(0, cy), areaRect.height)}px`;
   }
+
   function addDrag(element, handlers) {
     if (!element) return;
     let dragging = false; let pointerId = null;
@@ -206,13 +211,13 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('touchmove', (e) => { if (e.touches && e.touches[0]) handlers.move && handlers.move(e.touches[0]); }, { passive: false });
     window.addEventListener('touchend', (e) => { handlers.end && handlers.end(e.changedTouches && e.changedTouches[0]); }, { passive: false });
   }
+
   function handleHuePointer(e) {
     if (!hueSlider) return;
     const rect = hueSlider.getBoundingClientRect();
     const y = Math.min(Math.max(0, (e.clientY || 0) - rect.top), rect.height);
     const ratio = 1 - (y / rect.height);
-    hsv.h = ratio * 360; updatePickerUI(); applyHsvState();
-    persistHex(rgbToHex(...Object.values(hsvToRgb(hsv.h, hsv.s, hsv.v))));
+    hsv.h = ratio * 360; updatePickerUI(); applyHsvState(); persistHex(rgbToHex(...Object.values(hsvToRgb(hsv.h, hsv.s, hsv.v))));
   }
   function handleAreaPointer(e) {
     if (!colorArea) return;
@@ -220,8 +225,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const x = Math.min(Math.max(0, (e.clientX || 0) - rect.left), rect.width);
     const y = Math.min(Math.max(0, (e.clientY || 0) - rect.top), rect.height);
     hsv.s = (x / rect.width); hsv.v = 1 - (y / rect.height);
-    updatePickerUI(); applyHsvState();
-    persistHex(rgbToHex(...Object.values(hsvToRgb(hsv.h, hsv.s, hsv.v))));
+    updatePickerUI(); applyHsvState(); persistHex(rgbToHex(...Object.values(hsvToRgb(hsv.h, hsv.s, hsv.v))));
   }
   if (hueSlider) addDrag(hueSlider, { start: handleHuePointer, move: handleHuePointer, end: () => persistHex(rgbToHex(...Object.values(hsvToRgb(hsv.h, hsv.s, hsv.v)))) });
   if (colorArea) addDrag(colorArea, { start: handleAreaPointer, move: handleAreaPointer, end: () => persistHex(rgbToHex(...Object.values(hsvToRgb(hsv.h, hsv.s, hsv.v)))) });
@@ -252,9 +256,8 @@ document.addEventListener('DOMContentLoaded', () => {
     applyHsvState(); requestAnimationFrame(updatePickerUI);
   })();
 
-  /* ========== BLUR FEATURE IMPLEMENTATION ========== */
+  /* ========== BLUR feature implementation (SMOOTHED) ========== */
 
-  // Helpers for storing read lists per chapter:
   function readStorageKeyFor(filename) { return 'read:' + filename; }
   function loadReadIndicesFor(filename) {
     try {
@@ -269,7 +272,6 @@ document.addEventListener('DOMContentLoaded', () => {
     try { localStorage.setItem(readStorageKeyFor(filename), JSON.stringify(Array.from(set))); } catch (e) {}
   }
 
-  // Visual blur toggle: stores only visual state, underlying read sets are unaffected.
   function isVisualBlurEnabled() {
     try {
       const v = localStorage.getItem(BLUR_VISUAL_KEY);
@@ -283,48 +285,34 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!enabled) {
       // reveal all visually (but do not mark read)
       document.querySelectorAll('.blur-target').forEach(el => {
+        if (el.__blurState) el.__blurState.currentlyBlurredVisually = false;
         el.classList.remove('is-blurred'); el.classList.remove('hover-reveal');
-        // remove inline blur style temporarily if present
-        if (el.__blurState && el.__blurState.currentlyBlurredVisually) {
-          // temporarily clear visual blur
-          el.style.filter = 'none';
-          // restore temporary color if we had set it for blur: we keep underlying saved original colors in __blurState.origColors
-          if (el.__blurState && el.__blurState.origColors) {
-            for (let i = 0; i < el.__blurState.descendants.length; i++) {
-              const node = el.__blurState.descendants[i];
-              // restore original color visually
-              node.style.color = el.__blurState.origColors[i] || '';
-            }
-          }
+        el.style.transition = ''; el.style.filter = 'none';
+        if (el.__blurState && el.__blurState.origColors) {
+          el.__blurState.descendants.forEach((n, idx) => { n.style.transition = ''; n.style.color = el.__blurState.origColors[idx] || ''; });
         }
       });
     } else {
-      // re-apply visual blur to unread items immediately
+      // re-apply visual blur to unread items immediately (with no forced animation)
       document.querySelectorAll('.blur-target').forEach(el => {
-        if (!el.classList.contains('unblurred')) {
-          applyVisualBlurToElement(el, false);
-        }
+        if (!el.classList.contains('unblurred')) applyVisualBlurToElement(el, false);
       });
     }
   }
 
-  // utility: collect descendant nodes that can have color (text-like)
   function collectDescendantsForColor(node) {
     const arr = [];
-    // include element itself
     arr.push(node);
-    // then all child elements
     node.querySelectorAll('*').forEach(ch => arr.push(ch));
     return arr;
   }
 
-  // apply visual blur (does NOT mark read). if forceImmediate true, don't animate color
+  // Apply visual blur to unread element.
+  // If forceImmediate === true, set transitions to 'none' so initial apply is instantaneous.
   function applyVisualBlurToElement(el, forceImmediate = false) {
     if (!el) return;
-    // if element already unblurred (read), skip
     if (el.classList.contains('unblurred')) return;
 
-    // Collect descendants and store original colors if not already stored
     if (!el.__blurState) {
       const desc = collectDescendantsForColor(el);
       const origColors = desc.map(n => {
@@ -339,50 +327,65 @@ document.addEventListener('DOMContentLoaded', () => {
       el.__blurState.currentlyBlurredVisually = true;
     }
 
-    // compute accent color to set during blur
-    const root = window.getComputedStyle(document.documentElement);
-    const accent = root.getPropertyValue('--accent') || '#e6eef6';
-    // apply filter and overwrite colors of all descendants to accent color
-    try {
+    const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent') || '#e6eef6';
+
+    // set transitions appropriately for smoothness (unless forceImmediate)
+    if (forceImmediate) {
+      // no transition, apply instantly
+      el.style.transition = 'none';
       el.style.filter = BLUR_FILTER;
-      // apply to root element and all descendants to override inline colors
+      el.__blurState.descendants.forEach(n => { n.style.transition = 'none'; n.style.color = accent.trim(); });
+    } else {
+      // enable transitions for filter and color then apply
+      el.style.transition = `filter ${UNBLUR_TRANS_MS}ms ease`;
+      // apply blur value (this will animate if previously 'none' -> BLUR_FILTER OR vice versa)
+      // but here we are applying blur so it will appear instantly; unblur will animate later.
+      el.style.filter = BLUR_FILTER;
       el.__blurState.descendants.forEach(n => {
-        // store inline style to restore later (we already stored computed color in origColors)
-        n.style.transition = 'color 360ms ease';
-        // If forceImmediate, remove transition for color
-        if (forceImmediate) n.style.transition = 'none';
+        n.style.transition = `color ${UNBLUR_TRANS_MS}ms ease`;
         n.style.color = accent.trim();
       });
-    } catch (e) {}
+    }
+
     el.classList.add('is-blurred');
     el.classList.remove('unblurred');
   }
 
-  // remove visual blur (unblur visually). If markRead true, will persist read state for this chapter.
+  // Remove visual blur smoothly; if markRead true, persist the read state for this chapter.
   function removeVisualBlurFromElement(el, markRead = true) {
     if (!el) return;
-    // remove filter and restore stored original colors, and mark unblurred class
+    // if already unblurred, nothing to do
+    if (el.classList.contains('unblurred')) return;
+
+    // Ensure transitions are present for smooth animation
+    try {
+      el.style.transition = `filter ${UNBLUR_TRANS_MS}ms ease`;
+    } catch (e) {}
     if (el.__blurState) {
-      try {
+      // prepare descendant transitions BEFORE changing colors
+      el.__blurState.descendants.forEach(n => {
+        n.style.transition = `color ${UNBLUR_TRANS_MS}ms ease`;
+      });
+      // then trigger unblur: set filter none and restore colors
+      // small timeout to ensure transition rules are registered before style change in some browsers
+      requestAnimationFrame(() => {
         el.style.filter = 'none';
         el.__blurState.descendants.forEach((n, idx) => {
-          // restore original color smoothly
-          n.style.transition = 'color 360ms ease';
           n.style.color = el.__blurState.origColors[idx] || '';
-          // cleanup transition after it's done
-          setTimeout(() => { n.style.transition = ''; }, 380);
         });
-      } catch (e) {}
+      });
+      // mark states
       el.__blurState.currentlyBlurredVisually = false;
     } else {
-      // fallback: just clear filter
-      el.style.filter = 'none';
+      // fallback
+      requestAnimationFrame(() => { el.style.filter = 'none'; });
     }
+
     el.classList.remove('is-blurred');
     el.classList.add('unblurred');
 
+    // persist read index
     if (markRead && lastChapterFile) {
-      const key = readStorageKeyFor(lastChapterFile);
       const set = loadReadIndicesFor(lastChapterFile);
       const index = Number(el.dataset.blurIndex);
       if (!Number.isNaN(index)) {
@@ -392,53 +395,49 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Temporarily reveal (hover) without marking read
+  // revealTemp: hover reveal without marking read (smooth)
   function revealTemp(el) {
     if (!el) return;
-    // restore colors and remove blur visually without marking
+    if (el.classList.contains('unblurred')) return;
+    // ensure transitions present
+    try { el.style.transition = `filter ${Math.max(120, UNBLUR_TRANS_MS/3)}ms ease`; } catch (e) {}
     if (el.__blurState) {
       el.__blurState.descendants.forEach((n, idx) => {
-        n.style.transition = 'color 160ms ease';
+        n.style.transition = `color ${Math.max(120, UNBLUR_TRANS_MS/3)}ms ease`;
         n.style.color = el.__blurState.origColors[idx] || '';
       });
-      el.style.filter = 'none';
-    } else {
-      el.style.filter = 'none';
     }
+    requestAnimationFrame(() => { el.style.filter = 'none'; });
     el.classList.add('hover-reveal');
   }
+
   function hideTemp(el) {
     if (!el) return;
-    if (el.__blurState && el.__blurState.currentlyBlurredVisually) {
-      // re-apply accent color and blur
-      const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent') || '#e6eef6';
+    if (el.classList.contains('unblurred')) return;
+    // re-apply blur smoothly
+    try { el.style.transition = `filter ${Math.max(120, UNBLUR_TRANS_MS/3)}ms ease`; } catch (e) {}
+    const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent') || '#e6eef6';
+    if (el.__blurState) {
       el.__blurState.descendants.forEach((n) => {
-        n.style.transition = 'color 160ms ease';
+        n.style.transition = `color ${Math.max(120, UNBLUR_TRANS_MS/3)}ms ease`;
         n.style.color = accent.trim();
       });
-      el.style.filter = BLUR_FILTER;
-    } else {
-      // just remove hover class, leave unblurred if unblurred
-      el.style.filter = el.classList.contains('unblurred') ? 'none' : BLUR_FILTER;
     }
+    requestAnimationFrame(() => { el.style.filter = BLUR_FILTER; });
     el.classList.remove('hover-reveal');
   }
 
-  // Find all block targets and initialize their blur state according to saved read set
+  // Initialize blur targets for the currently loaded chapter
   function initBlurTargetsForChapter(filename) {
     if (!chapterBodyEl) return;
-    // choose top-level blocks inside chapter-body
     const selector = 'p, img, h1, h2, h3, h4, h5, h6, blockquote, pre, ul, ol, table';
     const nodes = Array.from(chapterBodyEl.querySelectorAll(selector));
-    // If some nodes are inline within the same paragraph, that's ok — we treat paragraphs as primary blocks.
     const readSet = loadReadIndicesFor(filename);
     nodes.forEach((el, idx) => {
-      // ensure only direct meaningful blocks get an index; avoid duplicates if same node re-indexed
       el.dataset.blurIndex = idx;
       el.classList.add('blur-target');
-      // add hover listeners to temporarily reveal
+
       el.addEventListener('mouseenter', () => {
-        // hovering should reveal regardless of visual-toggle; but if already unblurred, ignore
         if (el.classList.contains('unblurred')) return;
         revealTemp(el);
       });
@@ -446,54 +445,58 @@ document.addEventListener('DOMContentLoaded', () => {
         if (el.classList.contains('unblurred')) return;
         hideTemp(el);
       });
-      // also support touch: tap-and-hold could reveal (we keep simple: touchstart reveals, touchend hides)
-      el.addEventListener('touchstart', () => {
-        if (el.classList.contains('unblurred')) return;
-        revealTemp(el);
-      }, {passive:true});
-      el.addEventListener('touchend', () => {
-        if (el.classList.contains('unblurred')) return;
-        hideTemp(el);
-      }, {passive:true});
+      el.addEventListener('touchstart', () => { if (el.classList.contains('unblurred')) return; revealTemp(el); }, {passive:true});
+      el.addEventListener('touchend', () => { if (el.classList.contains('unblurred')) return; hideTemp(el); }, {passive:true});
 
-      // set initial visual state based on readSet and current visual toggle
       if (readSet.has(idx)) {
-        // already read -> unblurred
         el.classList.add('unblurred');
         el.classList.remove('is-blurred');
         el.style.filter = 'none';
-        // restore original colors right away if we had stored them earlier; we won't have on first load, so do nothing
       } else {
-        // unread: apply visual blur unless visual toggle is off
-        if (isVisualBlurEnabled()) {
-          applyVisualBlurToElement(el, true);
-        } else {
-          // visual toggle off: show unblurred visually but keep unread state
-          el.classList.remove('is-blurred');
-          el.classList.remove('unblurred');
-          el.style.filter = 'none';
-        }
+        if (isVisualBlurEnabled()) applyVisualBlurToElement(el, true);
+        else { el.classList.remove('is-blurred'); el.classList.remove('unblurred'); el.style.filter = 'none'; }
       }
     });
   }
 
-  // On scroll check unread blur-targets and mark those which crossed threshold as read
+  // Check unread elements and unblur if they've crossed threshold.
   let scrollScheduled = false;
   function checkAndUnblurVisibleTargets() {
     if (!chapterBodyEl) return;
     const centerY = window.innerHeight * BLUR_THRESHOLD_Y_RATIO;
+
+    // If at (near) bottom of page, unblur remaining unread elements below center.
+    const atBottom = (window.innerHeight + window.scrollY) >= (document.documentElement.scrollHeight - 6);
+    if (atBottom) {
+      const unread = Array.from(chapterBodyEl.querySelectorAll('.blur-target:not(.unblurred)'));
+      unread.forEach(el => {
+        removeVisualBlurFromElement(el, true);
+      });
+      return;
+    }
+
     const nodes = Array.from(chapterBodyEl.querySelectorAll('.blur-target'));
     nodes.forEach((el) => {
       if (el.classList.contains('unblurred')) return;
-      // compute bounding box relative to viewport
       const rect = el.getBoundingClientRect();
-      // condition: element's top is above center line -> mark read
-      if (rect.top < centerY) {
-        // mark read (persist)
+
+      // For images use center of the image; for others use top crossing the center
+      let triggerCrossed = false;
+      if (el.tagName === 'IMG' || (el.querySelector && el.querySelector('img') && el.tagName !== 'P')) {
+        // If the element itself is an <img> or contains a primary img and isn't just a paragraph,
+        // use its middle point
+        const midY = rect.top + (rect.height / 2);
+        if (midY < centerY) triggerCrossed = true;
+      } else {
+        if (rect.top < centerY) triggerCrossed = true;
+      }
+
+      if (triggerCrossed) {
         removeVisualBlurFromElement(el, true);
       }
     });
   }
+
   window.addEventListener('scroll', () => {
     if (scrollScheduled) return;
     scrollScheduled = true;
@@ -501,21 +504,15 @@ document.addEventListener('DOMContentLoaded', () => {
       checkAndUnblurVisibleTargets();
       scrollScheduled = false;
     });
-  }, {passive:true});
+  }, { passive: true });
 
-  // Also run on resize and on initial load
   window.addEventListener('resize', () => { checkAndUnblurVisibleTargets(); });
 
-  /* ========== Chapters, tooltips, image viewer, navigation ========== */
-  // To keep answer brief I reuse the previously proven logic for chapters / tippy / image viewer
-  // ... (below is full copy of your previous working app logic with small integrations)
-  // For brevity: full functions follow: loadChapters, loadChapter, resolveTooltipImage, preloadTooltipImages,
-  // initGlossTippy (creates tippies with image banners and allows clicking to open viewer),
-  // image viewer open/close/drag/zoom, nav buttons, remembering last chapter, done flag respect, etc.
+  /* ========== Remaining app functionality (chapters, tooltips, image viewer, nav) ========== */
 
-  /* ---------- resolve & preload tooltip images ---------- */
+  // Test image url helper
   function testImageUrl(url, timeout = 3000) {
-    return new Promise((resolve) => {
+    return new Promise(resolve => {
       const img = new Image();
       let done = false;
       const onLoad = () => { if (done) return; done = true; cleanup(); resolve(true); };
@@ -570,9 +567,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const resolved = await resolveTooltipImage(dataImg);
         if (resolved) {
           if (preloadedImgCache.has(resolved)) continue;
-          const pimg = new Image();
-          pimg.crossOrigin = 'anonymous';
-          pimg.decoding = 'async';
+          const pimg = new Image(); pimg.crossOrigin = 'anonymous'; pimg.decoding = 'async';
           preloadedImgCache.set(resolved, pimg);
           pimg.onload = () => {};
           pimg.onerror = () => { preloadedImgCache.delete(resolved); };
@@ -587,14 +582,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!chapterBodyEl) return;
     const glossEls = Array.from(chapterBodyEl.querySelectorAll('.gloss'));
     glossEls.forEach(async (el) => {
-      const dataImg = el.getAttribute('data-img');
-      if (!dataImg) return;
+      const dataImg = el.getAttribute('data-img'); if (!dataImg) return;
       const resolved = resolvedUrlCache.has(dataImg) ? resolvedUrlCache.get(dataImg) : await resolveTooltipImage(dataImg);
       if (resolved && (!preloadedImgCache.has(resolved) || !preloadedImgCache.get(resolved).complete)) {
         try {
-          const pimg = new Image();
-          pimg.crossOrigin = 'anonymous';
-          pimg.decoding = 'async';
+          const pimg = new Image(); pimg.crossOrigin = 'anonymous'; pimg.decoding = 'async';
           preloadedImgCache.set(resolved, pimg);
           pimg.onload = () => {};
           pimg.onerror = () => { preloadedImgCache.delete(resolved); };
@@ -604,18 +596,13 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  /* ---------- Tippy init for .gloss ---------- */
+  /* ---------- Tippy (gloss tooltips) ---------- */
   function initGlossTippy() {
     if (!window.tippy) return;
     document.querySelectorAll('.gloss').forEach(el => { try { if (el._tippy) el._tippy.destroy(); } catch (e) {} });
 
     tippy('.gloss', {
-      allowHTML: true,
-      interactive: true,
-      delay: [60, 80],
-      maxWidth: 520,
-      placement: 'top',
-      offset: [0, 8],
+      allowHTML: true, interactive: true, delay: [60, 80], maxWidth: 520, placement: 'top', offset: [0, 8],
       appendTo: () => document.body,
       popperOptions: {
         strategy: 'fixed',
@@ -630,74 +617,47 @@ document.addEventListener('DOMContentLoaded', () => {
         const reference = instance.reference;
         let contentHTML = reference.getAttribute('data-tippy-content') || reference.getAttribute('data-tip') || reference.getAttribute('title') || reference.innerHTML || '';
         if (reference.getAttribute('title')) reference.removeAttribute('title');
-
         const dataImg = reference.getAttribute('data-img');
         const imgAlt = reference.getAttribute('data-img-alt') || '';
-
         const wrapper = document.createElement('div');
-
         let resolved = null;
         if (dataImg) {
           if (resolvedUrlCache.has(dataImg)) resolved = resolvedUrlCache.get(dataImg);
           else resolved = await resolveTooltipImage(dataImg);
         }
-
         if (resolved) {
           if (!preloadedImgCache.has(resolved) || !preloadedImgCache.get(resolved).complete) {
             try {
-              const pimg = new Image();
-              pimg.crossOrigin = 'anonymous';
-              pimg.decoding = 'async';
+              const pimg = new Image(); pimg.crossOrigin = 'anonymous'; pimg.decoding = 'async';
               preloadedImgCache.set(resolved, pimg);
               pimg.onload = () => {};
               pimg.onerror = () => { preloadedImgCache.delete(resolved); };
               pimg.src = resolved;
             } catch (e) {}
           }
-
           const imgEl = document.createElement('img');
-          imgEl.className = 'tooltip-img';
-          imgEl.src = resolved;
-          imgEl.alt = imgAlt;
-          imgEl.loading = 'eager';
-          imgEl.style.cursor = 'pointer';
-          imgEl.addEventListener('click', (ev) => {
-            ev.stopPropagation();
-            try { openImageViewer(resolved, imgAlt); } catch (e) {}
-            try { instance.hide(); } catch (e) {}
-          });
-          imgEl.addEventListener('load', () => {
-            try {
-              if (instance.popperInstance && typeof instance.popperInstance.update === 'function') instance.popperInstance.update();
-              else if (typeof instance.update === 'function') instance.update();
-            } catch (e) {}
-          });
-
+          imgEl.className = 'tooltip-img'; imgEl.src = resolved; imgEl.alt = imgAlt; imgEl.loading = 'eager'; imgEl.style.cursor='pointer';
+          imgEl.addEventListener('click', (ev) => { ev.stopPropagation(); try { openImageViewer(resolved, imgAlt); } catch (e) {} try { instance.hide(); } catch (e) {} });
+          imgEl.addEventListener('load', () => { try { if (instance.popperInstance && typeof instance.popperInstance.update === 'function') instance.popperInstance.update(); else if (typeof instance.update === 'function') instance.update(); } catch (e) {} });
           wrapper.appendChild(imgEl);
         }
-
-        const contentDiv = document.createElement('div');
-        contentDiv.className = 'tooltip-body';
-        contentDiv.innerHTML = contentHTML;
-        wrapper.appendChild(contentDiv);
-
+        const contentDiv = document.createElement('div'); contentDiv.className = 'tooltip-body'; contentDiv.innerHTML = contentHTML; wrapper.appendChild(contentDiv);
         try { instance.setContent(wrapper); } catch (e) { instance.setContent(wrapper.outerHTML); }
       }
     });
   }
 
-  /* ---------- Navigation tooltip hints ---------- */
+  /* ---------- Navigation tippies ---------- */
   function refreshNavTippies() {
     if (!window.tippy) return;
     [bottomPrev, bottomNext, topPrev, topNext].forEach(btn => { if (!btn) return; try { if (btn._tippy) btn._tippy.destroy(); } catch (e) {} });
-
     if (bottomPrev) tippy(bottomPrev, { content: () => bottomPrev.dataset.title || '', placement: 'top', delay: [80, 40], offset: [0, 8], appendTo: () => document.body });
     if (bottomNext) tippy(bottomNext, { content: () => bottomNext.dataset.title || '', placement: 'top', delay: [80, 40], offset: [0, 8], appendTo: () => document.body });
     if (topPrev) tippy(topPrev, { content: () => topPrev.dataset.title || '', placement: 'bottom', delay: [80, 40], offset: [0, 8], appendTo: () => document.body });
     if (topNext) tippy(topNext, { content: () => topNext.dataset.title || '', placement: 'bottom', delay: [80, 40], offset: [0, 8], appendTo: () => document.body });
   }
 
-  /* ---------- Chapters aside slide behavior ---------- */
+  /* ---------- Chapters aside and opening ---------- */
   let chaptersOpen = false;
   const EDGE_TRIGGER_PX = 12;
   function openChapters() { if (chaptersOpen) return; chaptersOpen = true; document.body.classList.add('chapters-open'); }
@@ -710,7 +670,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   document.addEventListener('click', (e) => { if (!chaptersOpen) return; if (chaptersAside && chaptersAside.contains(e.target)) return; if (e.clientX <= EDGE_TRIGGER_PX) return; closeChapters(); });
 
-  /* ---------- Top nav visibility (1s hide delay) ---------- */
+  /* ---------- Top nav visibility (keeps previous behavior) ---------- */
   function positionTopNav() {
     if (!topNav || !headerEl) return;
     const hRect = headerEl.getBoundingClientRect();
@@ -759,17 +719,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const curY = window.scrollY;
     const scrollingUp = curY < lastScrollY;
     const atTop = curY <= 10;
-
-    if (bottomNavIsVisible()) {
-      hideTopNavImmediate();
-      clearHideTimer();
-    } else if (atTop || scrollingUp) {
-      clearHideTimer();
-      showTopNavImmediate();
-    } else {
-      scheduleHideTopNav();
-    }
-
+    if (bottomNavIsVisible()) { hideTopNavImmediate(); clearHideTimer(); }
+    else if (atTop || scrollingUp) { clearHideTimer(); showTopNavImmediate(); }
+    else { scheduleHideTopNav(); }
     lastScrollY = curY;
   }
 
@@ -795,7 +747,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initialTopNavSetup();
   setTimeout(initialTopNavSetup, 80);
 
-  /* ---------- Image viewer (lightbox) ---------- */
+  /* ---------- Image viewer (keeps previous behavior) ---------- */
   if (!document.getElementById('image-overlay')) {
     const overlay = document.createElement('div');
     overlay.id = 'image-overlay';
@@ -874,17 +826,7 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (e) {}
   });
 
-  /* ---------- Navigation tippies ---------- */
-  function refreshNavTippies() {
-    if (!window.tippy) return;
-    [bottomPrev, bottomNext, topPrev, topNext].forEach(btn => { if (!btn) return; try { if (btn._tippy) btn._tippy.destroy(); } catch (e) {} });
-    if (bottomPrev) tippy(bottomPrev, { content: () => bottomPrev.dataset.title || '', placement: 'top', delay: [80, 40], offset: [0, 8], appendTo: () => document.body });
-    if (bottomNext) tippy(bottomNext, { content: () => bottomNext.dataset.title || '', placement: 'top', delay: [80, 40], offset: [0, 8], appendTo: () => document.body });
-    if (topPrev) tippy(topPrev, { content: () => topPrev.dataset.title || '', placement: 'bottom', delay: [80, 40], offset: [0, 8], appendTo: () => document.body });
-    if (topNext) tippy(topNext, { content: () => topNext.dataset.title || '', placement: 'bottom', delay: [80, 40], offset: [0, 8], appendTo: () => document.body });
-  }
-
-  /* ---------- Chapters list, loading and nav ---------- */
+  /* ---------- Chapters load + navigation ---------- */
   function isDoneEntry(entry) { if (!entry) return false; return entry.done !== false; }
   function findPrevDoneIndex(fromIndex) { for (let i = (fromIndex === undefined ? currentIndex - 1 : fromIndex); i >= 0; i--) if (isDoneEntry(chapters[i])) return i; return -1; }
   function findNextDoneIndex(fromIndex) { for (let i = (fromIndex === undefined ? currentIndex + 1 : fromIndex); i < chapters.length; i++) if (isDoneEntry(chapters[i])) return i; return -1; }
@@ -974,10 +916,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const first = findFirstDoneIndex();
       if (first !== -1) goToChapter(first);
-      else {
-        chapterBodyEl.textContent = 'В репозитории нет доступных (done) глав.';
-        updateNavButtons();
-      }
+      else { chapterBodyEl.textContent = 'В репозитории нет доступных (done) глав.'; updateNavButtons(); }
     } catch (err) {
       chapterBodyEl.textContent = 'Ошибка загрузки chapters.json: ' + err.message;
       console.error('loadChapters error:', err);
@@ -997,19 +936,14 @@ document.addEventListener('DOMContentLoaded', () => {
       const html = (window.marked) ? marked.parse(md) : '<p>Ошибка: библиотека marked не загружена.</p>';
       chapterBodyEl.innerHTML = html;
 
-      // initialize blur targets (very important to do early)
+      // initialize blur targets early
       initBlurTargetsForChapter(filename);
 
-      // preload tooltip images and init gloss tippy
       preloadTooltipImages();
       initGlossTippy();
-
-      // bind images to viewer
       bindImagesToViewer();
-
       updateNavButtons();
 
-      // restore scroll only if sessionStorage entry exists (reload)
       try {
         const key = 'scroll:' + filename;
         const v = sessionStorage.getItem(key);
@@ -1025,24 +959,17 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
           if (window.scrollY <= 10 && !bottomNavIsVisible()) showTopNavImmediate();
         }
-      } catch (e) {
-        if (window.scrollY <= 10 && !bottomNavIsVisible()) showTopNavImmediate();
-      }
+      } catch (e) { if (window.scrollY <= 10 && !bottomNavIsVisible()) showTopNavImmediate(); }
 
-      // run an initial check (in case some blocks already above center)
+      // initial pass to unblur anything already above center
       requestAnimationFrame(checkAndUnblurVisibleTargets);
-
     } catch (err) {
       chapterBodyEl.textContent = 'Ошибка загрузки главы: ' + err.message;
       console.error('loadChapter error:', err);
     }
   }
 
-  /* ---------- Main startup ---------- */
-  // initialize color picker UI bindings (done earlier)
-  requestAnimationFrame(updatePickerUI);
-
-  // visual blur toggle initialization
+  /* ---------- Initialize blur visual toggle button ---------- */
   if (blurToggle) {
     const enabled = isVisualBlurEnabled();
     setVisualBlurEnabled(enabled);
@@ -1053,8 +980,8 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  /* ---------- Start ---------- */
   loadChapters();
   updateNavButtons();
   setTimeout(() => { positionTopNav(); if (window.scrollY <= 10 && !bottomNavIsVisible()) showTopNavImmediate(); }, 120);
-
 });
