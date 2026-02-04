@@ -1,5 +1,9 @@
-/* script.js - updated: smooth unblur, image midpoint trigger, unblur-on-page-end
-   Replace your existing script.js with this file.
+/* script.js
+   Replaces previous script.js. Fixes:
+   - Smooth unblur animation (filter + color)
+   - No double-blur on images (images inside blocks are targeted instead of parent)
+   - Per-chapter "blur": false support
+   - Unblur-on-page-end kept
 */
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -42,12 +46,12 @@ document.addEventListener('DOMContentLoaded', () => {
   const preloadedImgCache = new Map();
 
   /* ---------- Blur configuration ---------- */
-  const BLUR_THRESHOLD_Y_RATIO = 0.5; // middle of viewport
+  const BLUR_THRESHOLD_Y_RATIO = 0.5; // viewport middle
   const BLUR_FILTER = 'blur(6px)';
-  const UNBLUR_TRANS_MS = 360; // transition time in ms for filter & color
+  const UNBLUR_TRANS_MS = 360; // ms for filter+color transition
   const BLUR_VISUAL_KEY = 'blur-visual-enabled';
 
-  /* ---------- Color picker / global color logic (kept from before) ---------- */
+  /* ---------- Color / picker / theme helpers (kept from previous working version) ---------- */
   const DEFAULT_BG_HEX = '#0b0f13';
   const CARD_LIGHTNESS_DELTA = 0.03333333333333333;
   const CONTRAST_LUMINANCE_THRESHOLD = 0.50;
@@ -137,11 +141,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  /* ---------- Color picker (HSV) kept as before (omitted here for brevity in analysis) ---------- */
-  // ... (color picker functions are included below in full code — left intact from earlier working version)
-  // For clarity we will include them unchanged so the script remains self-contained.
-
-  /* ---------- Color picker implementation (same as before) ---------- */
+  /* ---------- Color picker (kept) ---------- */
   const STORAGE_KEY = 'site-bg-color';
   let hsv = { h: 210, s: 0.3, v: 0.05 };
 
@@ -162,7 +162,8 @@ document.addEventListener('DOMContentLoaded', () => {
   function rgbToHsv(r, g, b) {
     r /= 255; g /= 255; b /= 255;
     const max = Math.max(r, g, b), min = Math.min(r, g, b);
-    const d = max - min; let h = 0;
+    const d = max - min;
+    let h = 0;
     const s = max === 0 ? 0 : d / max;
     const v = max;
     if (d !== 0) {
@@ -173,7 +174,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     return { h, s, v };
   }
-  function rgbToHexArr(rgb) { return rgbToHex(rgb.r, rgb.g, rgb.b); }
   function persistHex(hex) { try { localStorage.setItem(STORAGE_KEY, hex); } catch (e) {} }
   function applyHsvState() { const { r, g, b } = hsvToRgb(hsv.h, hsv.s, hsv.v); const hex = rgbToHex(r, g, b); applyColorHex(hex); }
 
@@ -256,8 +256,7 @@ document.addEventListener('DOMContentLoaded', () => {
     applyHsvState(); requestAnimationFrame(updatePickerUI);
   })();
 
-  /* ========== BLUR feature implementation (SMOOTHED) ========== */
-
+  /* ---------- Read-list storage helpers ---------- */
   function readStorageKeyFor(filename) { return 'read:' + filename; }
   function loadReadIndicesFor(filename) {
     try {
@@ -272,6 +271,7 @@ document.addEventListener('DOMContentLoaded', () => {
     try { localStorage.setItem(readStorageKeyFor(filename), JSON.stringify(Array.from(set))); } catch (e) {}
   }
 
+  /* ---------- Visual blur toggle ---------- */
   function isVisualBlurEnabled() {
     try {
       const v = localStorage.getItem(BLUR_VISUAL_KEY);
@@ -282,109 +282,142 @@ document.addEventListener('DOMContentLoaded', () => {
   function setVisualBlurEnabled(enabled) {
     try { localStorage.setItem(BLUR_VISUAL_KEY, enabled ? 'true' : 'false'); } catch (e) {}
     if (enabled) document.body.classList.remove('blur-visual-off'); else document.body.classList.add('blur-visual-off');
+    // visually apply/remove blur accordingly
     if (!enabled) {
-      // reveal all visually (but do not mark read)
       document.querySelectorAll('.blur-target').forEach(el => {
         if (el.__blurState) el.__blurState.currentlyBlurredVisually = false;
-        el.classList.remove('is-blurred'); el.classList.remove('hover-reveal');
-        el.style.transition = ''; el.style.filter = 'none';
-        if (el.__blurState && el.__blurState.origColors) {
-          el.__blurState.descendants.forEach((n, idx) => { n.style.transition = ''; n.style.color = el.__blurState.origColors[idx] || ''; });
+        el.classList.remove('is-blurred');
+        el.style.transition = '';
+        el.style.filter = 'none';
+        if (el.__blurState && el.__blurState.descendants) {
+          el.__blurState.descendants.forEach((n, i) => {
+            n.style.transition = '';
+            n.style.color = el.__blurState.origColors ? (el.__blurState.origColors[i] || '') : '';
+          });
         }
       });
     } else {
-      // re-apply visual blur to unread items immediately (with no forced animation)
+      // re-apply blur to unread targets
       document.querySelectorAll('.blur-target').forEach(el => {
-        if (!el.classList.contains('unblurred')) applyVisualBlurToElement(el, false);
+        if (!el.classList.contains('unblurred')) applyVisualBlurToElement(el, true);
       });
     }
   }
 
-  function collectDescendantsForColor(node) {
-    const arr = [];
-    arr.push(node);
-    node.querySelectorAll('*').forEach(ch => arr.push(ch));
-    return arr;
+  /* ---------- Utilities for collecting and managing targets ---------- */
+
+  // Collect targets for blur/unblur in a way that prevents double-blur:
+  // For each top-level child of chapterBody:
+  //  - if it contains <img> elements -> target each image separately (and skip the parent)
+  //  - otherwise -> target the child itself
+  function collectTargets() {
+    const targets = [];
+    const children = Array.from(chapterBodyEl.children);
+    children.forEach(child => {
+      // skip invisible or purely empty children
+      const rect = child.getBoundingClientRect();
+      if (rect.width === 0 && rect.height === 0) return;
+      const imgs = Array.from(child.querySelectorAll('img'));
+      if (imgs.length > 0 && child.tagName.toLowerCase() !== 'img') {
+        // if there are images inside this block, target each image separately
+        imgs.forEach(img => {
+          // ensure the image is attached to the document and has size
+          const r = img.getBoundingClientRect();
+          if (r.width === 0 && r.height === 0) return;
+          targets.push(img);
+        });
+      } else {
+        // no images inside: target the block itself
+        targets.push(child);
+      }
+    });
+    return targets;
   }
 
-  // Apply visual blur to unread element.
-  // If forceImmediate === true, set transitions to 'none' so initial apply is instantaneous.
+  // For a target element, store its descendant list and original computed colors
+  function prepareBlurState(el) {
+    if (!el) return;
+    if (el.__blurState) return el.__blurState;
+    // We'll collect element + ALL descendant elements so we can override their colors when blurred
+    const desc = [el, ...Array.from(el.querySelectorAll('*'))];
+    const origColors = desc.map(n => {
+      try { return window.getComputedStyle(n).color || ''; } catch (e) { return ''; }
+    });
+    const state = { descendants: desc, origColors: origColors, currentlyBlurredVisually: false };
+    el.__blurState = state;
+    return state;
+  }
+
+  // Apply visual blur to element (does NOT mark read).
+  // If forceImmediate===true, apply instantly without transitions (used when loading a chapter).
   function applyVisualBlurToElement(el, forceImmediate = false) {
     if (!el) return;
     if (el.classList.contains('unblurred')) return;
-
-    if (!el.__blurState) {
-      const desc = collectDescendantsForColor(el);
-      const origColors = desc.map(n => {
-        try { return window.getComputedStyle(n).color || ''; } catch (e) { return ''; }
-      });
-      el.__blurState = {
-        descendants: desc,
-        origColors: origColors,
-        currentlyBlurredVisually: true
-      };
-    } else {
-      el.__blurState.currentlyBlurredVisually = true;
-    }
-
+    const state = prepareBlurState(el);
     const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent') || '#e6eef6';
 
-    // set transitions appropriately for smoothness (unless forceImmediate)
+    // ensure we don't stack filters inadvertently — only set filter on the target itself
+    // but we override descendant colors so colored text doesn't show through.
+    el.style.willChange = 'filter';
     if (forceImmediate) {
-      // no transition, apply instantly
       el.style.transition = 'none';
       el.style.filter = BLUR_FILTER;
-      el.__blurState.descendants.forEach(n => { n.style.transition = 'none'; n.style.color = accent.trim(); });
-    } else {
-      // enable transitions for filter and color then apply
-      el.style.transition = `filter ${UNBLUR_TRANS_MS}ms ease`;
-      // apply blur value (this will animate if previously 'none' -> BLUR_FILTER OR vice versa)
-      // but here we are applying blur so it will appear instantly; unblur will animate later.
-      el.style.filter = BLUR_FILTER;
-      el.__blurState.descendants.forEach(n => {
-        n.style.transition = `color ${UNBLUR_TRANS_MS}ms ease`;
+      state.descendants.forEach(n => {
+        n.style.transition = 'none';
         n.style.color = accent.trim();
       });
+    } else {
+      // set transitions for smoothness on color (so when unblurring, color animates)
+      state.descendants.forEach(n => { n.style.transition = `color ${UNBLUR_TRANS_MS}ms ease`; n.style.color = accent.trim(); });
+      // apply filter (appears instantly but that's fine); unblur will animate later
+      el.style.transition = `filter ${UNBLUR_TRANS_MS}ms ease`;
+      el.style.filter = BLUR_FILTER;
     }
 
+    state.currentlyBlurredVisually = true;
     el.classList.add('is-blurred');
     el.classList.remove('unblurred');
   }
 
-  // Remove visual blur smoothly; if markRead true, persist the read state for this chapter.
+  // Remove visual blur from element with smooth transition.
+  // If markRead=true, persist it for the chapter's read set.
   function removeVisualBlurFromElement(el, markRead = true) {
     if (!el) return;
-    // if already unblurred, nothing to do
     if (el.classList.contains('unblurred')) return;
 
-    // Ensure transitions are present for smooth animation
-    try {
-      el.style.transition = `filter ${UNBLUR_TRANS_MS}ms ease`;
-    } catch (e) {}
-    if (el.__blurState) {
-      // prepare descendant transitions BEFORE changing colors
-      el.__blurState.descendants.forEach(n => {
-        n.style.transition = `color ${UNBLUR_TRANS_MS}ms ease`;
+    const state = el.__blurState || prepareBlurState(el);
+    // set will-change to hint the compositor and ensure transition is used
+    el.style.willChange = 'filter';
+    el.style.transition = `filter ${UNBLUR_TRANS_MS}ms ease`;
+    state.descendants.forEach(n => { n.style.transition = `color ${UNBLUR_TRANS_MS}ms ease`; });
+
+    // trigger the unblur in the next frame so transitions apply
+    requestAnimationFrame(() => {
+      el.style.filter = 'none';
+      state.descendants.forEach((n, idx) => {
+        // restore original color
+        n.style.color = state.origColors[idx] || '';
       });
-      // then trigger unblur: set filter none and restore colors
-      // small timeout to ensure transition rules are registered before style change in some browsers
-      requestAnimationFrame(() => {
-        el.style.filter = 'none';
-        el.__blurState.descendants.forEach((n, idx) => {
-          n.style.color = el.__blurState.origColors[idx] || '';
-        });
+    });
+
+    // cleanup after transition finishes
+    const onTransEnd = (ev) => {
+      if (ev.propertyName !== 'filter') return;
+      el.removeEventListener('transitionend', onTransEnd);
+      // clear transitions & will-change
+      try {
+        el.style.transition = '';
+        el.style.willChange = '';
+      } catch (e) {}
+      state.descendants.forEach(n => {
+        try { n.style.transition = ''; } catch (e) {}
       });
-      // mark states
-      el.__blurState.currentlyBlurredVisually = false;
-    } else {
-      // fallback
-      requestAnimationFrame(() => { el.style.filter = 'none'; });
-    }
+    };
+    el.addEventListener('transitionend', onTransEnd);
 
     el.classList.remove('is-blurred');
     el.classList.add('unblurred');
 
-    // persist read index
     if (markRead && lastChapterFile) {
       const set = loadReadIndicesFor(lastChapterFile);
       const index = Number(el.dataset.blurIndex);
@@ -395,11 +428,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // revealTemp: hover reveal without marking read (smooth)
+  // Hover reveal (temporary, smooth) — does NOT mark read
   function revealTemp(el) {
     if (!el) return;
     if (el.classList.contains('unblurred')) return;
-    // ensure transitions present
+    // ensure transitions exist
     try { el.style.transition = `filter ${Math.max(120, UNBLUR_TRANS_MS/3)}ms ease`; } catch (e) {}
     if (el.__blurState) {
       el.__blurState.descendants.forEach((n, idx) => {
@@ -410,11 +443,9 @@ document.addEventListener('DOMContentLoaded', () => {
     requestAnimationFrame(() => { el.style.filter = 'none'; });
     el.classList.add('hover-reveal');
   }
-
   function hideTemp(el) {
     if (!el) return;
     if (el.classList.contains('unblurred')) return;
-    // re-apply blur smoothly
     try { el.style.transition = `filter ${Math.max(120, UNBLUR_TRANS_MS/3)}ms ease`; } catch (e) {}
     const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent') || '#e6eef6';
     if (el.__blurState) {
@@ -427,27 +458,50 @@ document.addEventListener('DOMContentLoaded', () => {
     el.classList.remove('hover-reveal');
   }
 
-  // Initialize blur targets for the currently loaded chapter
-  function initBlurTargetsForChapter(filename) {
+  /* ---------- Initialize blur targets for chapter ---------- */
+  function initBlurTargetsForChapter(filename, blurEnabled = true) {
     if (!chapterBodyEl) return;
-    const selector = 'p, img, h1, h2, h3, h4, h5, h6, blockquote, pre, ul, ol, table';
-    const nodes = Array.from(chapterBodyEl.querySelectorAll(selector));
+    // remove old per-target listeners & classes
+    const old = Array.from(chapterBodyEl.querySelectorAll('.blur-target'));
+    old.forEach(el => {
+      try {
+        el.classList.remove('blur-target', 'is-blurred', 'hover-reveal', 'unblurred');
+        if (el.__blurState && el.__blurState.descendants) {
+          el.__blurState.descendants.forEach(n => {
+            n.style.transition = '';
+            n.style.color = '';
+          });
+        }
+        el.style.filter = '';
+        el.style.transition = '';
+      } catch (e) {}
+    });
+
+    // Collect new targets (images inside top-level blocks become separate targets)
+    const targets = collectTargets();
+
+    // load saved read set
     const readSet = loadReadIndicesFor(filename);
-    nodes.forEach((el, idx) => {
+
+    targets.forEach((el, idx) => {
       el.dataset.blurIndex = idx;
       el.classList.add('blur-target');
 
-      el.addEventListener('mouseenter', () => {
-        if (el.classList.contains('unblurred')) return;
-        revealTemp(el);
-      });
-      el.addEventListener('mouseleave', () => {
-        if (el.classList.contains('unblurred')) return;
-        hideTemp(el);
-      });
-      el.addEventListener('touchstart', () => { if (el.classList.contains('unblurred')) return; revealTemp(el); }, {passive:true});
-      el.addEventListener('touchend', () => { if (el.classList.contains('unblurred')) return; hideTemp(el); }, {passive:true});
+      // skip blur entirely for this chapter if disabled
+      if (!blurEnabled) {
+        el.classList.add('unblurred');
+        el.classList.remove('is-blurred');
+        el.style.filter = 'none';
+        return;
+      }
 
+      // add hover/touch handlers for temporary reveal
+      el.addEventListener('mouseenter', () => { if (!el.classList.contains('unblurred')) revealTemp(el); });
+      el.addEventListener('mouseleave', () => { if (!el.classList.contains('unblurred')) hideTemp(el); });
+      el.addEventListener('touchstart', () => { if (!el.classList.contains('unblurred')) revealTemp(el); }, { passive: true });
+      el.addEventListener('touchend', () => { if (!el.classList.contains('unblurred')) hideTemp(el); }, { passive: true });
+
+      // initial state based on saved read set and visual toggle
       if (readSet.has(idx)) {
         el.classList.add('unblurred');
         el.classList.remove('is-blurred');
@@ -459,19 +513,17 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Check unread elements and unblur if they've crossed threshold.
+  /* ---------- Scrolling logic: unblur when elements cross threshold or when near bottom ---------- */
   let scrollScheduled = false;
   function checkAndUnblurVisibleTargets() {
     if (!chapterBodyEl) return;
     const centerY = window.innerHeight * BLUR_THRESHOLD_Y_RATIO;
 
-    // If at (near) bottom of page, unblur remaining unread elements below center.
+    // if near bottom, unblur remaining unread
     const atBottom = (window.innerHeight + window.scrollY) >= (document.documentElement.scrollHeight - 6);
     if (atBottom) {
       const unread = Array.from(chapterBodyEl.querySelectorAll('.blur-target:not(.unblurred)'));
-      unread.forEach(el => {
-        removeVisualBlurFromElement(el, true);
-      });
+      unread.forEach(el => removeVisualBlurFromElement(el, true));
       return;
     }
 
@@ -480,14 +532,13 @@ document.addEventListener('DOMContentLoaded', () => {
       if (el.classList.contains('unblurred')) return;
       const rect = el.getBoundingClientRect();
 
-      // For images use center of the image; for others use top crossing the center
       let triggerCrossed = false;
-      if (el.tagName === 'IMG' || (el.querySelector && el.querySelector('img') && el.tagName !== 'P')) {
-        // If the element itself is an <img> or contains a primary img and isn't just a paragraph,
-        // use its middle point
+      // If the target is an <img> use the image midpoint, otherwise use top crossing center
+      if (el.tagName && el.tagName.toLowerCase() === 'img') {
         const midY = rect.top + (rect.height / 2);
         if (midY < centerY) triggerCrossed = true;
       } else {
+        // If element contains a primary image and tag is not img, we already targeted image(s) instead so here it's text blocks
         if (rect.top < centerY) triggerCrossed = true;
       }
 
@@ -508,9 +559,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   window.addEventListener('resize', () => { checkAndUnblurVisibleTargets(); });
 
-  /* ========== Remaining app functionality (chapters, tooltips, image viewer, nav) ========== */
-
-  // Test image url helper
+  /* ---------- Tooltip image helpers (resolve + preload) ---------- */
   function testImageUrl(url, timeout = 3000) {
     return new Promise(resolve => {
       const img = new Image();
@@ -576,7 +625,6 @@ document.addEventListener('DOMContentLoaded', () => {
       } catch (err) {}
     }
   }
-
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState !== 'visible') return;
     if (!chapterBodyEl) return;
@@ -596,7 +644,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  /* ---------- Tippy (gloss tooltips) ---------- */
+  /* ---------- Tippy init (gloss tooltips) ---------- */
   function initGlossTippy() {
     if (!window.tippy) return;
     document.querySelectorAll('.gloss').forEach(el => { try { if (el._tippy) el._tippy.destroy(); } catch (e) {} });
@@ -647,7 +695,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  /* ---------- Navigation tippies ---------- */
+  /* ---------- Nav tippies ---------- */
   function refreshNavTippies() {
     if (!window.tippy) return;
     [bottomPrev, bottomNext, topPrev, topNext].forEach(btn => { if (!btn) return; try { if (btn._tippy) btn._tippy.destroy(); } catch (e) {} });
@@ -657,7 +705,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (topNext) tippy(topNext, { content: () => topNext.dataset.title || '', placement: 'bottom', delay: [80, 40], offset: [0, 8], appendTo: () => document.body });
   }
 
-  /* ---------- Chapters aside and opening ---------- */
+  /* ---------- Chapters aside behavior ---------- */
   let chaptersOpen = false;
   const EDGE_TRIGGER_PX = 12;
   function openChapters() { if (chaptersOpen) return; chaptersOpen = true; document.body.classList.add('chapters-open'); }
@@ -670,7 +718,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   document.addEventListener('click', (e) => { if (!chaptersOpen) return; if (chaptersAside && chaptersAside.contains(e.target)) return; if (e.clientX <= EDGE_TRIGGER_PX) return; closeChapters(); });
 
-  /* ---------- Top nav visibility (keeps previous behavior) ---------- */
+  /* ---------- Top nav visibility (kept previous behavior) ---------- */
   function positionTopNav() {
     if (!topNav || !headerEl) return;
     const hRect = headerEl.getBoundingClientRect();
@@ -683,38 +731,25 @@ document.addEventListener('DOMContentLoaded', () => {
   let scheduled = false;
   let hideDelayTimer = null;
   const HIDE_DELAY_MS = 1000;
-
   function clearHideTimer() { if (hideDelayTimer) { clearTimeout(hideDelayTimer); hideDelayTimer = null; } }
-
   function bottomNavIsVisible() {
     if (!bottomNav) return false;
     const r = bottomNav.getBoundingClientRect();
     return (r.top < window.innerHeight) && (r.bottom > 0);
   }
-
   function showTopNavImmediate() {
     if (bottomNavIsVisible()) { hideTopNavImmediate(); return; }
     if (!topNav) return;
-    topNav.classList.add('visible-top');
-    topNav.setAttribute('aria-hidden', 'false');
-    clearHideTimer();
+    topNav.classList.add('visible-top'); topNav.setAttribute('aria-hidden', 'false'); clearHideTimer();
   }
-
   function hideTopNavImmediate() {
     if (!topNav) return;
-    topNav.classList.remove('visible-top');
-    topNav.setAttribute('aria-hidden', 'true');
-    clearHideTimer();
+    topNav.classList.remove('visible-top'); topNav.setAttribute('aria-hidden', 'true'); clearHideTimer();
   }
-
   function scheduleHideTopNav() {
     if (hideDelayTimer) return;
-    hideDelayTimer = setTimeout(() => {
-      if (!bottomNavIsVisible()) hideTopNavImmediate();
-      hideDelayTimer = null;
-    }, HIDE_DELAY_MS);
+    hideDelayTimer = setTimeout(() => { if (!bottomNavIsVisible()) hideTopNavImmediate(); hideDelayTimer = null; }, HIDE_DELAY_MS);
   }
-
   function onScrollCheck() {
     const curY = window.scrollY;
     const scrollingUp = curY < lastScrollY;
@@ -724,21 +759,14 @@ document.addEventListener('DOMContentLoaded', () => {
     else { scheduleHideTopNav(); }
     lastScrollY = curY;
   }
-
   window.addEventListener('scroll', () => {
     if (scheduled) return;
     scheduled = true;
     requestAnimationFrame(() => { onScrollCheck(); scheduled = false; });
   }, { passive: true });
-
   window.addEventListener('resize', () => { positionTopNav(); onScrollCheck(); });
-
-  const observer = new IntersectionObserver((entries) => {
-    const anyVisible = entries.some(en => en.isIntersecting);
-    if (anyVisible) hideTopNavImmediate();
-  }, { root: null, threshold: 0.01 });
+  const observer = new IntersectionObserver((entries) => { const anyVisible = entries.some(en => en.isIntersecting); if (anyVisible) hideTopNavImmediate(); }, { root: null, threshold: 0.01 });
   if (bottomNav) observer.observe(bottomNav);
-
   function initialTopNavSetup() {
     positionTopNav();
     if (window.scrollY <= 10 && !bottomNavIsVisible()) showTopNavImmediate();
@@ -747,7 +775,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initialTopNavSetup();
   setTimeout(initialTopNavSetup, 80);
 
-  /* ---------- Image viewer (keeps previous behavior) ---------- */
+  /* ---------- Image viewer (kept) ---------- */
   if (!document.getElementById('image-overlay')) {
     const overlay = document.createElement('div');
     overlay.id = 'image-overlay';
@@ -816,7 +844,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  /* ---------- Persist scroll only on reload (sessionStorage) ---------- */
+  /* ---------- Persist scroll on page reload ---------- */
   window.addEventListener('beforeunload', () => {
     try {
       if (currentIndex >= 0 && chapters[currentIndex] && chapters[currentIndex].file) {
@@ -826,7 +854,7 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (e) {}
   });
 
-  /* ---------- Chapters load + navigation ---------- */
+  /* ---------- Chapters loading & navigation ---------- */
   function isDoneEntry(entry) { if (!entry) return false; return entry.done !== false; }
   function findPrevDoneIndex(fromIndex) { for (let i = (fromIndex === undefined ? currentIndex - 1 : fromIndex); i >= 0; i--) if (isDoneEntry(chapters[i])) return i; return -1; }
   function findNextDoneIndex(fromIndex) { for (let i = (fromIndex === undefined ? currentIndex + 1 : fromIndex); i < chapters.length; i++) if (isDoneEntry(chapters[i])) return i; return -1; }
@@ -871,10 +899,13 @@ document.addEventListener('DOMContentLoaded', () => {
     try { localStorage.setItem('last-chapter-file', c.file); } catch (e) {}
   }
 
-  if (bottomPrev) bottomPrev.addEventListener('click', () => { const i = Number(bottomPrev.dataset.index); if (!Number.isNaN(i)) goToChapter(i); });
-  if (bottomNext) bottomNext.addEventListener('click', () => { const i = Number(bottomNext.dataset.index); if (!Number.isNaN(i)) goToChapter(i); });
-  if (topPrev) topPrev.addEventListener('click', () => { const i = Number(topPrev.dataset.index); if (!Number.isNaN(i)) goToChapter(i); });
-  if (topNext) topNext.addEventListener('click', () => { const i = Number(topNext.dataset.index); if (!Number.isNaN(i)) goToChapter(i); });
+  [bottomPrev, bottomNext, topPrev, topNext].forEach(btn => {
+    if (!btn) return;
+    btn.addEventListener('click', () => {
+      const i = Number(btn.dataset.index);
+      if (!Number.isNaN(i)) goToChapter(i);
+    });
+  });
 
   document.addEventListener('keydown', (e) => {
     const active = document.activeElement;
@@ -883,7 +914,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.key === 'ArrowRight') { const next = findNextDoneIndex(); if (next !== -1) goToChapter(next); }
   });
 
-  /* ---------- LOAD CHAPTERS ---------- */
+  /* ---------- Load chapters.json ---------- */
   async function loadChapters() {
     chapterBodyEl.textContent = 'Загрузка...';
     try {
@@ -899,6 +930,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const a = document.createElement('a');
         a.href = '#';
         a.textContent = c.title || `Глава ${i+1}`;
+        if (c.blur === false) {
+          // visually indicate blur disabled? (we keep appearance same)
+        }
         if (!isDoneEntry(c)) {
           a.classList.add('undone');
         } else {
@@ -924,7 +958,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  /* ---------- LOAD SINGLE CHAPTER ---------- */
+  /* ---------- Load one chapter ---------- */
   async function loadChapter(filename, title) {
     chapterTitleEl.textContent = title || '';
     chapterBodyEl.textContent = 'Загрузка главы...';
@@ -936,14 +970,22 @@ document.addEventListener('DOMContentLoaded', () => {
       const html = (window.marked) ? marked.parse(md) : '<p>Ошибка: библиотека marked не загружена.</p>';
       chapterBodyEl.innerHTML = html;
 
+      // check chapter blur option from chapters array
+      let blurEnabledForChapter = true;
+      try {
+        const chObj = chapters[currentIndex];
+        if (chObj && chObj.blur === false) blurEnabledForChapter = false;
+      } catch (e) {}
+
       // initialize blur targets early
-      initBlurTargetsForChapter(filename);
+      initBlurTargetsForChapter(filename, blurEnabledForChapter);
 
       preloadTooltipImages();
       initGlossTippy();
       bindImagesToViewer();
       updateNavButtons();
 
+      // restore scroll if page reloaded
       try {
         const key = 'scroll:' + filename;
         const v = sessionStorage.getItem(key);
@@ -963,13 +1005,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // initial pass to unblur anything already above center
       requestAnimationFrame(checkAndUnblurVisibleTargets);
+
     } catch (err) {
       chapterBodyEl.textContent = 'Ошибка загрузки главы: ' + err.message;
       console.error('loadChapter error:', err);
     }
   }
 
-  /* ---------- Initialize blur visual toggle button ---------- */
+  /* ---------- Blur toggle initialization ---------- */
   if (blurToggle) {
     const enabled = isVisualBlurEnabled();
     setVisualBlurEnabled(enabled);
@@ -984,4 +1027,27 @@ document.addEventListener('DOMContentLoaded', () => {
   loadChapters();
   updateNavButtons();
   setTimeout(() => { positionTopNav(); if (window.scrollY <= 10 && !bottomNavIsVisible()) showTopNavImmediate(); }, 120);
+
+  /* ---------- Helper: collectTargets used earlier (placed at bottom to keep structure) ---------- */
+  function collectTargets() {
+    const targets = [];
+    const children = Array.from(chapterBodyEl.children);
+    children.forEach(child => {
+      // skip empty/invisible
+      const r = child.getBoundingClientRect();
+      if (r.width === 0 && r.height === 0) return;
+      const imgs = Array.from(child.querySelectorAll('img'));
+      if (imgs.length > 0 && child.tagName.toLowerCase() !== 'img') {
+        imgs.forEach(img => {
+          const ri = img.getBoundingClientRect();
+          if (ri.width === 0 && ri.height === 0) return;
+          targets.push(img);
+        });
+      } else {
+        targets.push(child);
+      }
+    });
+    return targets;
+  }
+
 });
