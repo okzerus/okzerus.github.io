@@ -1,4 +1,4 @@
-// script.js - class-based blur + smooth transitions version
+// script.js - small fix: always include images as blur targets (even if not loaded yet)
 document.addEventListener('DOMContentLoaded', () => {
   /* DOM refs */
   const chaptersListEl = document.getElementById('chapters');
@@ -284,20 +284,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Collect targets: top-level children; images inside blocks become their own targets
+  // Collect targets: top-level children; images inside blocks become their own targets.
+  // IMPORTANT CHANGE: we include images even if they haven't loaded yet (no rect check), so they get blurred.
   function collectTargets() {
     const targets = [];
     const children = Array.from(chapterBodyEl.children);
     children.forEach(child => {
-      const r = child.getBoundingClientRect();
-      if (r.width === 0 && r.height === 0) return;
       const imgs = Array.from(child.querySelectorAll('img'));
       if (imgs.length > 0 && child.tagName.toLowerCase() !== 'img') {
-        imgs.forEach(img => {
-          const ri = img.getBoundingClientRect();
-          if (ri.width === 0 && ri.height === 0) return;
-          targets.push(img);
-        });
+        imgs.forEach(img => targets.push(img));
       } else {
         targets.push(child);
       }
@@ -307,7 +302,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function applyBlurToTarget(el) {
     if (!el) return;
-    // add CSS classes (visual)
     el.classList.add('blur-target');
     if (!el.classList.contains('unblurred')) {
       if (isVisualBlurEnabled()) el.classList.add('is-blurred');
@@ -342,11 +336,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function initBlurTargetsForChapter(filename, blurEnabled = true) {
     if (!chapterBodyEl) return;
-    // cleanup existing
+    // cleanup existing (keep 'unblurred' state as it may be persisted)
     chapterBodyEl.querySelectorAll('.blur-target').forEach(old => {
-      old.classList.remove('blur-target', 'is-blurred', 'hover-reveal');
-      // don't remove 'unblurred' since that is persistent across chapter loads (but keep tidy)
-      old.classList.remove('unblurred');
+      old.classList.remove('is-blurred', 'hover-reveal');
+      // keep 'unblurred' class if present (so we don't wipe previously-read state)
+      old.classList.remove('blur-target'); // we'll re-add it below
     });
 
     const targets = collectTargets();
@@ -363,8 +357,8 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
-      // set initial state
-      if (readSet.has(idx)) {
+      // initial state - preserve existing unblurred if present OR if in readSet
+      if (el.classList.contains('unblurred') || readSet.has(idx)) {
         el.classList.add('unblurred');
         el.classList.remove('is-blurred');
       } else {
@@ -375,7 +369,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       }
 
-      // hover handlers (temporary reveal)
+      // attach hover handlers (safe to attach multiple times, browser will ignore duplicates if identical)
       el.addEventListener('mouseenter', () => { if (!el.classList.contains('unblurred')) revealTemp(el); });
       el.addEventListener('mouseleave', () => { if (!el.classList.contains('unblurred')) hideTemp(el); });
       el.addEventListener('touchstart', () => { if (!el.classList.contains('unblurred')) revealTemp(el); }, {passive:true});
@@ -418,7 +412,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }, { passive: true });
   window.addEventListener('resize', () => { checkAndUnblurVisibleTargets(); });
 
-  /* ========== Tooltip images resolve & preload (kept) ========== */
+  /* ========== Tooltip image resolve & preload (kept) ========== */
   function testImageUrl(url, timeout = 3000) {
     return new Promise(resolve => {
       const img = new Image();
@@ -503,7 +497,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  /* ---------- Tippy init (gloss) - kept previous logic ---------- */
+  /* ---------- Tippy init (gloss) ---------- */
   function initGlossTippy() {
     if (!window.tippy) return;
     document.querySelectorAll('.gloss').forEach(el => { try { if (el._tippy) el._tippy.destroy(); } catch (e) {} });
@@ -554,7 +548,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  /* ---------- Navigation tooltips ---------- */
+  /* ---------- Nav tippies ---------- */
   function refreshNavTippies() {
     if (!window.tippy) return;
     [bottomPrev, bottomNext, topPrev, topNext].forEach(btn => { if (!btn) return; try { if (btn._tippy) btn._tippy.destroy(); } catch (e) {} });
@@ -835,7 +829,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (chObj && chObj.blur === false) blurEnabledForChapter = false;
       } catch (e) {}
 
-      // initialize blur targets now
+      // initialize blur targets now (collectTargets always includes images)
       initBlurTargetsForChapter(filename, blurEnabledForChapter);
 
       // preload tooltip images and init tippy
