@@ -10,7 +10,7 @@
 
   --tooltip-link-color: #bfe8ff;
   --tooltip-image-height: 200px;
-  --transition-fast: 180ms;
+  --blur-duration: 360ms; /* change this to affect smoothness */
 }
 
 /* sensible defaults */
@@ -36,26 +36,16 @@ header{
 header h1{ margin:0; font-size:18px; font-weight:700; flex:1 }
 .header-controls{ display:flex; gap:8px; align-items:center; position:relative }
 
-/* Blur toggle (left of the color button) */
-#blur-toggle{
-  width:40px; height:40px; border-radius:10px; border:0; background:var(--btn-bg); color:var(--btn-fg);
-  font-size:16px; cursor:pointer; display:flex; align-items:center; justify-content:center;
-  box-shadow: 0 8px 20px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.08);
-  transition: box-shadow 180ms ease, transform 120ms ease;
-  border: 2px solid rgba(var(--bg-r), var(--bg-g), var(--bg-b), 0.50);
-  margin-right: 6px;
-}
-#blur-toggle:hover{ transform: translateY(-2px); box-shadow: 0 12px 28px rgba(0,0,0,0.26), inset 0 1px 0 rgba(255,255,255,0.10); }
-
-/* Color-picker button */
-#theme-toggle{
+/* Blur toggle */
+#blur-toggle, #theme-toggle{
   width:40px; height:40px; border-radius:10px; border:0; background:var(--btn-bg); color:var(--btn-fg);
   font-size:16px; cursor:pointer; display:flex; align-items:center; justify-content:center;
   box-shadow: 0 8px 20px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.08);
   transition: box-shadow 180ms ease, transform 120ms ease;
   border: 2px solid rgba(var(--bg-r), var(--bg-g), var(--bg-b), 0.50);
 }
-#theme-toggle:hover{ transform: translateY(-2px); box-shadow: 0 12px 28px rgba(0,0,0,0.26), inset 0 1px 0 rgba(255,255,255,0.10); }
+#blur-toggle{ margin-right:6px; }
+#blur-toggle:hover, #theme-toggle:hover{ transform: translateY(-2px); box-shadow: 0 12px 28px rgba(0,0,0,0.26), inset 0 1px 0 rgba(255,255,255,0.10); }
 
 /* Color popup panel */
 .color-picker-container { position: relative; display:inline-block; }
@@ -81,31 +71,14 @@ header h1{ margin:0; font-size:18px; font-weight:700; flex:1 }
   pointer-events: auto;
 }
 
-/* picker layout: gradient area (left), hue slider (right) */
+/* picker layout */
 .picker { display:flex; gap:10px; align-items:center; }
-.color-area {
-  width: 200px; height: 160px; border-radius: 6px; position: relative;
-  cursor: crosshair; user-select:none;
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.03);
-  overflow: hidden;
-}
-.area-cursor {
-  position:absolute; width:12px; height:12px; border-radius:50%; border:2px solid #fff; box-shadow:0 2px 6px rgba(0,0,0,0.45);
-  transform: translate(-6px, -6px); pointer-events:none;
-}
-
-/* hue slider */
+.color-area { width: 200px; height: 160px; border-radius: 6px; position: relative; cursor: crosshair; user-select:none; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.03); overflow: hidden; }
+.area-cursor { position:absolute; width:12px; height:12px; border-radius:50%; border:2px solid #fff; box-shadow:0 2px 6px rgba(0,0,0,0.45); transform: translate(-6px, -6px); pointer-events:none; }
 .hue-slider { width: 20px; height: 160px; border-radius:6px; position:relative; cursor: ns-resize; background: linear-gradient(to top, red, yellow, lime, cyan, blue, magenta, red); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.03); }
 .hue-cursor { position:absolute; left: -4px; right: -4px; height:6px; border-radius:4px; background:#fff; box-shadow:0 2px 6px rgba(0,0,0,0.35); transform: translateY(-3px); pointer-events:none; }
-
-/* reset button wrapper */
 .picker-reset-wrap { display:flex; justify-content:center; margin-top:10px; }
-.small {
-  padding:6px 10px; border-radius:8px; border:0; background:var(--btn-bg); color:var(--btn-fg); cursor:pointer;
-  box-shadow: 0 8px 20px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.08);
-  transition: box-shadow 180ms ease, transform 120ms ease;
-  border: 2px solid rgba(var(--bg-r), var(--bg-g), var(--bg-b), 0.50);
-}
+.small { padding:6px 10px; border-radius:8px; border:0; background:var(--btn-bg); color:var(--btn-fg); cursor:pointer; box-shadow: 0 8px 20px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.08); transition: box-shadow 180ms ease, transform 120ms ease; border: 2px solid rgba(var(--bg-r), var(--bg-g), var(--bg-b), 0.50); }
 .small:hover { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(0,0,0,0.26), inset 0 1px 0 rgba(255,255,255,0.10); }
 
 /* Layout */
@@ -120,73 +93,76 @@ main{ display:block; padding:18px; }
   will-change: transform;
 }
 body.chapters-open #chapters-list{ transform:translateX(0); }
-
 #chapters-list h2{ margin:0 0 8px 0; font-size:16px; font-weight:700 }
 #chapters-list ul{ list-style:none; padding:0; margin:0 }
 #chapters-list li{ margin:8px 0 }
-#chapters-list a{
-  color:var(--accent); text-decoration:none; display:block;
-  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-  max-width: calc(220px - 24px); padding-right:6px;
-}
+#chapters-list a{ color:var(--accent); text-decoration:none; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width: calc(220px - 24px); padding-right:6px; }
 #chapters-list a.undone { color: var(--muted-dark); text-decoration: line-through; pointer-events: none; cursor: default; opacity: 0.75; }
 
 /* content area centered */
 #content{ max-width: 960px; margin: 18px auto; background:var(--card); padding:24px; border-radius:8px; box-shadow:0 2px 6px rgba(0,0,0,0.06); }
-
-/* chapter title centered */
 #chapter-title{ font-size:40px; font-weight:700; margin: 0 0 16px; text-align:center; word-break:break-word; }
 
 /* inline images centered & clickable cursor */
 #chapter-body img{ display:block; margin:18px auto; max-width:100%; height:auto; cursor:pointer; }
 
-/* NAV buttons */
+/* nav buttons */
 .chapter-nav{ display:flex; gap:12px; align-items:center; }
-.nav-btn{
-  width:56px; height:40px; border-radius:8px; border:0; background:var(--btn-bg); color:var(--btn-fg); font-size:16px; cursor:pointer;
-  box-shadow: 0 8px 20px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.08);
-  transition: box-shadow 200ms ease, transform 120ms ease, opacity 160ms ease;
-  border: 2px solid rgba(var(--bg-r), var(--bg-g), var(--bg-b), 0.50);
-}
+.nav-btn{ width:56px; height:40px; border-radius:8px; border:0; background:var(--btn-bg); color:var(--btn-fg); font-size:16px; cursor:pointer; box-shadow: 0 8px 20px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.08); transition: box-shadow 200ms ease, transform 120ms ease, opacity 160ms ease; border: 2px solid rgba(var(--bg-r), var(--bg-g), var(--bg-b), 0.50); }
 .nav-btn:disabled{ opacity:0.35; pointer-events:none }
 .nav-btn:hover { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(0,0,0,0.26), inset 0 1px 0 rgba(255,255,255,0.10); }
-
-/* bottom nav */
 #bottom-nav{ margin-top:24px; display:flex; justify-content:center; transition: opacity 180ms ease; }
-
-/* top nav */
-#top-nav{
-  position:fixed; left:50%; transform: translateX(-50%) translateY(-6px); z-index:1300; opacity:0; pointer-events:none; display:flex; gap:12px;
-  transition: opacity 260ms ease, transform 260ms ease;
-}
+#top-nav{ position:fixed; left:50%; transform: translateX(-50%) translateY(-6px); z-index:1300; opacity:0; pointer-events:none; display:flex; gap:12px; transition: opacity 260ms ease, transform 260ms ease; }
 #top-nav.visible-top{ opacity:1; transform: translateX(-50%) translateY(0); pointer-events:auto; }
 
-/* blur CSS helpers */
-/* base for each target block: keep transitions on color and filter */
-.blur-target { transition: filter 360ms ease, color 360ms ease, opacity 200ms ease; -webkit-font-smoothing:antialiased; }
+/* ========== BLUR styling (class-based, smooth) ========== */
 
-/* when element is marked as visually blurred by JS, we also add .is-blurred class
-   CSS fallback for non-JS (kept conservative) */
-.blur-target.is-blurred { filter: blur(6px); }
+/* Targets that can be blurred */
+.blur-target {
+  /* filter transition controlled here */
+  transition: filter var(--blur-duration) ease;
+  /* ensure text rendering remains crisp */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
 
-/* hover visual reveal (JS also does this for robust override) */
-.blur-target.hover-reveal { filter: none !important; }
+/* When blurred: apply blur filter on the element and force all descendant text color to the accent color.
+   Using a class is robust across DOM node replacements and triggers smooth transitions. */
+.blur-target.is-blurred {
+  filter: blur(6px); /* the filter value; keep consistent with JS BLUR_FILTER */
+}
 
-/* permanently unblurred marker (read) */
+/* Force descendant colors to site accent while blurred (hide inline colored text).
+   color transition is applied for smoothness. */
+.blur-target.is-blurred, .blur-target.is-blurred * {
+  /* descendant color forced to accent to hide inline colors */
+  color: var(--accent) !important;
+  transition: color var(--blur-duration) ease !important;
+}
+
+/* Hover reveal: temporarily remove blur + forced color so original colors show.
+   Important: use !important to override the .is-blurred rules when hovered. */
+.blur-target.hover-reveal {
+  filter: none !important;
+}
+.blur-target.hover-reveal, .blur-target.hover-reveal * {
+  color: unset !important;
+  transition: color calc(var(--blur-duration) / 3) ease !important;
+}
+
+/* Permanently unblurred marker */
 .blur-target.unblurred { filter: none !important; }
 
-/* when user turns visual blur off, we add .blur-visual-off to body:
-   keep read state untouched, but visually remove blur for unread items */
-body.blur-visual-off .blur-target:not(.unblurred) { filter: none !important; }
+/* When the user turns visual blur off globally, hide blur visually but keep the 'unblurred' state untouched */
+body.blur-visual-off .blur-target { filter: none !important; }
+body.blur-visual-off .blur-target, body.blur-visual-off .blur-target * { color: unset !important; }
 
 /* Gloss styling */
 .gloss{ text-decoration:underline dotted; cursor:help; }
 
-/* Tippy override for tooltip links */
+/* Tooltip and image viewer adjustments (kept as before) */
 .tippy-box .tippy-content a, .tippy-box a { color: var(--tooltip-link-color) !important; text-decoration: underline; }
-
 .tippy-box { z-index: 99999 !important; }
-
 .tippy-box .tippy-content { padding: 0; box-sizing: border-box; overflow: visible; }
 .tippy-box .tippy-content img.tooltip-img { display: block; width: 100%; height: var(--tooltip-image-height); object-fit: cover; border-top-left-radius: 8px; border-top-right-radius: 8px; margin: 0; user-select: none; cursor: pointer; }
 .tippy-box .tippy-content .tooltip-body { padding: 10px 12px; box-sizing: border-box; max-height: calc(80vh - var(--tooltip-image-height)); overflow:auto; -webkit-overflow-scrolling: touch; }
