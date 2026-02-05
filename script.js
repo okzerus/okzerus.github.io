@@ -1,4 +1,4 @@
-// script.js - small fix: always include images as blur targets (even if not loaded yet)
+// script.js - always-include-images-for-blur + images unblur when viewport center reaches image top
 document.addEventListener('DOMContentLoaded', () => {
   /* DOM refs */
   const chaptersListEl = document.getElementById('chapters');
@@ -39,10 +39,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const preloadedImgCache = new Map();
 
   /* blur & animation config */
-  const BLUR_THRESHOLD_Y_RATIO = 0.5; // middle
+  const BLUR_THRESHOLD_Y_RATIO = 0.5; // middle of viewport
   const BLUR_VISUAL_KEY = 'blur-visual-enabled';
 
-  /* ========== color picker & theme helpers (copied from previous working code) ========== */
+  /* ========== color picker & theme helpers ========== */
   const DEFAULT_BG_HEX = '#0b0f13';
   const CARD_LIGHTNESS_DELTA = 0.03333333333333333;
   const CONTRAST_LUMINANCE_THRESHOLD = 0.50;
@@ -131,7 +131,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  /* Color picker (kept) */
+  /* Color picker helpers (kept) */
   const STORAGE_KEY = 'site-bg-color';
   let hsv = { h: 210, s: 0.3, v: 0.05 };
 
@@ -285,7 +285,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Collect targets: top-level children; images inside blocks become their own targets.
-  // IMPORTANT CHANGE: we include images even if they haven't loaded yet (no rect check), so they get blurred.
+  // NOTE: images are included even if not loaded yet.
   function collectTargets() {
     const targets = [];
     const children = Array.from(chapterBodyEl.children);
@@ -336,11 +336,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function initBlurTargetsForChapter(filename, blurEnabled = true) {
     if (!chapterBodyEl) return;
-    // cleanup existing (keep 'unblurred' state as it may be persisted)
+    // cleanup existing (preserve 'unblurred' if it exists)
     chapterBodyEl.querySelectorAll('.blur-target').forEach(old => {
       old.classList.remove('is-blurred', 'hover-reveal');
-      // keep 'unblurred' class if present (so we don't wipe previously-read state)
-      old.classList.remove('blur-target'); // we'll re-add it below
+      old.classList.remove('blur-target'); // will re-add
     });
 
     const targets = collectTargets();
@@ -357,7 +356,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
-      // initial state - preserve existing unblurred if present OR if in readSet
+      // initial state
       if (el.classList.contains('unblurred') || readSet.has(idx)) {
         el.classList.add('unblurred');
         el.classList.remove('is-blurred');
@@ -369,7 +368,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       }
 
-      // attach hover handlers (safe to attach multiple times, browser will ignore duplicates if identical)
+      // hover handlers
       el.addEventListener('mouseenter', () => { if (!el.classList.contains('unblurred')) revealTemp(el); });
       el.addEventListener('mouseleave', () => { if (!el.classList.contains('unblurred')) hideTemp(el); });
       el.addEventListener('touchstart', () => { if (!el.classList.contains('unblurred')) revealTemp(el); }, {passive:true});
@@ -377,7 +376,9 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Unblur logic when scrolling: text: top crossing center; images: center crossing center
+  // Unblur logic when scrolling:
+  // - text blocks: unblur when their TOP crosses center line (rect.top < centerY)
+  // - images: REVERTED: unblur when viewport center reaches image TOP (rect.top < centerY)
   let scrollScheduled = false;
   function checkAndUnblurVisibleTargets() {
     if (!chapterBodyEl) return;
@@ -392,9 +393,9 @@ document.addEventListener('DOMContentLoaded', () => {
       if (el.classList.contains('unblurred')) return;
       const rect = el.getBoundingClientRect();
       let trigger = false;
+      // REVERTED: images unblur when their TOP reaches center (same rule as text)
       if (el.tagName && el.tagName.toLowerCase() === 'img') {
-        const midY = rect.top + rect.height / 2;
-        if (midY < centerY) trigger = true;
+        if (rect.top < centerY) trigger = true;
       } else {
         if (rect.top < centerY) trigger = true;
       }
@@ -682,12 +683,11 @@ document.addEventListener('DOMContentLoaded', () => {
   overlay.addEventListener('click', (ev) => { if (ev.target === overlay) closeImageViewer(); });
   window.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && overlay.classList.contains('visible')) closeImageViewer(); });
 
-  // Bind images to viewer *without replacing nodes* (keeps blur classes intact)
+  // Bind images to viewer without replacing nodes (keeps blur classes intact)
   function bindImagesToViewer() {
     const imgs = chapterBodyEl.querySelectorAll('img');
     imgs.forEach(img => {
       img.style.cursor = 'pointer';
-      // protect against double-binding
       if (!img._viewerBound) {
         img.addEventListener('click', (e) => {
           const src = img.getAttribute('src') || img.getAttribute('data-src') || '';
@@ -829,14 +829,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (chObj && chObj.blur === false) blurEnabledForChapter = false;
       } catch (e) {}
 
-      // initialize blur targets now (collectTargets always includes images)
+      // initialize blur targets now
       initBlurTargetsForChapter(filename, blurEnabledForChapter);
 
       // preload tooltip images and init tippy
       preloadTooltipImages();
       initGlossTippy();
 
-      // bind images to viewer without replacing nodes (keeps classes intact)
+      // bind images to viewer (no node replacement)
       bindImagesToViewer();
 
       updateNavButtons();
