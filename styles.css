@@ -181,33 +181,39 @@ body.blur-visual-off .blur-target, body.blur-visual-off .blur-target * { color: 
 /* utilities */
 .visually-hidden { position: absolute !important; height: 1px; width: 1px; overflow: hidden; clip: rect(1px,1px,1px,1px); white-space: nowrap; }
 
-/* ========== GLOW styles (uses CSS variables populated by JS) ========== */
+/* ========== GLOW styles (updated, two-layer soft glow) ========== */
 
 /*
-Per-element variables set by JS:
+Per-element CSS variables (set by JS):
   --glow-color: "R,G,B" (e.g. "255,200,120")
-  --glow-radius: "14px"
-  --glow-alpha: "0.6"
+  --glow-r1: "6px"      -> small inner soft glow radius
+  --glow-a1: "0.45"     -> alpha for inner glow
+  --glow-r2: "18px"     -> large outer halo radius
+  --glow-a2: "0.18"     -> alpha for outer halo
 
-Usage in HTML:
-  <span class="glow" data-glow-strength="0.8">Text</span>
+Usage:
+  <span class="glow" data-glow-strength="1.2">Shiny text</span>
 */
 .glow {
   position: relative;
-  /* defaults */
   --glow-color: 255,255,255;
-  --glow-radius: 14px;
-  --glow-alpha: 0.6;
-  /* single soft shadow to avoid thickened/bold look */
-  text-shadow: 0 0 var(--glow-radius) rgba(var(--glow-color), var(--glow-alpha));
+  --glow-r1: 6px;
+  --glow-a1: 0.55;
+  --glow-r2: 14px;
+  --glow-a2: 0.20;
+
+  /* two-layer soft shadow: small + wide, avoids boldening */
+  text-shadow:
+    0 0 var(--glow-r1) rgba(var(--glow-color), var(--glow-a1)),
+    0 0 var(--glow-r2) rgba(var(--glow-color), var(--glow-a2));
+
   transition: text-shadow var(--blur-duration) ease, color var(--blur-duration) ease;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* When the element is in a blurred block, fade the glow out smoothly by switching text-shadow to zero.
-   Because the rule is declared after .glow and has same specificity, it will override the computed text-shadow
-   and the transition will animate the change. */
+/* When block is blurred, fade glow smoothly by removing shadows (same transition time).
+   Because both rules have same specificity, CSS transition animates the change nicely. */
 .blur-target.is-blurred .glow {
-  text-shadow: 0 0 0 rgba(var(--glow-color), 0);
+  text-shadow: 0 0 0 rgba(0,0,0,0);
 }
