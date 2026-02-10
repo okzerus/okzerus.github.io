@@ -181,39 +181,26 @@ body.blur-visual-off .blur-target, body.blur-visual-off .blur-target * { color: 
 /* utilities */
 .visually-hidden { position: absolute !important; height: 1px; width: 1px; overflow: hidden; clip: rect(1px,1px,1px,1px); white-space: nowrap; }
 
-/* ========== GLOW styles (updated, two-layer soft glow) ========== */
+/* ========== GLOW styles (uses CSS variable --glow-shadow set by JS) ========== */
 
 /*
-Per-element CSS variables (set by JS):
-  --glow-color: "R,G,B" (e.g. "255,200,120")
-  --glow-r1: "6px"      -> small inner soft glow radius
-  --glow-a1: "0.45"     -> alpha for inner glow
-  --glow-r2: "18px"     -> large outer halo radius
-  --glow-a2: "0.18"     -> alpha for outer halo
-
-Usage:
-  <span class="glow" data-glow-strength="1.2">Shiny text</span>
+JS sets:
+  --glow-color: "R,G,B"
+  --glow-shadow: "0 0 4px rgba(...), 0 0 8px rgba(...), ..."
+CSS uses --glow-shadow for the visible glow. When blur-active, a more specific rule overrides text-shadow to fade glow away.
 */
 .glow {
   position: relative;
+  display: inline-block;
   --glow-color: 255,255,255;
-  --glow-r1: 6px;
-  --glow-a1: 0.55;
-  --glow-r2: 14px;
-  --glow-a2: 0.20;
-
-  /* two-layer soft shadow: small + wide, avoids boldening */
-  text-shadow:
-    0 0 var(--glow-r1) rgba(var(--glow-color), var(--glow-a1)),
-    0 0 var(--glow-r2) rgba(var(--glow-color), var(--glow-a2));
-
+  --glow-shadow: none;
+  text-shadow: var(--glow-shadow);
   transition: text-shadow var(--blur-duration) ease, color var(--blur-duration) ease;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* When block is blurred, fade glow smoothly by removing shadows (same transition time).
-   Because both rules have same specificity, CSS transition animates the change nicely. */
+/* Fade glow smoothly when parent block is blurred */
 .blur-target.is-blurred .glow {
-  text-shadow: 0 0 0 rgba(0,0,0,0);
+  text-shadow: 0 0 0 rgba(var(--glow-color), 0);
 }
