@@ -36,16 +36,16 @@ header{
 header h1{ margin:0; font-size:18px; font-weight:700; flex:1 }
 .header-controls{ display:flex; gap:8px; align-items:center; position:relative }
 
-/* Blur toggle */
+/* Buttons (theme/blur) */
 #blur-toggle, #theme-toggle{
   width:40px; height:40px; border-radius:10px; border:0; background:var(--btn-bg); color:var(--btn-fg);
   font-size:16px; cursor:pointer; display:flex; align-items:center; justify-content:center;
-  box-shadow: 0 8px 20px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.08);
+  box-shadow: 0 12px 40px rgba(0,0,0,0.32);
   transition: box-shadow 180ms ease, transform 120ms ease;
-  border: 2px solid rgba(var(--bg-r), var(--bg-g), var(--bg-b), 0.50);
+  border: 3px solid rgba(var(--bg-r), var(--bg-g), var(--bg-b), 0.65);
 }
 #blur-toggle{ margin-right:6px; }
-#blur-toggle:hover, #theme-toggle:hover{ transform: translateY(-2px); box-shadow: 0 12px 28px rgba(0,0,0,0.26), inset 0 1px 0 rgba(255,255,255,0.10); }
+#blur-toggle:hover, #theme-toggle:hover{ transform: translateY(-2px); box-shadow: 0 18px 48px rgba(0,0,0,0.34); }
 
 /* Color popup panel */
 .color-picker-container { position: relative; display:inline-block; }
@@ -78,8 +78,8 @@ header h1{ margin:0; font-size:18px; font-weight:700; flex:1 }
 .hue-slider { width: 20px; height: 160px; border-radius:6px; position:relative; cursor: ns-resize; background: linear-gradient(to top, red, yellow, lime, cyan, blue, magenta, red); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.03); }
 .hue-cursor { position:absolute; left: -4px; right: -4px; height:6px; border-radius:4px; background:#fff; box-shadow:0 2px 6px rgba(0,0,0,0.35); transform: translateY(-3px); pointer-events:none; }
 .picker-reset-wrap { display:flex; justify-content:center; margin-top:10px; }
-.small { padding:6px 10px; border-radius:8px; border:0; background:var(--btn-bg); color:var(--btn-fg); cursor:pointer; box-shadow: 0 8px 20px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.08); transition: box-shadow 180ms ease, transform 120ms ease; border: 2px solid rgba(var(--bg-r), var(--bg-g), var(--bg-b), 0.50); }
-.small:hover { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(0,0,0,0.26), inset 0 1px 0 rgba(255,255,255,0.10); }
+.small { padding:6px 10px; border-radius:8px; border:0; background:var(--btn-bg); color:var(--btn-fg); cursor:pointer; box-shadow: 0 12px 32px rgba(0,0,0,0.28); transition: box-shadow 180ms ease, transform 120ms ease; border: 3px solid rgba(var(--bg-r), var(--bg-g), var(--bg-b), 0.65); }
+.small:hover { transform: translateY(-2px); box-shadow: 0 18px 40px rgba(0,0,0,0.30); }
 
 /* Layout */
 main{ display:block; padding:18px; }
@@ -108,9 +108,9 @@ body.chapters-open #chapters-list{ transform:translateX(0); }
 
 /* nav buttons */
 .chapter-nav{ display:flex; gap:12px; align-items:center; }
-.nav-btn{ width:56px; height:40px; border-radius:8px; border:0; background:var(--btn-bg); color:var(--btn-fg); font-size:16px; cursor:pointer; box-shadow: 0 8px 20px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.08); transition: box-shadow 200ms ease, transform 120ms ease, opacity 160ms ease; border: 2px solid rgba(var(--bg-r), var(--bg-g), var(--bg-b), 0.50); }
+.nav-btn{ width:56px; height:40px; border-radius:8px; border:0; background:var(--btn-bg); color:var(--btn-fg); font-size:16px; cursor:pointer; box-shadow: 0 16px 40px rgba(0,0,0,0.28); transition: box-shadow 200ms ease, transform 120ms ease, opacity 160ms ease; border: 4px solid rgba(var(--bg-r), var(--bg-g), var(--bg-b), 0.65); }
 .nav-btn:disabled{ opacity:0.35; pointer-events:none }
-.nav-btn:hover { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(0,0,0,0.26), inset 0 1px 0 rgba(255,255,255,0.10); }
+.nav-btn:hover { transform: translateY(-2px); box-shadow: 0 22px 48px rgba(0,0,0,0.32); }
 #bottom-nav{ margin-top:24px; display:flex; justify-content:center; transition: opacity 180ms ease; }
 #top-nav{ position:fixed; left:50%; transform: translateX(-50%) translateY(-6px); z-index:1300; opacity:0; pointer-events:none; display:flex; gap:12px; transition: opacity 260ms ease, transform 260ms ease; }
 #top-nav.visible-top{ opacity:1; transform: translateX(-50%) translateY(0); pointer-events:auto; }
@@ -119,29 +119,25 @@ body.chapters-open #chapters-list{ transform:translateX(0); }
 
 /* Targets that can be blurred */
 .blur-target {
-  /* filter transition controlled here */
   transition: filter var(--blur-duration) ease;
-  /* ensure text rendering remains crisp */
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* When blurred: apply blur filter on the element and force all descendant text color to the accent color.
-   Using a class is robust across DOM node replacements and triggers smooth transitions. */
+/* When blurred: apply blur filter on the element and force descendant text color to the accent color.
+   Smooth color transition is enabled (no !important for text-shadow so it can fade too). */
 .blur-target.is-blurred {
-  filter: blur(6px); /* the filter value; keep consistent with JS BLUR_FILTER */
+  filter: blur(6px);
 }
 
 /* Force descendant colors to site accent while blurred (hide inline colored text).
    color transition is applied for smoothness. */
 .blur-target.is-blurred, .blur-target.is-blurred * {
-  /* descendant color forced to accent to hide inline colors */
   color: var(--accent) !important;
   transition: color var(--blur-duration) ease !important;
 }
 
-/* Hover reveal: temporarily remove blur + forced color so original colors show.
-   Important: use !important to override the .is-blurred rules when hovered. */
+/* Hover reveal (temporary) */
 .blur-target.hover-reveal {
   filter: none !important;
 }
@@ -160,7 +156,7 @@ body.blur-visual-off .blur-target, body.blur-visual-off .blur-target * { color: 
 /* Gloss styling */
 .gloss{ text-decoration:underline dotted; cursor:help; }
 
-/* Tooltip and image viewer adjustments (kept as before) */
+/* Tooltip and image viewer adjustments */
 .tippy-box .tippy-content a, .tippy-box a { color: var(--tooltip-link-color) !important; text-decoration: underline; }
 .tippy-box { z-index: 99999 !important; }
 .tippy-box .tippy-content { padding: 0; box-sizing: border-box; overflow: visible; }
@@ -185,41 +181,33 @@ body.blur-visual-off .blur-target, body.blur-visual-off .blur-target * { color: 
 /* utilities */
 .visually-hidden { position: absolute !important; height: 1px; width: 1px; overflow: hidden; clip: rect(1px,1px,1px,1px); white-space: nowrap; }
 
-/* ========== GLOW styles ========== */
+/* ========== GLOW styles (uses CSS variables populated by JS) ========== */
 
 /*
-Usage:
-  <span class="glow" data-glow-strength="0.8">Shiny</span>
+Per-element variables set by JS:
+  --glow-color: "R,G,B" (e.g. "255,200,120")
+  --glow-radius: "14px"
+  --glow-alpha: "0.6"
 
-- Strength: 0..1 (float). Default ~0.6.
-- Glow uses the element's color (currentColor).
-- Glow transitions match the blur animation speed (var(--blur-duration)).
-- Glow is forcibly hidden when the element is inside a blurred container (.blur-target.is-blurred).
+Usage in HTML:
+  <span class="glow" data-glow-strength="0.8">Text</span>
 */
-
 .glow {
   position: relative;
-  /* fallback values in case JS doesn't run */
-  --glow-g1: 6px;
-  --glow-g2: 14px;
-  --glow-opacity: 0.9;
-  text-shadow: 0 0 var(--glow-g1) currentColor, 0 0 var(--glow-g2) currentColor;
+  /* defaults */
+  --glow-color: 255,255,255;
+  --glow-radius: 14px;
+  --glow-alpha: 0.6;
+  /* single soft shadow to avoid thickened/bold look */
+  text-shadow: 0 0 var(--glow-radius) rgba(var(--glow-color), var(--glow-alpha));
   transition: text-shadow var(--blur-duration) ease, color var(--blur-duration) ease;
-  /* slightly increase legibility on glow */
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* A subtle stronger outline for small strength values */
-.glow[ data-glow-strength ] { /* presence only */ }
-
-/* When the element is inside a blurred block, hide glow completely */
-.blur-target.is-blurred .glow,
-.blur-target.is-blurred .glow * {
-  text-shadow: none !important;
-  filter: none !important;
-  box-shadow: none !important;
+/* When the element is in a blurred block, fade the glow out smoothly by switching text-shadow to zero.
+   Because the rule is declared after .glow and has same specificity, it will override the computed text-shadow
+   and the transition will animate the change. */
+.blur-target.is-blurred .glow {
+  text-shadow: 0 0 0 rgba(var(--glow-color), 0);
 }
-
-/* Also remove glow when visual blur is globally switched off? no — only blurred blocks hide glow. */
-/* If you want to globally hide glow, add body.no-glow .glow { text-shadow:none } */
