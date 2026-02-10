@@ -1,4 +1,6 @@
-// script.js - main app + "glow" feature added
+// script.js - glow uses CSS variables (color,radius,alpha). blur smoothly transitions glow away.
+// Full file replacement.
+
 document.addEventListener('DOMContentLoaded', () => {
   /* DOM refs */
   const chaptersListEl = document.getElementById('chapters');
@@ -129,7 +131,7 @@ document.addEventListener('DOMContentLoaded', () => {
       root.style.setProperty('--btn-fg', '#132029');
       root.style.setProperty('--tooltip-link-color', '#1b6ea1');
     }
-    // Keep glow elements in sync with any color changes (so their currentColor-based glow is correct)
+    // Update per-element glow color/radius so glow remains accurate
     updateGlowElements();
   }
 
@@ -249,6 +251,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
   /* ========== Glow subsystem ========== */
 
+  // Parse "rgb(...)" or "rgba(...)" to [r,g,b]
+  function parseRgbString(rgbStr) {
+    if (!rgbStr) return [255,255,255];
+    const m = rgbStr.match(/rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)/i);
+    if (!m) return [255,255,255];
+    return [Number(m[1]), Number(m[2]), Number(m[3])];
+  }
+
   // Update a single glow element using its data-glow-strength value.
   // strength: number 0..1 (defaults to 0.6)
   function updateGlowElement(el) {
@@ -260,13 +270,20 @@ document.addEventListener('DOMContentLoaded', () => {
         const n = parseFloat(raw);
         if (!Number.isNaN(n)) strength = Math.max(0, Math.min(1, n));
       }
-      // Map strength to two radius values (small + large); tweak factors if you want
-      const g1 = (6 * strength) || 3;   // inner glow radius
-      const g2 = (14 * strength) || 6;  // outer glow radius
-      el.style.setProperty('--glow-g1', g1 + 'px');
-      el.style.setProperty('--glow-g2', g2 + 'px');
-      // optionally set opacity scaling; currently text-shadow uses currentColor so alpha comes from color
-      // if you'd like to change alpha with strength: el.style.setProperty('--glow-opacity', (0.75 * strength).toString());
+      // Map strength to radius and alpha (soft glow - avoid boldening)
+      const radius = Math.max(4, Math.round(14 * strength));   // in px
+      const alpha = Math.max(0.12, Math.min(0.9, 0.55 * strength + 0.05)); // safe alpha range
+
+      // compute element's color
+      const cs = getComputedStyle(el);
+      const [r,g,b] = parseRgbString(cs.color);
+
+      // set CSS custom properties on the element
+      el.style.setProperty('--glow-color', `${r},${g},${b}`);
+      el.style.setProperty('--glow-radius', `${radius}px`);
+      el.style.setProperty('--glow-alpha', String(alpha));
+      // ensure we have transition present
+      el.style.transition = (el.style.transition || '') + ' text-shadow var(--blur-duration) ease, color var(--blur-duration) ease';
     } catch (e) {
       // ignore
     }
@@ -280,17 +297,17 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (e) {}
   }
 
-  // Also watch for newly-inserted content inside the chapter and update glows there
+  // Observe chapter area for inserted nodes and update glow for newly added items
   const chapterObserver = new MutationObserver((mutations) => {
-    let found = false;
-    mutations.forEach(m => {
-      if (m.addedNodes && m.addedNodes.length) found = true;
-    });
-    if (found) updateGlowElements();
+    let added = false;
+    for (const m of mutations) {
+      if (m.addedNodes && m.addedNodes.length) { added = true; break; }
+    }
+    if (added) updateGlowElements();
   });
   chapterObserver.observe(chapterBodyEl, { childList: true, subtree: true });
 
-  /* ========== Blur logic (class-based) ========== */
+  /* ========== color/blur helpers reused below ========== */
 
   function readStorageKeyFor(filename) { return 'read:' + filename; }
   function loadReadIndicesFor(filename) {
@@ -329,8 +346,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Collect targets: top-level children; images inside blocks become their own targets.
-  // NOTE: images are included even if not loaded yet.
+  /* ========== blur/targets largely unchanged ========== */
+
   function collectTargets() {
     const targets = [];
     const children = Array.from(chapterBodyEl.children);
@@ -343,14 +360,6 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
     return targets;
-  }
-
-  function applyBlurToTarget(el) {
-    if (!el) return;
-    el.classList.add('blur-target');
-    if (!el.classList.contains('unblurred')) {
-      if (isVisualBlurEnabled()) el.classList.add('is-blurred');
-    }
   }
 
   function removeBlurFromTarget(el, markRead = true) {
@@ -367,24 +376,14 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
   }
-
-  function revealTemp(el) {
-    if (!el) return;
-    if (el.classList.contains('unblurred')) return;
-    el.classList.add('hover-reveal');
-  }
-  function hideTemp(el) {
-    if (!el) return;
-    if (el.classList.contains('unblurred')) return;
-    el.classList.remove('hover-reveal');
-  }
+  function revealTemp(el) { if (!el) return; if (el.classList.contains('unblurred')) return; el.classList.add('hover-reveal'); }
+  function hideTemp(el) { if (!el) return; if (el.classList.contains('unblurred')) return; el.classList.remove('hover-reveal'); }
 
   function initBlurTargetsForChapter(filename, blurEnabled = true) {
     if (!chapterBodyEl) return;
-    // cleanup existing (preserve 'unblurred' if it exists)
     chapterBodyEl.querySelectorAll('.blur-target').forEach(old => {
       old.classList.remove('is-blurred', 'hover-reveal');
-      old.classList.remove('blur-target'); // will re-add
+      old.classList.remove('blur-target');
     });
 
     const targets = collectTargets();
@@ -394,14 +393,12 @@ document.addEventListener('DOMContentLoaded', () => {
       el.dataset.blurIndex = idx;
       el.classList.add('blur-target');
 
-      // if blur disabled for this chapter, mark unblurred
       if (!blurEnabled) {
         el.classList.add('unblurred');
         el.classList.remove('is-blurred');
         return;
       }
 
-      // initial state
       if (el.classList.contains('unblurred') || readSet.has(idx)) {
         el.classList.add('unblurred');
         el.classList.remove('is-blurred');
@@ -413,21 +410,17 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       }
 
-      // attach hover handlers
       el.addEventListener('mouseenter', () => { if (!el.classList.contains('unblurred')) revealTemp(el); });
       el.addEventListener('mouseleave', () => { if (!el.classList.contains('unblurred')) hideTemp(el); });
       el.addEventListener('touchstart', () => { if (!el.classList.contains('unblurred')) revealTemp(el); }, {passive:true});
       el.addEventListener('touchend', () => { if (!el.classList.contains('unblurred')) hideTemp(el); }, {passive:true});
     });
 
-    // after we attached blur-target classes, update glow usage:
-    // any glow elements inside blurred targets will be automatically suppressed via CSS rules.
+    // after blur-target assignment update glows inside (CSS will handle fade when blur toggles)
     updateGlowElements();
   }
 
-  // Unblur logic when scrolling:
-  // - text blocks: unblur when their TOP crosses center line (rect.top < centerY)
-  // - images: unblur when their TOP crosses center line (we reverted earlier)
+  // Unblur check (both text and images use top crossing center)
   let scrollScheduled = false;
   function checkAndUnblurVisibleTargets() {
     if (!chapterBodyEl) return;
@@ -442,11 +435,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (el.classList.contains('unblurred')) return;
       const rect = el.getBoundingClientRect();
       let trigger = false;
-      if (el.tagName && el.tagName.toLowerCase() === 'img') {
-        if (rect.top < centerY) trigger = true;
-      } else {
-        if (rect.top < centerY) trigger = true;
-      }
+      if (rect.top < centerY) trigger = true;
       if (trigger) removeBlurFromTarget(el, true);
     });
   }
@@ -461,7 +450,8 @@ document.addEventListener('DOMContentLoaded', () => {
   }, { passive: true });
   window.addEventListener('resize', () => { checkAndUnblurVisibleTargets(); });
 
-  /* ========== Tooltip image resolve & preload (kept) ========== */
+  /* ========== tooltips, tippy, preload kept as before ========== */
+
   function testImageUrl(url, timeout = 3000) {
     return new Promise(resolve => {
       const img = new Image();
@@ -546,7 +536,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  /* ---------- Tippy init (gloss) ---------- */
   function initGlossTippy() {
     if (!window.tippy) return;
     document.querySelectorAll('.gloss').forEach(el => { try { if (el._tippy) el._tippy.destroy(); } catch (e) {} });
@@ -597,7 +586,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  /* ---------- Nav tippies ---------- */
   function refreshNavTippies() {
     if (!window.tippy) return;
     [bottomPrev, bottomNext, topPrev, topNext].forEach(btn => { if (!btn) return; try { if (btn._tippy) btn._tippy.destroy(); } catch (e) {} });
@@ -620,7 +608,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   document.addEventListener('click', (e) => { if (!chaptersOpen) return; if (chaptersAside && chaptersAside.contains(e.target)) return; if (e.clientX <= EDGE_TRIGGER_PX) return; closeChapters(); });
 
-  /* ---------- Top nav behavior (kept) ---------- */
+  /* ---------- Top nav behavior ---------- */
   function positionTopNav() {
     if (!topNav || !headerEl) return;
     const hRect = headerEl.getBoundingClientRect();
