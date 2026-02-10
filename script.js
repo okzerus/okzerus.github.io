@@ -1,4 +1,4 @@
-// script.js - always-include-images-for-blur + images unblur when viewport center reaches image top
+// script.js - main app + "glow" feature added
 document.addEventListener('DOMContentLoaded', () => {
   /* DOM refs */
   const chaptersListEl = document.getElementById('chapters');
@@ -129,6 +129,8 @@ document.addEventListener('DOMContentLoaded', () => {
       root.style.setProperty('--btn-fg', '#132029');
       root.style.setProperty('--tooltip-link-color', '#1b6ea1');
     }
+    // Keep glow elements in sync with any color changes (so their currentColor-based glow is correct)
+    updateGlowElements();
   }
 
   /* Color picker helpers (kept) */
@@ -244,6 +246,49 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     applyHsvState(); requestAnimationFrame(updatePickerUI);
   })();
+
+  /* ========== Glow subsystem ========== */
+
+  // Update a single glow element using its data-glow-strength value.
+  // strength: number 0..1 (defaults to 0.6)
+  function updateGlowElement(el) {
+    try {
+      if (!el) return;
+      const raw = el.getAttribute('data-glow-strength');
+      let strength = 0.6;
+      if (raw !== null) {
+        const n = parseFloat(raw);
+        if (!Number.isNaN(n)) strength = Math.max(0, Math.min(1, n));
+      }
+      // Map strength to two radius values (small + large); tweak factors if you want
+      const g1 = (6 * strength) || 3;   // inner glow radius
+      const g2 = (14 * strength) || 6;  // outer glow radius
+      el.style.setProperty('--glow-g1', g1 + 'px');
+      el.style.setProperty('--glow-g2', g2 + 'px');
+      // optionally set opacity scaling; currently text-shadow uses currentColor so alpha comes from color
+      // if you'd like to change alpha with strength: el.style.setProperty('--glow-opacity', (0.75 * strength).toString());
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  // Update all glow elements on the page (called after chapter load and after color changes)
+  function updateGlowElements() {
+    try {
+      const els = document.querySelectorAll('.glow');
+      els.forEach(updateGlowElement);
+    } catch (e) {}
+  }
+
+  // Also watch for newly-inserted content inside the chapter and update glows there
+  const chapterObserver = new MutationObserver((mutations) => {
+    let found = false;
+    mutations.forEach(m => {
+      if (m.addedNodes && m.addedNodes.length) found = true;
+    });
+    if (found) updateGlowElements();
+  });
+  chapterObserver.observe(chapterBodyEl, { childList: true, subtree: true });
 
   /* ========== Blur logic (class-based) ========== */
 
@@ -368,17 +413,21 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       }
 
-      // hover handlers
+      // attach hover handlers
       el.addEventListener('mouseenter', () => { if (!el.classList.contains('unblurred')) revealTemp(el); });
       el.addEventListener('mouseleave', () => { if (!el.classList.contains('unblurred')) hideTemp(el); });
       el.addEventListener('touchstart', () => { if (!el.classList.contains('unblurred')) revealTemp(el); }, {passive:true});
       el.addEventListener('touchend', () => { if (!el.classList.contains('unblurred')) hideTemp(el); }, {passive:true});
     });
+
+    // after we attached blur-target classes, update glow usage:
+    // any glow elements inside blurred targets will be automatically suppressed via CSS rules.
+    updateGlowElements();
   }
 
   // Unblur logic when scrolling:
   // - text blocks: unblur when their TOP crosses center line (rect.top < centerY)
-  // - images: REVERTED: unblur when viewport center reaches image TOP (rect.top < centerY)
+  // - images: unblur when their TOP crosses center line (we reverted earlier)
   let scrollScheduled = false;
   function checkAndUnblurVisibleTargets() {
     if (!chapterBodyEl) return;
@@ -393,7 +442,6 @@ document.addEventListener('DOMContentLoaded', () => {
       if (el.classList.contains('unblurred')) return;
       const rect = el.getBoundingClientRect();
       let trigger = false;
-      // REVERTED: images unblur when their TOP reaches center (same rule as text)
       if (el.tagName && el.tagName.toLowerCase() === 'img') {
         if (rect.top < centerY) trigger = true;
       } else {
@@ -831,6 +879,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // initialize blur targets now
       initBlurTargetsForChapter(filename, blurEnabledForChapter);
+
+      // update glow elements inside the chapter (must happen after DOM insertion)
+      updateGlowElements();
 
       // preload tooltip images and init tippy
       preloadTooltipImages();
