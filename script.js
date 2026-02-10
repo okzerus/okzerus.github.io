@@ -1,4 +1,4 @@
-// script.js - full replacement with improved glow algorithm (perceived brightness aware)
+// script.js - full replacement with stronger perceptual glow (multi-layer), tooltip/image-viewer, blur, color picker, nav, etc.
 document.addEventListener('DOMContentLoaded', () => {
   /* DOM refs */
   const chaptersListEl = document.getElementById('chapters');
@@ -93,12 +93,11 @@ document.addEventListener('DOMContentLoaded', () => {
     return { r: Math.round(r * 255), g: Math.round(g * 255), b: Math.round(b * 255) };
   }
   function luminanceFromRgb(r, g, b) {
-    // r,g,b expected 0..255
     const srgb = [r, g, b].map(v => {
       v = v / 255;
       return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
     });
-    return 0.2126 * srgb[0] + 0.7152 * srgb[1] + 0.0722 * srgb[2]; // 0..1
+    return 0.2126 * srgb[0] + 0.7152 * srgb[1] + 0.0722 * srgb[2];
   }
 
   function computeCardFromBgHex(bgHex) {
@@ -247,97 +246,101 @@ document.addEventListener('DOMContentLoaded', () => {
     applyHsvState(); requestAnimationFrame(updatePickerUI);
   })();
 
-// ---------- glow helpers (replace existing functions) ----------
-/**
- * Parse "rgb(...)" or "rgba(...)" to [r,g,b]; fallback to white.
- */
-function parseRgbString(rgbStr) {
-  if (!rgbStr) return [255,255,255];
-  const m = rgbStr.match(/rgba?\(\s*([0-9]+)[,\s]+([0-9]+)[,\s]+([0-9]+)/i);
-  if (!m) return [255,255,255];
-  return [Number(m[1]), Number(m[2]), Number(m[3])];
-}
-function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
+  /* ========== Glow subsystem (much stronger multi-layer shadow) ========== */
 
-/**
- * Update a single glow element.
- * Accepts data-glow-strength (can be >1). Uses color luminance + chroma to boost glow for dark/saturated colors.
- */
-function updateGlowElement(el) {
-  try {
-    if (!el) return;
-    // parse strength (allow >1)
-    const raw = el.getAttribute('data-glow-strength');
-    let strength = 0.6;
-    if (raw !== null) {
-      const n = parseFloat(raw);
-      if (!Number.isNaN(n)) strength = Math.max(0, n);
-    }
-
-    // base tuning params (feel free to tweak)
-    const baseR1 = 6;    // inner glow base radius (px)
-    const baseR2 = 14;   // outer halo base radius (px)
-    const baseAlpha = 0.55; // base alpha for inner glow at strength 1 and mid luminance
-
-    // compute element color (currentColor)
-    const cs = getComputedStyle(el);
-    const [r,g,b] = parseRgbString(cs.color);
-
-    // perceived luminance in 0..1
-    const lum = (function(r,g,b){
-      const srgb = [r,g,b].map(v => {
-        v = v / 255;
-        return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
-      });
-      return 0.2126*srgb[0] + 0.7152*srgb[1] + 0.0722*srgb[2];
-    })(r,g,b);
-
-    // chroma (saturation proxy): (max-min)/255 -> 0..1
-    const maxc = Math.max(r,g,b), minc = Math.min(r,g,b);
-    const chroma = (maxc - minc) / 255;
-
-    // perceptual boost: darker & more saturated colors get more halo
-    const darkFactor = 1 + (1 - lum) * 1.6;    // ~1..2.6
-    const chromaFactor = 1 + chroma * 1.5;     // ~1..2.5
-
-    // combine with user strength (non-linear)
-    const effective = Math.max(0.25, strength) * Math.sqrt(darkFactor * chromaFactor);
-
-    // radii and alphas with sensible clamps
-    const r1 = Math.round(baseR1 * (0.6 + effective * 0.75)); // inner radius 4..(larger)
-    const r2 = Math.round(baseR2 * (0.9 + effective * 1.25)); // outer radius larger
-    let a1 = clamp(baseAlpha * (0.55 + effective * 0.8), 0.06, 0.98);
-    let a2 = clamp(a1 * 0.36, 0.02, 0.65);
-
-    // for very-bright colors (lum high) slightly reduce alpha so glow isn't too harsh
-    if (lum > 0.85) { a1 *= 0.7; a2 *= 0.65; }
-
-    // apply CSS variables (CSS expects comma-separated RGB for color)
-    el.style.setProperty('--glow-color', `${r},${g},${b}`);
-    el.style.setProperty('--glow-r1', `${r1}px`);
-    el.style.setProperty('--glow-a1', String(Number(a1.toFixed(3))));
-    el.style.setProperty('--glow-r2', `${r2}px`);
-    el.style.setProperty('--glow-a2', String(Number(a2.toFixed(3))));
-
-    // ensure transition available
-    if (!el.style.transition || !el.style.transition.includes('text-shadow')) {
-      el.style.transition = (el.style.transition ? el.style.transition + ', ' : '') + 'text-shadow var(--blur-duration) ease, color var(--blur-duration) ease';
-    }
-  } catch (e) {
-    // swallow errors to avoid breaking page
-    console.warn('updateGlowElement error', e);
+  // helper: parse rgb(...) or rgba(...) string -> [r,g,b]
+  function parseRgbString(rgbStr) {
+    if (!rgbStr) return [255,255,255];
+    const m = rgbStr.match(/rgba?\(\s*([0-9]+)[,\s]+([0-9]+)[,\s]+([0-9]+)/i);
+    if (!m) return [255,255,255];
+    return [Number(m[1]), Number(m[2]), Number(m[3])];
   }
-}
+  function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
 
-/**
- * Update all glow elements in the document.
- */
-function updateGlowElements() {
-  try {
-    document.querySelectorAll('.glow').forEach(updateGlowElement);
-  } catch (e) { console.warn('updateGlowElements error', e); }
-}
+  /**
+   * Build a strong layered text-shadow and store it in --glow-shadow.
+   * This uses multiple layers with increasing radius and decreasing alpha to produce a visible halo for saturated/dark colors.
+   *
+   * You can control behaviour with data-glow-strength (can be >1). Default is 0.6.
+   */
+  function updateGlowElement(el) {
+    try {
+      if (!el) return;
 
+      // Read user strength (allow >1)
+      const raw = el.getAttribute('data-glow-strength');
+      let strength = 0.6;
+      if (raw !== null) {
+        const n = parseFloat(raw);
+        if (!Number.isNaN(n)) strength = Math.max(0, n);
+      }
+
+      // Parameters (tweak if you want even stronger or subtler glow)
+      const GLOW_LAYERS = 14;      // more layers -> stronger, smoother glow
+      const BASE_RADIUS = 6;      // px base for inner
+      const MAX_RADIUS = 72;      // px outer maximum before scaling by effective
+      const BASE_ALPHA = 0.48;    // alpha base for inner-most layer at strength ~1
+
+      // compute color
+      const cs = getComputedStyle(el);
+      const [r,g,b] = parseRgbString(cs.color);
+
+      // perceived luminance: 0..1
+      const lum = luminanceFromRgb(r,g,b);
+
+      // chroma proxy: 0..1
+      const maxc = Math.max(r,g,b), minc = Math.min(r,g,b);
+      const chroma = (maxc - minc) / 255;
+
+      // perceptual boosts
+      const darkBoost = 1 + (1 - lum) * 2.2;   // dark colors get much more boost
+      const chromaBoost = 1 + chroma * 1.8;    // saturated colors also boosted
+
+      // effective multiplier based on strength and perceptual boosts (non-linear)
+      let effective = Math.max(0.35, strength) * Math.sqrt(darkBoost * chromaBoost);
+
+      // clamp to avoid absurd values (you can increase if you like)
+      effective = clamp(effective, 0.25, 6.0);
+
+      // Build layers: inner -> outer
+      const layers = [];
+      for (let i = 0; i < GLOW_LAYERS; i++) {
+        const t = i / (GLOW_LAYERS - 1); // 0..1
+        // radius increases nonlinearly: start at BASE_RADIUS, approach MAX_RADIUS * effective
+        const radius = Math.round(BASE_RADIUS + Math.pow(t, 1.05) * (MAX_RADIUS * effective));
+        // alpha decreases with t, inner is stronger
+        let alpha = BASE_ALPHA * (1 - t * 0.95) * (0.8 + (1 - lum) * 0.9) * (0.6 + (strength / 2));
+        // boost outer-alpha a bit for saturated/dark colors
+        alpha *= (0.85 + chroma * 0.9);
+        alpha = clamp(alpha, 0.01, 0.95);
+        // create layer string
+        layers.push(`0 0 ${radius}px rgba(${r},${g},${b},${alpha.toFixed(3)})`);
+      }
+      const shadow = layers.join(', ');
+
+      // Apply CSS variables for use in CSS rules (also store color)
+      el.style.setProperty('--glow-color', `${r},${g},${b}`);
+      el.style.setProperty('--glow-shadow', shadow);
+
+      // ensure transitions present
+      if (!el.style.transition || !el.style.transition.includes('text-shadow')) {
+        el.style.transition = (el.style.transition ? el.style.transition + ', ' : '') + 'text-shadow var(--blur-duration) ease, color var(--blur-duration) ease';
+      }
+    } catch (e) {
+      console.warn('updateGlowElement error', e);
+    }
+  }
+
+  function updateGlowElements() {
+    try {
+      const els = document.querySelectorAll('.glow');
+      els.forEach(updateGlowElement);
+    } catch (e) {
+      console.warn('updateGlowElements error', e);
+    }
+  }
+
+  // Observe chapter for new nodes to update glow on dynamic content
   const chapterObserver = new MutationObserver((mutations) => {
     let added = false;
     for (const m of mutations) {
@@ -347,7 +350,7 @@ function updateGlowElements() {
   });
   chapterObserver.observe(chapterBodyEl, { childList: true, subtree: true });
 
-  /* ========== Blur logic (class-based) ========== */
+  /* ========== color/blur helpers reused below ========== */
 
   function readStorageKeyFor(filename) { return 'read:' + filename; }
   function loadReadIndicesFor(filename) {
@@ -394,14 +397,6 @@ function updateGlowElements() {
     return targets;
   }
 
-  function applyBlurToTarget(el) {
-    if (!el) return;
-    el.classList.add('blur-target');
-    if (!el.classList.contains('unblurred')) {
-      if (isVisualBlurEnabled()) el.classList.add('is-blurred');
-    }
-  }
-
   function removeBlurFromTarget(el, markRead = true) {
     if (!el) return;
     if (el.classList.contains('unblurred')) return;
@@ -413,17 +408,8 @@ function updateGlowElements() {
       if (!Number.isNaN(index)) { set.add(index); saveReadIndicesFor(lastChapterFile, set); }
     }
   }
-
-  function revealTemp(el) {
-    if (!el) return;
-    if (el.classList.contains('unblurred')) return;
-    el.classList.add('hover-reveal');
-  }
-  function hideTemp(el) {
-    if (!el) return;
-    if (el.classList.contains('unblurred')) return;
-    el.classList.remove('hover-reveal');
-  }
+  function revealTemp(el) { if (!el) return; if (el.classList.contains('unblurred')) return; el.classList.add('hover-reveal'); }
+  function hideTemp(el) { if (!el) return; if (el.classList.contains('unblurred')) return; el.classList.remove('hover-reveal'); }
 
   function initBlurTargetsForChapter(filename, blurEnabled = true) {
     if (!chapterBodyEl) return;
@@ -458,7 +444,7 @@ function updateGlowElements() {
       el.addEventListener('touchend', () => { if (!el.classList.contains('unblurred')) hideTemp(el); }, {passive:true});
     });
 
-    // Update glows inside the chapter (CSS will fade glow with blur)
+    // Update glows inside the chapter (CSS will handle fade when blur toggles)
     updateGlowElements();
   }
 
@@ -476,7 +462,6 @@ function updateGlowElements() {
       if (el.classList.contains('unblurred')) return;
       const rect = el.getBoundingClientRect();
       let trigger = false;
-      // images & text: unblur when top crosses center (per your last request)
       if (rect.top < centerY) trigger = true;
       if (trigger) removeBlurFromTarget(el, true);
     });
