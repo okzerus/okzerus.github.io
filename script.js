@@ -283,7 +283,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // Darker colors need proportionally more glow to be visible.
       // Use a factor that grows as luminance decreases.
-      const darkBoost = 1 + (1 - lum) * 1.25; // 1.0..2.25
+      const darkBoost = 1 + (1 - lum) * 1.75; // 1.0..2.25
 
       // radius scales with strength and darkBoost
       const radius = Math.round(baseRadius * Math.max(0.35, strength) * darkBoost);
