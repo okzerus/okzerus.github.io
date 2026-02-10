@@ -184,3 +184,42 @@ body.blur-visual-off .blur-target, body.blur-visual-off .blur-target * { color: 
 
 /* utilities */
 .visually-hidden { position: absolute !important; height: 1px; width: 1px; overflow: hidden; clip: rect(1px,1px,1px,1px); white-space: nowrap; }
+
+/* ========== GLOW styles ========== */
+
+/*
+Usage:
+  <span class="glow" data-glow-strength="0.8">Shiny</span>
+
+- Strength: 0..1 (float). Default ~0.6.
+- Glow uses the element's color (currentColor).
+- Glow transitions match the blur animation speed (var(--blur-duration)).
+- Glow is forcibly hidden when the element is inside a blurred container (.blur-target.is-blurred).
+*/
+
+.glow {
+  position: relative;
+  /* fallback values in case JS doesn't run */
+  --glow-g1: 6px;
+  --glow-g2: 14px;
+  --glow-opacity: 0.9;
+  text-shadow: 0 0 var(--glow-g1) currentColor, 0 0 var(--glow-g2) currentColor;
+  transition: text-shadow var(--blur-duration) ease, color var(--blur-duration) ease;
+  /* slightly increase legibility on glow */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* A subtle stronger outline for small strength values */
+.glow[ data-glow-strength ] { /* presence only */ }
+
+/* When the element is inside a blurred block, hide glow completely */
+.blur-target.is-blurred .glow,
+.blur-target.is-blurred .glow * {
+  text-shadow: none !important;
+  filter: none !important;
+  box-shadow: none !important;
+}
+
+/* Also remove glow when visual blur is globally switched off? no — only blurred blocks hide glow. */
+/* If you want to globally hide glow, add body.no-glow .glow { text-shadow:none } */
