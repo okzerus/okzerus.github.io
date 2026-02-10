@@ -247,72 +247,96 @@ document.addEventListener('DOMContentLoaded', () => {
     applyHsvState(); requestAnimationFrame(updatePickerUI);
   })();
 
-  /* ========== Glow subsystem (improved for dark/saturated colors) ========== */
+// ---------- glow helpers (replace existing functions) ----------
+/**
+ * Parse "rgb(...)" or "rgba(...)" to [r,g,b]; fallback to white.
+ */
+function parseRgbString(rgbStr) {
+  if (!rgbStr) return [255,255,255];
+  const m = rgbStr.match(/rgba?\(\s*([0-9]+)[,\s]+([0-9]+)[,\s]+([0-9]+)/i);
+  if (!m) return [255,255,255];
+  return [Number(m[1]), Number(m[2]), Number(m[3])];
+}
+function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
 
-  // Parse "rgb(...)" or "rgba(...)" to [r,g,b]. Falls back to white.
-  function parseRgbString(rgbStr) {
-    if (!rgbStr) return [255,255,255];
-    const m = rgbStr.match(/rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)/i);
-    if (!m) return [255,255,255];
-    return [Number(m[1]), Number(m[2]), Number(m[3])];
-  }
-  function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
-
-  // Update a single glow element. Strength allowed to be >1 for stronger glow.
-  function updateGlowElement(el) {
-    try {
-      if (!el) return;
-      const raw = el.getAttribute('data-glow-strength');
-      // allow any positive strength; default 0.6
-      let strength = 0.6;
-      if (raw !== null) {
-        const n = parseFloat(raw);
-        if (!Number.isNaN(n)) strength = Math.max(0, n);
-      }
-
-      // Base tuning parameters (tweak these if you want overall stronger/weaker glow)
-      const baseRadius = 14;   // px at strength=1 and medium brightness
-      const baseAlpha = 0.55;  // alpha at strength=1 for medium brightness
-
-      // compute element color from computed style
-      const cs = getComputedStyle(el);
-      const [r,g,b] = parseRgbString(cs.color);
-
-      // perceived luminance (0..1)
-      const lum = luminanceFromRgb(r,g,b);
-
-      // Darker colors need proportionally more glow to be visible.
-      // Use a factor that grows as luminance decreases.
-      const darkBoost = 1 + (1 - lum) * 1.75; // 1.0..2.25
-
-      // radius scales with strength and darkBoost
-      const radius = Math.round(baseRadius * Math.max(0.35, strength) * darkBoost);
-
-      // alpha scales with strength and darkBoost, but kept in a safe range
-      let alpha = baseAlpha * Math.max(0.25, strength) * (0.85 + (1 - lum) * 0.6);
-      alpha = clamp(alpha, 0.04, 0.98);
-
-      // apply CSS variables expected by styles.css
-      el.style.setProperty('--glow-color', `${r},${g},${b}`);
-      el.style.setProperty('--glow-radius', `${radius}px`);
-      el.style.setProperty('--glow-alpha', String(alpha));
-
-      // ensure transitions are present
-      // (styles.css already defines transition, but setting here ensures per-element smoothing)
-      if (!el.style.transition.includes('text-shadow')) {
-        el.style.transition = (el.style.transition ? el.style.transition + ', ' : '') + 'text-shadow var(--blur-duration) ease, color var(--blur-duration) ease';
-      }
-    } catch (e) {
-      // ignore errors
+/**
+ * Update a single glow element.
+ * Accepts data-glow-strength (can be >1). Uses color luminance + chroma to boost glow for dark/saturated colors.
+ */
+function updateGlowElement(el) {
+  try {
+    if (!el) return;
+    // parse strength (allow >1)
+    const raw = el.getAttribute('data-glow-strength');
+    let strength = 0.6;
+    if (raw !== null) {
+      const n = parseFloat(raw);
+      if (!Number.isNaN(n)) strength = Math.max(0, n);
     }
-  }
 
-  function updateGlowElements() {
-    try {
-      const els = document.querySelectorAll('.glow');
-      els.forEach(updateGlowElement);
-    } catch (e) {}
+    // base tuning params (feel free to tweak)
+    const baseR1 = 6;    // inner glow base radius (px)
+    const baseR2 = 14;   // outer halo base radius (px)
+    const baseAlpha = 0.55; // base alpha for inner glow at strength 1 and mid luminance
+
+    // compute element color (currentColor)
+    const cs = getComputedStyle(el);
+    const [r,g,b] = parseRgbString(cs.color);
+
+    // perceived luminance in 0..1
+    const lum = (function(r,g,b){
+      const srgb = [r,g,b].map(v => {
+        v = v / 255;
+        return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+      });
+      return 0.2126*srgb[0] + 0.7152*srgb[1] + 0.0722*srgb[2];
+    })(r,g,b);
+
+    // chroma (saturation proxy): (max-min)/255 -> 0..1
+    const maxc = Math.max(r,g,b), minc = Math.min(r,g,b);
+    const chroma = (maxc - minc) / 255;
+
+    // perceptual boost: darker & more saturated colors get more halo
+    const darkFactor = 1 + (1 - lum) * 1.6;    // ~1..2.6
+    const chromaFactor = 1 + chroma * 1.5;     // ~1..2.5
+
+    // combine with user strength (non-linear)
+    const effective = Math.max(0.25, strength) * Math.sqrt(darkFactor * chromaFactor);
+
+    // radii and alphas with sensible clamps
+    const r1 = Math.round(baseR1 * (0.6 + effective * 0.75)); // inner radius 4..(larger)
+    const r2 = Math.round(baseR2 * (0.9 + effective * 1.25)); // outer radius larger
+    let a1 = clamp(baseAlpha * (0.55 + effective * 0.8), 0.06, 0.98);
+    let a2 = clamp(a1 * 0.36, 0.02, 0.65);
+
+    // for very-bright colors (lum high) slightly reduce alpha so glow isn't too harsh
+    if (lum > 0.85) { a1 *= 0.7; a2 *= 0.65; }
+
+    // apply CSS variables (CSS expects comma-separated RGB for color)
+    el.style.setProperty('--glow-color', `${r},${g},${b}`);
+    el.style.setProperty('--glow-r1', `${r1}px`);
+    el.style.setProperty('--glow-a1', String(Number(a1.toFixed(3))));
+    el.style.setProperty('--glow-r2', `${r2}px`);
+    el.style.setProperty('--glow-a2', String(Number(a2.toFixed(3))));
+
+    // ensure transition available
+    if (!el.style.transition || !el.style.transition.includes('text-shadow')) {
+      el.style.transition = (el.style.transition ? el.style.transition + ', ' : '') + 'text-shadow var(--blur-duration) ease, color var(--blur-duration) ease';
+    }
+  } catch (e) {
+    // swallow errors to avoid breaking page
+    console.warn('updateGlowElement error', e);
   }
+}
+
+/**
+ * Update all glow elements in the document.
+ */
+function updateGlowElements() {
+  try {
+    document.querySelectorAll('.glow').forEach(updateGlowElement);
+  } catch (e) { console.warn('updateGlowElements error', e); }
+}
 
   const chapterObserver = new MutationObserver((mutations) => {
     let added = false;
