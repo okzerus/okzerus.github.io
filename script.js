@@ -1,4 +1,4 @@
-// script.js - full replacement with stronger perceptual glow (multi-layer), tooltip/image-viewer, blur, color picker, nav, etc.
+// script.js - same as before with glow capture for `.glow` elements
 document.addEventListener('DOMContentLoaded', () => {
   /* DOM refs */
   const chaptersListEl = document.getElementById('chapters');
@@ -42,7 +42,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const BLUR_THRESHOLD_Y_RATIO = 0.5; // middle of viewport
   const BLUR_VISUAL_KEY = 'blur-visual-enabled';
 
-  /* ========== color picker & theme helpers ========== */
+  /* ========== color picker & theme helpers (kept) ========== */
   const DEFAULT_BG_HEX = '#0b0f13';
   const CARD_LIGHTNESS_DELTA = 0.03333333333333333;
   const CONTRAST_LUMINANCE_THRESHOLD = 0.50;
@@ -129,10 +129,9 @@ document.addEventListener('DOMContentLoaded', () => {
       root.style.setProperty('--btn-fg', '#132029');
       root.style.setProperty('--tooltip-link-color', '#1b6ea1');
     }
-    updateGlowElements(); // keep glow in sync when bg color changes
   }
 
-  /* Color picker helpers (kept) */
+  /* Color picker (kept) */
   const STORAGE_KEY = 'site-bg-color';
   let hsv = { h: 210, s: 0.3, v: 0.05 };
 
@@ -246,111 +245,7 @@ document.addEventListener('DOMContentLoaded', () => {
     applyHsvState(); requestAnimationFrame(updatePickerUI);
   })();
 
-  /* ========== Glow subsystem (much stronger multi-layer shadow) ========== */
-
-  // helper: parse rgb(...) or rgba(...) string -> [r,g,b]
-  function parseRgbString(rgbStr) {
-    if (!rgbStr) return [255,255,255];
-    const m = rgbStr.match(/rgba?\(\s*([0-9]+)[,\s]+([0-9]+)[,\s]+([0-9]+)/i);
-    if (!m) return [255,255,255];
-    return [Number(m[1]), Number(m[2]), Number(m[3])];
-  }
-  function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
-
-  /**
-   * Build a strong layered text-shadow and store it in --glow-shadow.
-   * This uses multiple layers with increasing radius and decreasing alpha to produce a visible halo for saturated/dark colors.
-   *
-   * You can control behaviour with data-glow-strength (can be >1). Default is 0.6.
-   */
-  function updateGlowElement(el) {
-    try {
-      if (!el) return;
-
-      // Read user strength (allow >1)
-      const raw = el.getAttribute('data-glow-strength');
-      let strength = 0.6;
-      if (raw !== null) {
-        const n = parseFloat(raw);
-        if (!Number.isNaN(n)) strength = Math.max(0, n);
-      }
-
-      // Parameters (tweak if you want even stronger or subtler glow)
-      const GLOW_LAYERS = 14;      // more layers -> stronger, smoother glow
-      const BASE_RADIUS = 6;      // px base for inner
-      const MAX_RADIUS = 72;      // px outer maximum before scaling by effective
-      const BASE_ALPHA = 0.48;    // alpha base for inner-most layer at strength ~1
-
-      // compute color
-      const cs = getComputedStyle(el);
-      const [r,g,b] = parseRgbString(cs.color);
-
-      // perceived luminance: 0..1
-      const lum = luminanceFromRgb(r,g,b);
-
-      // chroma proxy: 0..1
-      const maxc = Math.max(r,g,b), minc = Math.min(r,g,b);
-      const chroma = (maxc - minc) / 255;
-
-      // perceptual boosts
-      const darkBoost = 1 + (1 - lum) * 2.2;   // dark colors get much more boost
-      const chromaBoost = 1 + chroma * 1.8;    // saturated colors also boosted
-
-      // effective multiplier based on strength and perceptual boosts (non-linear)
-      let effective = Math.max(0.35, strength) * Math.sqrt(darkBoost * chromaBoost);
-
-      // clamp to avoid absurd values (you can increase if you like)
-      effective = clamp(effective, 0.25, 6.0);
-
-      // Build layers: inner -> outer
-      const layers = [];
-      for (let i = 0; i < GLOW_LAYERS; i++) {
-        const t = i / (GLOW_LAYERS - 1); // 0..1
-        // radius increases nonlinearly: start at BASE_RADIUS, approach MAX_RADIUS * effective
-        const radius = Math.round(BASE_RADIUS + Math.pow(t, 1.05) * (MAX_RADIUS * effective));
-        // alpha decreases with t, inner is stronger
-        let alpha = BASE_ALPHA * (1 - t * 0.95) * (0.8 + (1 - lum) * 0.9) * (0.6 + (strength / 2));
-        // boost outer-alpha a bit for saturated/dark colors
-        alpha *= (0.85 + chroma * 0.9);
-        alpha = clamp(alpha, 0.01, 0.95);
-        // create layer string
-        layers.push(`0 0 ${radius}px rgba(${r},${g},${b},${alpha.toFixed(3)})`);
-      }
-      const shadow = layers.join(', ');
-
-      // Apply CSS variables for use in CSS rules (also store color)
-      el.style.setProperty('--glow-color', `${r},${g},${b}`);
-      el.style.setProperty('--glow-shadow', shadow);
-
-      // ensure transitions present
-      if (!el.style.transition || !el.style.transition.includes('text-shadow')) {
-        el.style.transition = (el.style.transition ? el.style.transition + ', ' : '') + 'text-shadow var(--blur-duration) ease, color var(--blur-duration) ease';
-      }
-    } catch (e) {
-      console.warn('updateGlowElement error', e);
-    }
-  }
-
-  function updateGlowElements() {
-    try {
-      const els = document.querySelectorAll('.glow');
-      els.forEach(updateGlowElement);
-    } catch (e) {
-      console.warn('updateGlowElements error', e);
-    }
-  }
-
-  // Observe chapter for new nodes to update glow on dynamic content
-  const chapterObserver = new MutationObserver((mutations) => {
-    let added = false;
-    for (const m of mutations) {
-      if (m.addedNodes && m.addedNodes.length) { added = true; break; }
-    }
-    if (added) updateGlowElements();
-  });
-  chapterObserver.observe(chapterBodyEl, { childList: true, subtree: true });
-
-  /* ========== color/blur helpers reused below ========== */
+  /* ========== Blur logic (class-based) ========== */
 
   function readStorageKeyFor(filename) { return 'read:' + filename; }
   function loadReadIndicesFor(filename) {
@@ -377,12 +272,20 @@ document.addEventListener('DOMContentLoaded', () => {
     try { localStorage.setItem(BLUR_VISUAL_KEY, enabled ? 'true' : 'false'); } catch (e) {}
     if (enabled) document.body.classList.remove('blur-visual-off'); else document.body.classList.add('blur-visual-off');
     if (!enabled) {
-      document.querySelectorAll('.blur-target.is-blurred').forEach(el => { el.classList.remove('is-blurred'); });
+      // visually remove blur (do not mark read)
+      document.querySelectorAll('.blur-target.is-blurred').forEach(el => {
+        el.classList.remove('is-blurred');
+      });
     } else {
-      document.querySelectorAll('.blur-target:not(.unblurred)').forEach(el => { el.classList.add('is-blurred'); });
+      // reapply visual blur to unread
+      document.querySelectorAll('.blur-target:not(.unblurred)').forEach(el => {
+        el.classList.add('is-blurred');
+      });
     }
   }
 
+  // Collect targets: top-level children; images inside blocks become their own targets.
+  // NOTE: images are included even if not loaded yet.
   function collectTargets() {
     const targets = [];
     const children = Array.from(chapterBodyEl.children);
@@ -397,6 +300,50 @@ document.addEventListener('DOMContentLoaded', () => {
     return targets;
   }
 
+  // Parse an rgb/rgba string into r,g,b numbers. Returns object {r,g,b} or null.
+  function parseRgbString(rgbStr) {
+    if (!rgbStr) return null;
+    const m = rgbStr.match(/rgba?\(\s*([0-9]+)[,\s]+([0-9]+)[,\s]+([0-9]+)/i);
+    if (!m) return null;
+    return { r: Number(m[1]), g: Number(m[2]), b: Number(m[3]) };
+  }
+
+  // Capture original color + glow attributes for all .glow elements
+  function captureGlowInfo() {
+    if (!chapterBodyEl) return;
+    const glowEls = Array.from(chapterBodyEl.querySelectorAll('.glow'));
+    glowEls.forEach(el => {
+      try {
+        const cs = window.getComputedStyle(el);
+        const colStr = cs.color;
+        const rgb = parseRgbString(colStr);
+        if (rgb) {
+          el.style.setProperty('--glow-rgb', `${rgb.r}, ${rgb.g}, ${rgb.b}`);
+        } else {
+          // fallback to white
+          el.style.setProperty('--glow-rgb', `255, 255, 255`);
+        }
+        // density & brightness from attributes (defaults 1)
+        const dens = parseFloat(el.getAttribute('glow-density'));
+        const bright = parseFloat(el.getAttribute('glow-brightness'));
+        if (!Number.isNaN(dens) && dens > 0) el.style.setProperty('--glow-density', String(dens));
+        else el.style.setProperty('--glow-density', '1');
+        if (!Number.isNaN(bright) && bright > 0) el.style.setProperty('--glow-brightness', String(bright));
+        else el.style.setProperty('--glow-brightness', '1');
+      } catch (e) {
+        // ignore
+      }
+    });
+  }
+
+  function applyBlurToTarget(el) {
+    if (!el) return;
+    el.classList.add('blur-target');
+    if (!el.classList.contains('unblurred')) {
+      if (isVisualBlurEnabled()) el.classList.add('is-blurred');
+    }
+  }
+
   function removeBlurFromTarget(el, markRead = true) {
     if (!el) return;
     if (el.classList.contains('unblurred')) return;
@@ -405,17 +352,34 @@ document.addEventListener('DOMContentLoaded', () => {
     if (markRead && lastChapterFile) {
       const set = loadReadIndicesFor(lastChapterFile);
       const index = Number(el.dataset.blurIndex);
-      if (!Number.isNaN(index)) { set.add(index); saveReadIndicesFor(lastChapterFile, set); }
+      if (!Number.isNaN(index)) {
+        set.add(index);
+        saveReadIndicesFor(lastChapterFile, set);
+      }
     }
   }
-  function revealTemp(el) { if (!el) return; if (el.classList.contains('unblurred')) return; el.classList.add('hover-reveal'); }
-  function hideTemp(el) { if (!el) return; if (el.classList.contains('unblurred')) return; el.classList.remove('hover-reveal'); }
+
+  function revealTemp(el) {
+    if (!el) return;
+    if (el.classList.contains('unblurred')) return;
+    el.classList.add('hover-reveal');
+  }
+  function hideTemp(el) {
+    if (!el) return;
+    if (el.classList.contains('unblurred')) return;
+    el.classList.remove('hover-reveal');
+  }
 
   function initBlurTargetsForChapter(filename, blurEnabled = true) {
     if (!chapterBodyEl) return;
+
+    // FIRST: capture glow info while original colors are still present
+    captureGlowInfo();
+
+    // cleanup existing (preserve 'unblurred' if it exists)
     chapterBodyEl.querySelectorAll('.blur-target').forEach(old => {
       old.classList.remove('is-blurred', 'hover-reveal');
-      old.classList.remove('blur-target');
+      old.classList.remove('blur-target'); // will re-add
     });
 
     const targets = collectTargets();
@@ -425,29 +389,34 @@ document.addEventListener('DOMContentLoaded', () => {
       el.dataset.blurIndex = idx;
       el.classList.add('blur-target');
 
+      // if blur disabled for this chapter, mark unblurred
       if (!blurEnabled) {
         el.classList.add('unblurred');
         el.classList.remove('is-blurred');
         return;
       }
 
+      // initial state
       if (el.classList.contains('unblurred') || readSet.has(idx)) {
         el.classList.add('unblurred');
         el.classList.remove('is-blurred');
       } else {
-        if (isVisualBlurEnabled()) el.classList.add('is-blurred'); else el.classList.remove('is-blurred');
+        if (isVisualBlurEnabled()) {
+          el.classList.add('is-blurred');
+        } else {
+          el.classList.remove('is-blurred');
+        }
       }
 
+      // attach hover handlers
       el.addEventListener('mouseenter', () => { if (!el.classList.contains('unblurred')) revealTemp(el); });
       el.addEventListener('mouseleave', () => { if (!el.classList.contains('unblurred')) hideTemp(el); });
       el.addEventListener('touchstart', () => { if (!el.classList.contains('unblurred')) revealTemp(el); }, {passive:true});
       el.addEventListener('touchend', () => { if (!el.classList.contains('unblurred')) hideTemp(el); }, {passive:true});
     });
-
-    // Update glows inside the chapter (CSS will handle fade when blur toggles)
-    updateGlowElements();
   }
 
+  // Unblur logic when scrolling - reverted image rule: image unblurs when its top crosses center (same as text top)
   let scrollScheduled = false;
   function checkAndUnblurVisibleTargets() {
     if (!chapterBodyEl) return;
@@ -462,7 +431,11 @@ document.addEventListener('DOMContentLoaded', () => {
       if (el.classList.contains('unblurred')) return;
       const rect = el.getBoundingClientRect();
       let trigger = false;
-      if (rect.top < centerY) trigger = true;
+      if (el.tagName && el.tagName.toLowerCase() === 'img') {
+        if (rect.top < centerY) trigger = true;
+      } else {
+        if (rect.top < centerY) trigger = true;
+      }
       if (trigger) removeBlurFromTarget(el, true);
     });
   }
@@ -470,11 +443,14 @@ document.addEventListener('DOMContentLoaded', () => {
   window.addEventListener('scroll', () => {
     if (scrollScheduled) return;
     scrollScheduled = true;
-    requestAnimationFrame(() => { checkAndUnblurVisibleTargets(); scrollScheduled = false; });
+    requestAnimationFrame(() => {
+      checkAndUnblurVisibleTargets();
+      scrollScheduled = false;
+    });
   }, { passive: true });
   window.addEventListener('resize', () => { checkAndUnblurVisibleTargets(); });
 
-  /* ========== Tooltip image resolve & preload ========== */
+  /* ========== Tooltip image resolve & preload (kept) ========== */
   function testImageUrl(url, timeout = 3000) {
     return new Promise(resolve => {
       const img = new Image();
@@ -633,7 +609,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   document.addEventListener('click', (e) => { if (!chaptersOpen) return; if (chaptersAside && chaptersAside.contains(e.target)) return; if (e.clientX <= EDGE_TRIGGER_PX) return; closeChapters(); });
 
-  /* ---------- Top nav behavior ---------- */
+  /* ---------- Top nav behavior (kept) ---------- */
   function positionTopNav() {
     if (!topNav || !headerEl) return;
     const hRect = headerEl.getBoundingClientRect();
@@ -890,11 +866,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (chObj && chObj.blur === false) blurEnabledForChapter = false;
       } catch (e) {}
 
-      // initialize blur targets now
+      // initialize blur targets now (capture glow info internally)
       initBlurTargetsForChapter(filename, blurEnabledForChapter);
-
-      // update glow elements inside the chapter (must happen after DOM insertion)
-      updateGlowElements();
 
       // preload tooltip images and init tippy
       preloadTooltipImages();
