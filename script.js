@@ -1,30 +1,23 @@
-// script.js - full application logic (chapters, blur, glow, tippy tooltips, image viewer, color picker, nav)
-//
-// Overwrite your existing script.js with this file. Hard-refresh page after replacing.
-
+// script.js - glow capture + class-based blur (replace file)
 document.addEventListener('DOMContentLoaded', () => {
-  /* ---------------------- DOM refs (tolerant to missing elements) ---------------------- */
+  /* DOM refs */
   const chaptersListEl = document.getElementById('chapters');
   const chapterBodyEl = document.getElementById('chapter-body');
   const chapterTitleEl = document.getElementById('chapter-title');
+  const themeToggle = document.getElementById('theme-toggle');
+  const blurToggle = document.getElementById('blur-toggle');
   const headerEl = document.querySelector('header');
 
-  // Theme / color controls
-  const themeToggle = document.getElementById('theme-toggle'); // now opens color picker
-  const blurToggle = document.getElementById('blur-toggle'); // optional
-
-  // Nav elements (may or may not exist depending on your current HTML - script safely guards)
+  const bottomPrev = document.getElementById('bottom-prev');
+  const bottomNext = document.getElementById('bottom-next');
   const bottomNav = document.getElementById('bottom-nav');
-  const bottomPrev = document.getElementById('bottom-prev') || document.getElementById('prev-btn');
-  const bottomNext = document.getElementById('bottom-next') || document.getElementById('next-btn');
 
-  const topNav = document.getElementById('top-nav');
   const topPrev = document.getElementById('top-prev');
   const topNext = document.getElementById('top-next');
+  const topNav = document.getElementById('top-nav');
 
   const chaptersAside = document.getElementById('chapters-list');
 
-  // Color picker parts (if present)
   const colorPopup = document.getElementById('color-popup');
   const colorArea = document.getElementById('color-area');
   const colorAreaCursor = document.getElementById('color-area-cursor');
@@ -32,34 +25,32 @@ document.addEventListener('DOMContentLoaded', () => {
   const hueCursor = document.getElementById('hue-cursor');
   const colorResetBtn = document.getElementById('color-reset');
 
-  // Defensive: essential elements
   if (!chaptersListEl || !chapterBodyEl || !chapterTitleEl) {
-    console.error('Essential page elements missing (#chapters, #chapter-body, #chapter-title). Check index.html.');
+    console.error('Essential DOM elements missing. Check index.html IDs.');
     if (chapterBodyEl) chapterBodyEl.textContent = 'Ошибка: элементы страницы отсутствуют. Проверьте index.html.';
     return;
   }
 
-  /* ---------------------- application state ---------------------- */
+  /* state */
   let chapters = [];
   let currentIndex = -1;
-  let lastChapterFile = null; // used to persist read indices, etc.
-  const resolvedUrlCache = new Map(); // data-img -> resolved absolute URL (or null)
-  const preloadedImgCache = new Map(); // resolved URL -> Image object
-  const STORAGE_BG_KEY = 'site-bg-color';
-  const BLUR_VISUAL_KEY = 'blur-visual-enabled'; // stores whether visual blur is on/off
+  let lastChapterFile = null;
+  const resolvedUrlCache = new Map();
+  const preloadedImgCache = new Map();
 
-  /* ---------------------- constants / tuning ---------------------- */
-  const EDGE_TRIGGER_PX = 12; // px from left to open chapters
-  const BLUR_THRESHOLD_Y_RATIO = 0.5; // midpoint of viewport
-  const TOP_HIDE_DELAY_MS = 1000; // delay before top nav hides when scrolling down
-  const IMAGE_PRELOAD_TIMEOUT = 4000;
+  /* blur & animation config */
+  const BLUR_THRESHOLD_Y_RATIO = 0.5; // middle of viewport
+  const BLUR_VISUAL_KEY = 'blur-visual-enabled';
 
-  /* ---------------------- color / theme helpers ---------------------- */
-  // small color utilities (hex <-> rgb, hsl conversions)
+  /* ========== color picker & theme helpers (kept) ========== */
+  const DEFAULT_BG_HEX = '#0b0f13';
+  const CARD_LIGHTNESS_DELTA = 0.03333333333333333;
+  const CONTRAST_LUMINANCE_THRESHOLD = 0.50;
+
   function hexToRgb(hex) {
     hex = (hex || '').replace('#', '');
     if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
-    const n = parseInt(hex, 16) || 0;
+    const n = parseInt(hex, 16);
     return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
   }
   function rgbToHex(r, g, b) {
@@ -68,7 +59,8 @@ document.addEventListener('DOMContentLoaded', () => {
   function rgbToHsl(r, g, b) {
     r /= 255; g /= 255; b /= 255;
     const max = Math.max(r, g, b), min = Math.min(r, g, b);
-    let h = 0, s = 0; const l = (max + min) / 2;
+    let h = 0, s = 0;
+    const l = (max + min) / 2;
     if (max !== min) {
       const d = max - min;
       s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
@@ -108,19 +100,15 @@ document.addEventListener('DOMContentLoaded', () => {
     return 0.2126 * srgb[0] + 0.7152 * srgb[1] + 0.0722 * srgb[2];
   }
 
-  // compute slightly lighter/darker card color from base (we used earlier percentage; kept deterministic)
-  const DEFAULT_BG_HEX = '#0b0f13';
-  const CARD_LIGHTNESS_DELTA = 0.03333333333333333; // earlier used ~8% dark: preserved as delta
-
   function computeCardFromBgHex(bgHex) {
     const { r, g, b } = hexToRgb(bgHex);
     const hsl = rgbToHsl(r, g, b);
     let newL = hsl.l + CARD_LIGHTNESS_DELTA;
-    newL = Math.min(1, Math.max(0, newL));
+    if (newL > 1) newL = 1;
+    if (newL < 0) newL = 0;
     const cardRgb = hslToRgb(hsl.h, hsl.s, newL);
-    return rgbToHex(cardRgb.r, cardRgb.g, cardRgb.b);
+    return { rgb: cardRgb, hex: rgbToHex(cardRgb.r, cardRgb.g, cardRgb.b) };
   }
-
   function applyColorHex(hex) {
     const root = document.documentElement;
     const { r, g, b } = hexToRgb(hex);
@@ -129,23 +117,24 @@ document.addEventListener('DOMContentLoaded', () => {
     root.style.setProperty('--bg-g', String(g));
     root.style.setProperty('--bg-b', String(b));
     const card = computeCardFromBgHex(hex);
-    root.style.setProperty('--card', card);
-    root.style.setProperty('--btn-bg', card);
+    root.style.setProperty('--card', card.hex);
+    root.style.setProperty('--btn-bg', card.hex);
     const lum = luminanceFromRgb(r, g, b);
-    if (lum < 0.5) {
-      root.style.setProperty('--accent', '#e6eef6'); // light text
+    if (lum < CONTRAST_LUMINANCE_THRESHOLD) {
+      root.style.setProperty('--accent', '#e6eef6');
       root.style.setProperty('--btn-fg', '#e6eef6');
       root.style.setProperty('--tooltip-link-color', '#bfe8ff');
     } else {
-      root.style.setProperty('--accent', '#132029'); // dark text
+      root.style.setProperty('--accent', '#132029');
       root.style.setProperty('--btn-fg', '#132029');
       root.style.setProperty('--tooltip-link-color', '#1b6ea1');
     }
   }
 
-  /* ---------------------- color picker (simple HSV area + hue slider) ---------------------- */
-  // HSV state used by picker
+  /* Color picker (kept) */
+  const STORAGE_KEY = 'site-bg-color';
   let hsv = { h: 210, s: 0.3, v: 0.05 };
+
   function hsvToRgb(h, s, v) {
     h = (h % 360 + 360) % 360;
     const c = v * s;
@@ -163,8 +152,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function rgbToHsv(r, g, b) {
     r /= 255; g /= 255; b /= 255;
     const max = Math.max(r, g, b), min = Math.min(r, g, b);
-    const d = max - min;
-    let h = 0;
+    const d = max - min; let h = 0;
     const s = max === 0 ? 0 : d / max;
     const v = max;
     if (d !== 0) {
@@ -175,17 +163,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     return { h, s, v };
   }
-
-  function persistBgHex(hex) {
-    try { localStorage.setItem(STORAGE_BG_KEY, hex); } catch (e) {}
-  }
-
-  function applyHsvState() {
-    const { r, g, b } = hsvToRgb(hsv.h, hsv.s, hsv.v);
-    const hex = rgbToHex(r, g, b);
-    applyColorHex(hex);
-    persistBgHex(hex);
-  }
+  function persistHex(hex) { try { localStorage.setItem(STORAGE_KEY, hex); } catch (e) {} }
+  function applyHsvState() { const { r, g, b } = hsvToRgb(hsv.h, hsv.s, hsv.v); const hex = rgbToHex(r, g, b); applyColorHex(hex); }
 
   function updatePickerUI() {
     if (!colorArea || !hueSlider || !colorAreaCursor || !hueCursor) return;
@@ -201,33 +180,60 @@ document.addEventListener('DOMContentLoaded', () => {
     colorAreaCursor.style.top = `${Math.min(Math.max(0, cy), areaRect.height)}px`;
   }
 
-  function addPointerDrag(element, handlers) {
+  function addDrag(element, handlers) {
     if (!element) return;
-    let dragging = false;
-    let pointerId = null;
+    let dragging = false; let pointerId = null;
     element.addEventListener('pointerdown', (ev) => {
       element.setPointerCapture && element.setPointerCapture(ev.pointerId);
       dragging = true; pointerId = ev.pointerId;
-      handlers.start && handlers.start(ev);
-      ev.preventDefault();
+      handlers.start && handlers.start(ev); ev.preventDefault();
     });
     window.addEventListener('pointermove', (ev) => {
       if (!dragging || (pointerId !== null && ev.pointerId !== pointerId)) return;
-      handlers.move && handlers.move(ev);
-      ev.preventDefault();
+      handlers.move && handlers.move(ev); ev.preventDefault();
     }, { passive: false });
     window.addEventListener('pointerup', (ev) => {
       if (!dragging || (pointerId !== null && ev.pointerId !== pointerId)) return;
-      dragging = false; pointerId = null;
-      handlers.end && handlers.end(ev);
-      ev.preventDefault();
+      dragging = false; pointerId = null; handlers.end && handlers.end(ev); ev.preventDefault();
     });
+    element.addEventListener('touchstart', (e) => { if (e.touches && e.touches[0]) handlers.start && handlers.start(e.touches[0]); e.preventDefault(); }, { passive: false });
+    window.addEventListener('touchmove', (e) => { if (e.touches && e.touches[0]) handlers.move && handlers.move(e.touches[0]); }, { passive: false });
+    window.addEventListener('touchend', (e) => { handlers.end && handlers.end(e.changedTouches && e.changedTouches[0]); }, { passive: false });
   }
 
-  function initColorPicker() {
-    // init hsv from stored value
+  function handleHuePointer(e) {
+    if (!hueSlider) return;
+    const rect = hueSlider.getBoundingClientRect();
+    const y = Math.min(Math.max(0, (e.clientY || 0) - rect.top), rect.height);
+    const ratio = 1 - (y / rect.height);
+    hsv.h = ratio * 360; updatePickerUI(); applyHsvState(); persistHex(rgbToHex(...Object.values(hsvToRgb(hsv.h, hsv.s, hsv.v))));
+  }
+  function handleAreaPointer(e) {
+    if (!colorArea) return;
+    const rect = colorArea.getBoundingClientRect();
+    const x = Math.min(Math.max(0, (e.clientX || 0) - rect.left), rect.width);
+    const y = Math.min(Math.max(0, (e.clientY || 0) - rect.top), rect.height);
+    hsv.s = (x / rect.width); hsv.v = 1 - (y / rect.height);
+    updatePickerUI(); applyHsvState(); persistHex(rgbToHex(...Object.values(hsvToRgb(hsv.h, hsv.s, hsv.v))));
+  }
+  if (hueSlider) addDrag(hueSlider, { start: handleHuePointer, move: handleHuePointer, end: () => persistHex(rgbToHex(...Object.values(hsvToRgb(hsv.h, hsv.s, hsv.v)))) });
+  if (colorArea) addDrag(colorArea, { start: handleAreaPointer, move: handleAreaPointer, end: () => persistHex(rgbToHex(...Object.values(hsvToRgb(hsv.h, hsv.s, hsv.v)))) });
+
+  function showColorPopup() { if (!colorPopup) return; colorPopup.classList.add('visible'); colorPopup.setAttribute('aria-hidden','false'); document.addEventListener('click', onDocClickForPopup); }
+  function hideColorPopup() { if (!colorPopup) return; colorPopup.classList.remove('visible'); colorPopup.setAttribute('aria-hidden','true'); document.removeEventListener('click', onDocClickForPopup); }
+  function onDocClickForPopup(e) { if (!colorPopup) return; if (colorPopup.contains(e.target) || (themeToggle && themeToggle.contains(e.target))) return; hideColorPopup(); }
+  if (themeToggle) themeToggle.addEventListener('click', (e) => { e.stopPropagation(); if (!colorPopup) return; if (colorPopup.classList.contains('visible')) hideColorPopup(); else showColorPopup(); });
+  if (colorResetBtn) colorResetBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    try { localStorage.setItem(STORAGE_KEY, DEFAULT_BG_HEX); } catch (err) {}
+    const { r, g, b } = hexToRgb(DEFAULT_BG_HEX);
+    const hv = rgbToHsv(r, g, b);
+    hsv.h = hv.h; hsv.s = hv.s; hsv.v = hv.v;
+    applyHsvState(); updatePickerUI(); hideColorPopup();
+  });
+  (function initColor() {
     try {
-      const stored = localStorage.getItem(STORAGE_BG_KEY) || DEFAULT_BG_HEX;
+      const stored = localStorage.getItem(STORAGE_KEY) || DEFAULT_BG_HEX;
       const { r, g, b } = hexToRgb(stored);
       const v = rgbToHsv(r, g, b);
       hsv.h = v.h || 0; hsv.s = v.s || 0; hsv.v = v.v || 0;
@@ -236,376 +242,11 @@ document.addEventListener('DOMContentLoaded', () => {
       const v = rgbToHsv(r, g, b);
       hsv.h = v.h || 0; hsv.s = v.s || 0; hsv.v = v.v || 0;
     }
-    applyHsvState();
-    requestAnimationFrame(updatePickerUI);
+    applyHsvState(); requestAnimationFrame(updatePickerUI);
+  })();
 
-    // add interactions
-    if (hueSlider) {
-      addPointerDrag(hueSlider, {
-        start: (ev) => handleHuePointer(ev),
-        move: (ev) => handleHuePointer(ev),
-        end: () => persistBgHex(rgbToHex(...Object.values(hsvToRgb(hsv.h, hsv.s, hsv.v))))
-      });
-    }
-    if (colorArea) {
-      addPointerDrag(colorArea, {
-        start: (ev) => handleAreaPointer(ev),
-        move: (ev) => handleAreaPointer(ev),
-        end: () => persistBgHex(rgbToHex(...Object.values(hsvToRgb(hsv.h, hsv.s, hsv.v))))
-      });
-    }
-    if (colorResetBtn) {
-      colorResetBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        try { localStorage.setItem(STORAGE_BG_KEY, DEFAULT_BG_HEX); } catch (err) {}
-        const { r, g, b } = hexToRgb(DEFAULT_BG_HEX);
-        const hv = rgbToHsv(r, g, b);
-        hsv.h = hv.h; hsv.s = hv.s; hsv.v = hv.v;
-        applyHsvState(); updatePickerUI();
-      });
-    }
-  }
-  function handleHuePointer(e) {
-    if (!hueSlider) return;
-    const rect = hueSlider.getBoundingClientRect();
-    const y = Math.min(Math.max(0, (e.clientY || 0) - rect.top), rect.height);
-    const ratio = 1 - (y / rect.height);
-    hsv.h = ratio * 360;
-    updatePickerUI(); applyHsvState();
-  }
-  function handleAreaPointer(e) {
-    if (!colorArea) return;
-    const rect = colorArea.getBoundingClientRect();
-    const x = Math.min(Math.max(0, (e.clientX || 0) - rect.left), rect.width);
-    const y = Math.min(Math.max(0, (e.clientY || 0) - rect.top), rect.height);
-    hsv.s = (x / rect.width);
-    hsv.v = 1 - (y / rect.height);
-    updatePickerUI(); applyHsvState();
-  }
+  /* ========== Blur logic (class-based) ========== */
 
-  // show/hide color popup
-  function showColorPopup() { if (!colorPopup) return; colorPopup.classList.add('visible'); colorPopup.setAttribute('aria-hidden','false'); document.addEventListener('click', onDocClickForPopup); }
-  function hideColorPopup() { if (!colorPopup) return; colorPopup.classList.remove('visible'); colorPopup.setAttribute('aria-hidden','true'); document.removeEventListener('click', onDocClickForPopup); }
-  function onDocClickForPopup(e) { if (!colorPopup) return; if (colorPopup.contains(e.target) || (themeToggle && themeToggle.contains(e.target))) return; hideColorPopup(); }
-  if (themeToggle) themeToggle.addEventListener('click', (e) => { e.stopPropagation(); if (!colorPopup) return; if (colorPopup.classList.contains('visible')) hideColorPopup(); else showColorPopup(); });
-
-  initColorPicker();
-
-  /* ---------------------- tooltip image resolving + preload ---------------------- */
-  function testImageUrl(url, timeout = IMAGE_PRELOAD_TIMEOUT) {
-    return new Promise(resolve => {
-      const img = new Image();
-      let done = false;
-      const onLoad = () => { if (done) return; done = true; cleanup(); resolve(true); };
-      const onErr = () => { if (done) return; done = true; cleanup(); resolve(false); };
-      const cleanup = () => { img.onload = img.onerror = null; clearTimeout(timer); };
-      img.onload = onLoad; img.onerror = onErr; img.src = url;
-      const timer = setTimeout(() => { if (done) return; done = true; cleanup(); resolve(false); }, timeout);
-    });
-  }
-
-  async function resolveTooltipImage(srcCandidate) {
-    if (!srcCandidate) return null;
-    if (resolvedUrlCache.has(srcCandidate)) return resolvedUrlCache.get(srcCandidate);
-
-    // if absolute or root-absolute
-    if (/^https?:\/\//i.test(srcCandidate) || srcCandidate.startsWith('/')) {
-      if (await testImageUrl(srcCandidate)) { resolvedUrlCache.set(srcCandidate, srcCandidate); return srcCandidate; }
-    }
-
-    // otherwise try base paths relative to the current page and last chapter
-    const bases = [];
-    bases.push(window.location.href);
-    bases.push(window.location.origin + window.location.pathname);
-    if (lastChapterFile) {
-      bases.push(window.location.origin + '/' + lastChapterFile);
-      const parts = lastChapterFile.split('/');
-      parts.pop();
-      const parent = parts.join('/');
-      if (parent) bases.push(window.location.origin + '/' + parent + '/');
-    }
-    bases.push(window.location.origin + '/');
-
-    const candidates = [];
-    for (const base of bases) {
-      try { const u = new URL(srcCandidate, base); candidates.push(u.href); } catch (e) {}
-    }
-    const seen = new Set();
-    const unique = candidates.filter(c => { if (seen.has(c)) return false; seen.add(c); return true; });
-
-    for (const u of unique) {
-      if (await testImageUrl(u)) { resolvedUrlCache.set(srcCandidate, u); return u; }
-    }
-    resolvedUrlCache.set(srcCandidate, null);
-    return null;
-  }
-
-  async function preloadTooltipImages() {
-    if (!chapterBodyEl) return;
-    const glossEls = Array.from(chapterBodyEl.querySelectorAll('.gloss'));
-    if (!glossEls.length) return;
-    for (const el of glossEls) {
-      const dataImg = el.getAttribute('data-img');
-      if (!dataImg) continue;
-      if (resolvedUrlCache.has(dataImg) && resolvedUrlCache.get(dataImg) === null) continue;
-      try {
-        const resolved = await resolveTooltipImage(dataImg);
-        if (resolved) {
-          if (preloadedImgCache.has(resolved)) continue;
-          const pimg = new Image(); pimg.crossOrigin = 'anonymous'; pimg.decoding = 'async';
-          preloadedImgCache.set(resolved, pimg);
-          pimg.onload = () => {};
-          pimg.onerror = () => { preloadedImgCache.delete(resolved); };
-          pimg.src = resolved;
-        }
-      } catch (err) {}
-    }
-  }
-
-  // attempt to keep preloads warm when page becomes visible
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState !== 'visible') return;
-    if (!chapterBodyEl) return;
-    const glossEls = Array.from(chapterBodyEl.querySelectorAll('.gloss'));
-    glossEls.forEach(async (el) => {
-      const dataImg = el.getAttribute('data-img'); if (!dataImg) return;
-      const resolved = resolvedUrlCache.has(dataImg) ? resolvedUrlCache.get(dataImg) : await resolveTooltipImage(dataImg);
-      if (resolved && (!preloadedImgCache.has(resolved) || !preloadedImgCache.get(resolved).complete)) {
-        try {
-          const pimg = new Image(); pimg.crossOrigin = 'anonymous'; pimg.decoding = 'async';
-          preloadedImgCache.set(resolved, pimg);
-          pimg.onload = () => {};
-          pimg.onerror = () => { preloadedImgCache.delete(resolved); };
-          pimg.src = resolved;
-        } catch (e) {}
-      }
-    });
-  });
-
-  /* ---------------------- tippy init for .gloss elements ---------------------- */
-  function initGlossTippy() {
-    if (!window.tippy) return;
-    // destroy existing tippies on .gloss to avoid duplicates
-    document.querySelectorAll('.gloss').forEach(el => { try { if (el._tippy) el._tippy.destroy(); } catch (e) {} });
-
-    tippy('.gloss', {
-      allowHTML: true,
-      interactive: true,
-      delay: [60, 80],
-      maxWidth: 520,
-      placement: 'top',
-      offset: [0, 8],
-      appendTo: () => document.body,
-      popperOptions: {
-        strategy: 'fixed',
-        modifiers: [
-          { name: 'computeStyles', options: { adaptive: false } },
-          { name: 'preventOverflow', options: { padding: 8, altAxis: true } },
-          { name: 'flip', options: { fallbackPlacements: ['bottom', 'right', 'left'] } }
-        ]
-      },
-      content: 'Loading...',
-      onShow: async (instance) => {
-        const reference = instance.reference;
-        let contentHTML = reference.getAttribute('data-tippy-content') || reference.getAttribute('data-tip') || reference.getAttribute('title') || reference.innerHTML || '';
-        if (reference.getAttribute('title')) reference.removeAttribute('title');
-        const dataImg = reference.getAttribute('data-img');
-        const imgAlt = reference.getAttribute('data-img-alt') || '';
-        const wrapper = document.createElement('div');
-
-        // resolve & preload image (if any)
-        let resolved = null;
-        if (dataImg) {
-          if (resolvedUrlCache.has(dataImg)) resolved = resolvedUrlCache.get(dataImg);
-          else resolved = await resolveTooltipImage(dataImg);
-        }
-
-        if (resolved) {
-          if (!preloadedImgCache.has(resolved) || !preloadedImgCache.get(resolved).complete) {
-            try {
-              const pimg = new Image(); pimg.crossOrigin = 'anonymous'; pimg.decoding = 'async';
-              preloadedImgCache.set(resolved, pimg);
-              pimg.onload = () => {};
-              pimg.onerror = () => { preloadedImgCache.delete(resolved); };
-              pimg.src = resolved;
-            } catch (e) {}
-          }
-          const imgEl = document.createElement('img');
-          imgEl.className = 'tooltip-img';
-          imgEl.src = resolved;
-          imgEl.alt = imgAlt;
-          imgEl.loading = 'eager';
-          imgEl.style.cursor = 'pointer';
-          imgEl.addEventListener('click', (ev) => {
-            ev.stopPropagation();
-            try { openImageViewer(resolved, imgAlt); } catch (e) {}
-            try { instance.hide(); } catch (e) {}
-          });
-          imgEl.addEventListener('load', () => {
-            try {
-              if (instance.popperInstance && typeof instance.popperInstance.update === 'function') instance.popperInstance.update();
-              else if (typeof instance.update === 'function') instance.update();
-            } catch (e) {}
-          });
-          wrapper.appendChild(imgEl);
-        }
-        const contentDiv = document.createElement('div');
-        contentDiv.className = 'tooltip-body';
-        contentDiv.innerHTML = contentHTML;
-        wrapper.appendChild(contentDiv);
-
-        try { instance.setContent(wrapper); } catch (e) { instance.setContent(wrapper.outerHTML); }
-      }
-    });
-  }
-
-  /* ---------------------- navigation tippies (prev/next button hover text) ---------------------- */
-  function refreshNavTippies() {
-    if (!window.tippy) return;
-    [bottomPrev, bottomNext, topPrev, topNext].forEach(btn => { if (!btn) return; try { if (btn._tippy) btn._tippy.destroy(); } catch (e) {} });
-    if (bottomPrev) tippy(bottomPrev, { content: () => bottomPrev.dataset.title || '', placement: 'top', delay: [80, 40], offset: [0, 8], appendTo: () => document.body });
-    if (bottomNext) tippy(bottomNext, { content: () => bottomNext.dataset.title || '', placement: 'top', delay: [80, 40], offset: [0, 8], appendTo: () => document.body });
-    if (topPrev) tippy(topPrev, { content: () => topPrev.dataset.title || '', placement: 'bottom', delay: [80, 40], offset: [0, 8], appendTo: () => document.body });
-    if (topNext) tippy(topNext, { content: () => topNext.dataset.title || '', placement: 'bottom', delay: [80, 40], offset: [0, 8], appendTo: () => document.body });
-  }
-
-  /* ---------------------- chapters aside slide-out ---------------------- */
-  let chaptersOpen = false;
-  function openChapters() { if (chaptersOpen) return; chaptersOpen = true; document.body.classList.add('chapters-open'); }
-  function closeChapters() { if (!chaptersOpen) return; chaptersOpen = false; document.body.classList.remove('chapters-open'); }
-
-  document.addEventListener('mousemove', (e) => { if (window.innerWidth <= 700) return; if (e.clientX <= EDGE_TRIGGER_PX) openChapters(); });
-  if (chaptersAside) {
-    chaptersAside.addEventListener('mouseenter', openChapters);
-    chaptersAside.addEventListener('mouseleave', (ev) => { if (ev.clientX <= EDGE_TRIGGER_PX) return; closeChapters(); });
-  }
-  document.addEventListener('click', (e) => { if (!chaptersOpen) return; if (chaptersAside && chaptersAside.contains(e.target)) return; if (e.clientX <= EDGE_TRIGGER_PX) return; closeChapters(); });
-
-  /* ---------------------- top nav show/hide logic ---------------------- */
-  function positionTopNav() {
-    if (!topNav || !headerEl) return;
-    const hRect = headerEl.getBoundingClientRect();
-    const topNavRect = topNav.getBoundingClientRect();
-    const top = Math.max(6, hRect.top + (hRect.height / 2) - (topNavRect.height / 2));
-    topNav.style.top = `${top}px`;
-  }
-
-  let lastScrollY = window.scrollY;
-  let scheduled = false;
-  let hideDelayTimer = null;
-  function clearHideTimer() { if (hideDelayTimer) { clearTimeout(hideDelayTimer); hideDelayTimer = null; } }
-  function bottomNavIsVisible() { if (!bottomNav) return false; const r = bottomNav.getBoundingClientRect(); return (r.top < window.innerHeight) && (r.bottom > 0); }
-  function showTopNavImmediate() { if (bottomNavIsVisible()) { hideTopNavImmediate(); return; } if (!topNav) return; topNav.classList.add('visible-top'); topNav.setAttribute('aria-hidden', 'false'); clearHideTimer(); }
-  function hideTopNavImmediate() { if (!topNav) return; topNav.classList.remove('visible-top'); topNav.setAttribute('aria-hidden', 'true'); clearHideTimer(); }
-  function scheduleHideTopNav() {
-    if (hideDelayTimer) return;
-    hideDelayTimer = setTimeout(() => { if (!bottomNavIsVisible()) hideTopNavImmediate(); hideDelayTimer = null; }, TOP_HIDE_DELAY_MS);
-  }
-  function onScrollCheck() {
-    const curY = window.scrollY;
-    const scrollingUp = curY < lastScrollY;
-    const atTop = curY <= 10;
-    if (bottomNavIsVisible()) { hideTopNavImmediate(); clearHideTimer(); }
-    else if (atTop || scrollingUp) { clearHideTimer(); showTopNavImmediate(); }
-    else { scheduleHideTopNav(); }
-    lastScrollY = curY;
-  }
-  window.addEventListener('scroll', () => {
-    if (scheduled) return;
-    scheduled = true;
-    requestAnimationFrame(() => { onScrollCheck(); scheduled = false; });
-  }, { passive: true });
-  window.addEventListener('resize', () => { positionTopNav(); onScrollCheck(); });
-
-  // intersection observer to hide top nav when bottom nav intersects (extra safety)
-  if (bottomNav && topNav) {
-    const observer = new IntersectionObserver((entries) => { const anyVisible = entries.some(en => en.isIntersecting); if (anyVisible) hideTopNavImmediate(); }, { root: null, threshold: 0.01 });
-    observer.observe(bottomNav);
-  }
-
-  function initialTopNavSetup() {
-    positionTopNav();
-    if (window.scrollY <= 10 && !bottomNavIsVisible()) showTopNavImmediate();
-    else hideTopNavImmediate();
-  }
-  setTimeout(initialTopNavSetup, 60);
-
-  /* ---------------------- image viewer (click to zoom & drag) ---------------------- */
-  if (!document.getElementById('image-overlay')) {
-    const overlay = document.createElement('div');
-    overlay.id = 'image-overlay';
-    overlay.innerHTML = `<div class="viewer" role="dialog" aria-modal="true"><img class="viewer-img" src="" alt=""></div>`;
-    document.body.appendChild(overlay);
-  }
-  const overlay = document.getElementById('image-overlay');
-  const overlayImg = overlay.querySelector('.viewer-img');
-
-  let isZoomed = false, pointerDown = false, pointerStart = { x: 0, y: 0 }, imgPos = { x: 0, y: 0 }, dragMoved = false, suppressClick = false;
-  const DRAG_THRESHOLD = 4;
-
-  function openImageViewer(src, alt = '') {
-    if (!overlay || !overlayImg) return;
-    overlayImg.src = src; overlayImg.alt = alt || '';
-    const marginPx = 40;
-    overlayImg.style.maxWidth = `calc(100vw - ${marginPx}px)`; overlayImg.style.maxHeight = `calc(100vh - ${Math.round(marginPx * 1.5)}px)`;
-    overlay.classList.add('visible'); isZoomed = false; imgPos = { x: 0, y: 0 }; overlayImg.style.transform = `translate(0px, 0px) scale(1)`; overlayImg.classList.remove('zoomed'); overlay.style.cursor = 'default'; document.body.style.overflow = 'hidden';
-    const viewer = overlay.querySelector('.viewer'); if (viewer) { viewer.scrollTop = 0; viewer.scrollLeft = 0; }
-  }
-
-  function closeImageViewer() { if (!overlay || !overlayImg) return; overlay.classList.remove('visible'); overlayImg.src = ''; isZoomed = false; pointerDown = false; dragMoved = false; suppressClick = false; document.body.style.overflow = ''; overlayImg.style.maxWidth = ''; overlayImg.style.maxHeight = ''; }
-
-  function applyImageTransform() {
-    if (!overlayImg) return;
-    const scale = isZoomed ? 2 : 1;
-    overlayImg.style.transform = `translate(${imgPos.x}px, ${imgPos.y}px) scale(${scale})`;
-    if (isZoomed) overlayImg.classList.add('zoomed'); else overlayImg.classList.remove('zoomed');
-  }
-
-  // click toggles zoom; if drag happened, suppress click toggle
-  overlayImg.addEventListener('click', (ev) => {
-    if (suppressClick) { suppressClick = false; return; }
-    isZoomed = !isZoomed;
-    if (!isZoomed) imgPos = { x: 0, y: 0 };
-    applyImageTransform();
-  });
-
-  overlayImg.addEventListener('mousedown', (ev) => {
-    if (!isZoomed) return; ev.preventDefault(); pointerDown = true; dragMoved = false; pointerStart = { x: ev.clientX, y: ev.clientY }; overlayImg.style.cursor = 'grabbing';
-  });
-
-  window.addEventListener('mousemove', (ev) => {
-    if (!pointerDown || !isZoomed) return;
-    const dx = ev.clientX - pointerStart.x; const dy = ev.clientY - pointerStart.y;
-    if (!dragMoved && (Math.abs(dx) + Math.abs(dy) >= DRAG_THRESHOLD)) dragMoved = true;
-    if (dragMoved) { pointerStart = { x: ev.clientX, y: ev.clientY }; imgPos.x += dx; imgPos.y += dy; applyImageTransform(); }
-  });
-
-  window.addEventListener('mouseup', (ev) => {
-    if (pointerDown && dragMoved) { suppressClick = true; setTimeout(() => { suppressClick = false; }, 0); }
-    pointerDown = false; overlayImg.style.cursor = isZoomed ? 'grab' : 'zoom-in';
-  });
-
-  overlay.addEventListener('click', (ev) => { if (ev.target === overlay) closeImageViewer(); });
-  window.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && overlay.classList.contains('visible')) closeImageViewer(); });
-
-  // attach images to viewer (keeps original nodes & classes intact)
-  function bindImagesToViewer() {
-    const imgs = chapterBodyEl.querySelectorAll('img');
-    imgs.forEach(img => {
-      img.style.cursor = 'pointer';
-      if (!img._viewerBound) {
-        img.addEventListener('click', (e) => {
-          const src = img.getAttribute('src') || img.getAttribute('data-src') || '';
-          if (!src) return;
-          openImageViewer(src, img.getAttribute('alt') || '');
-        });
-        img._viewerBound = true;
-      }
-    });
-  }
-
-  /* ---------------------- blur system (class-based + smooth transitions) ---------------------- */
-  // local storage helpers for 'read' indices per chapter
   function readStorageKeyFor(filename) { return 'read:' + filename; }
   function loadReadIndicesFor(filename) {
     try {
@@ -631,23 +272,20 @@ document.addEventListener('DOMContentLoaded', () => {
     try { localStorage.setItem(BLUR_VISUAL_KEY, enabled ? 'true' : 'false'); } catch (e) {}
     if (enabled) document.body.classList.remove('blur-visual-off'); else document.body.classList.add('blur-visual-off');
     if (!enabled) {
-      document.querySelectorAll('.blur-target.is-blurred').forEach(el => el.classList.remove('is-blurred'));
+      // visually remove blur (do not mark read)
+      document.querySelectorAll('.blur-target.is-blurred').forEach(el => {
+        el.classList.remove('is-blurred');
+      });
     } else {
-      document.querySelectorAll('.blur-target:not(.unblurred)').forEach(el => el.classList.add('is-blurred'));
+      // reapply visual blur to unread
+      document.querySelectorAll('.blur-target:not(.unblurred)').forEach(el => {
+        el.classList.add('is-blurred');
+      });
     }
-  }
-  if (blurToggle) {
-    const enabled = isVisualBlurEnabled();
-    setVisualBlurEnabled(enabled);
-    blurToggle.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const newState = !isVisualBlurEnabled();
-      setVisualBlurEnabled(newState);
-    });
   }
 
   // Collect targets: top-level children; images inside blocks become their own targets.
-  // IMPORTANT: include images even if not loaded yet so they get blur classes.
+  // NOTE: images are included even if not loaded yet.
   function collectTargets() {
     const targets = [];
     const children = Array.from(chapterBodyEl.children);
@@ -660,6 +298,44 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
     return targets;
+  }
+
+  // Parse an rgb/rgba string into r,g,b numbers. Returns object {r,g,b} or null.
+  function parseRgbString(rgbStr) {
+    if (!rgbStr) return null;
+    const m = rgbStr.match(/rgba?\(\s*([0-9]+)[,\s]+([0-9]+)[,\s]+([0-9]+)/i);
+    if (!m) return null;
+    return { r: Number(m[1]), g: Number(m[2]), b: Number(m[3]) };
+  }
+
+  // Capture original color + glow attributes for all .glow elements
+  function captureGlowInfo() {
+    if (!chapterBodyEl) return;
+    const glowEls = Array.from(chapterBodyEl.querySelectorAll('.glow'));
+    glowEls.forEach(el => {
+      try {
+        const cs = window.getComputedStyle(el);
+        const colStr = cs.color;
+        const rgb = parseRgbString(colStr);
+        if (rgb) {
+          el.style.setProperty('--glow-rgb', `${rgb.r}, ${rgb.g}, ${rgb.b}`);
+        } else {
+          // fallback to white
+          el.style.setProperty('--glow-rgb', `255, 255, 255`);
+        }
+        // density & brightness from attributes (defaults 1)
+        const dens = parseFloat(el.getAttribute('glow-density'));
+        const bright = parseFloat(el.getAttribute('glow-brightness'));
+        if (!Number.isNaN(dens) && dens > 0) el.style.setProperty('--glow-density', String(dens));
+        else el.style.setProperty('--glow-density', '1');
+        if (!Number.isNaN(bright) && bright > 0) el.style.setProperty('--glow-brightness', String(bright));
+        else el.style.setProperty('--glow-brightness', '1');
+        // ensure initial opacity variable exists (CSS handles the rest)
+        el.style.setProperty('--glow-opacity', el.classList.contains('unblurred') ? '1' : '1');
+      } catch (e) {
+        // ignore
+      }
+    });
   }
 
   function applyBlurToTarget(el) {
@@ -696,40 +372,13 @@ document.addEventListener('DOMContentLoaded', () => {
     el.classList.remove('hover-reveal');
   }
 
-  // ---------- GLOW: capture original color & attributes so glow uses original text color ----------
-  // parse rgb/rgba string
-  function parseRgbString(rgbStr) {
-    if (!rgbStr) return null;
-    const m = rgbStr.match(/rgba?\(\s*([0-9]+)[,\s]+([0-9]+)[,\s]+([0-9]+)/i);
-    if (!m) return null;
-    return { r: Number(m[1]), g: Number(m[2]), b: Number(m[3]) };
-  }
-
-  function captureGlowInfo() {
-    if (!chapterBodyEl) return;
-    const glowEls = Array.from(chapterBodyEl.querySelectorAll('.glow'));
-    glowEls.forEach(el => {
-      try {
-        const cs = window.getComputedStyle(el);
-        const colStr = cs.color;
-        const rgb = parseRgbString(colStr);
-        if (rgb) el.style.setProperty('--glow-rgb', `${rgb.r}, ${rgb.g}, ${rgb.b}`);
-        else el.style.setProperty('--glow-rgb', `255, 255, 255`);
-        const dens = parseFloat(el.getAttribute('glow-density'));
-        const bright = parseFloat(el.getAttribute('glow-brightness'));
-        el.style.setProperty('--glow-density', (!Number.isNaN(dens) && dens > 0) ? String(dens) : '1');
-        el.style.setProperty('--glow-brightness', (!Number.isNaN(bright) && bright > 0) ? String(bright) : '1');
-      } catch (e) {}
-    });
-  }
-
   function initBlurTargetsForChapter(filename, blurEnabled = true) {
     if (!chapterBodyEl) return;
 
-    // capture glow info BEFORE we force any colors
+    // FIRST: capture glow info while original colors are still present
     captureGlowInfo();
 
-    // cleanup previous blur classes (but keep 'unblurred' if present)
+    // cleanup existing (preserve 'unblurred' if it exists)
     chapterBodyEl.querySelectorAll('.blur-target').forEach(old => {
       old.classList.remove('is-blurred', 'hover-reveal');
       old.classList.remove('blur-target'); // will re-add
@@ -749,12 +398,16 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
-      // initial state - preserve storage or existing class
+      // initial state
       if (el.classList.contains('unblurred') || readSet.has(idx)) {
         el.classList.add('unblurred');
         el.classList.remove('is-blurred');
       } else {
-        if (isVisualBlurEnabled()) el.classList.add('is-blurred'); else el.classList.remove('is-blurred');
+        if (isVisualBlurEnabled()) {
+          el.classList.add('is-blurred');
+        } else {
+          el.classList.remove('is-blurred');
+        }
       }
 
       // attach hover handlers
@@ -765,9 +418,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Unblur rules:
-  // - text blocks: unblur when element top < centerY
-  // - images: (reverted) unblur when element top < centerY (same as text)
+  // Unblur logic when scrolling - images unblur when top crosses center (same as text)
   let scrollScheduled = false;
   function checkAndUnblurVisibleTargets() {
     if (!chapterBodyEl) return;
@@ -781,28 +432,323 @@ document.addEventListener('DOMContentLoaded', () => {
     nodes.forEach(el => {
       if (el.classList.contains('unblurred')) return;
       const rect = el.getBoundingClientRect();
-      if (rect.top < centerY) {
-        removeBlurFromTarget(el, true);
+      let trigger = false;
+      if (el.tagName && el.tagName.toLowerCase() === 'img') {
+        if (rect.top < centerY) trigger = true;
+      } else {
+        if (rect.top < centerY) trigger = true;
       }
+      if (trigger) removeBlurFromTarget(el, true);
     });
   }
 
   window.addEventListener('scroll', () => {
     if (scrollScheduled) return;
     scrollScheduled = true;
-    requestAnimationFrame(() => { checkAndUnblurVisibleTargets(); scrollScheduled = false; });
+    requestAnimationFrame(() => {
+      checkAndUnblurVisibleTargets();
+      scrollScheduled = false;
+    });
   }, { passive: true });
   window.addEventListener('resize', () => { checkAndUnblurVisibleTargets(); });
 
-  /* ---------------------- tooltip & image viewer integration ---------------------- */
-  function bindImagesAndTooltips() {
-    // images -> viewer
-    bindImagesToViewer();
-    // tooltips -> init tippy (which will use preloaded images if available)
-    preloadTooltipImages().then(() => initGlossTippy());
+  /* ========== Tooltip image resolve & preload (kept) ========== */
+  function testImageUrl(url, timeout = 3000) {
+    return new Promise(resolve => {
+      const img = new Image();
+      let done = false;
+      const onLoad = () => { if (done) return; done = true; cleanup(); resolve(true); };
+      const onErr = () => { if (done) return; done = true; cleanup(); resolve(false); };
+      const cleanup = () => { img.onload = img.onerror = null; clearTimeout(timer); };
+      img.onload = onLoad; img.onerror = onErr; img.src = url;
+      const timer = setTimeout(() => { if (done) return; done = true; cleanup(); resolve(false); }, timeout);
+    });
   }
 
-  /* ---------------------- navigation (prev/next) and chapters loading ---------------------- */
+  async function resolveTooltipImage(srcCandidate) {
+    if (!srcCandidate) return null;
+    if (resolvedUrlCache.has(srcCandidate)) return resolvedUrlCache.get(srcCandidate);
+
+    if (/^https?:\/\//i.test(srcCandidate) || srcCandidate.startsWith('/')) {
+      if (await testImageUrl(srcCandidate)) { resolvedUrlCache.set(srcCandidate, srcCandidate); return srcCandidate; }
+    }
+
+    const bases = [];
+    bases.push(window.location.href);
+    bases.push(window.location.origin + window.location.pathname);
+    if (lastChapterFile) {
+      bases.push(window.location.origin + '/' + lastChapterFile);
+      const parts = lastChapterFile.split('/');
+      parts.pop();
+      const parent = parts.join('/');
+      if (parent) bases.push(window.location.origin + '/' + parent + '/');
+    }
+    bases.push(window.location.origin + '/');
+
+    const candidates = [];
+    for (const base of bases) { try { const u = new URL(srcCandidate, base); candidates.push(u.href); } catch (e) {} }
+    const seen = new Set();
+    const unique = candidates.filter(c => { if (seen.has(c)) return false; seen.add(c); return true; });
+
+    for (const u of unique) {
+      if (await testImageUrl(u)) { resolvedUrlCache.set(srcCandidate, u); return u; }
+    }
+    resolvedUrlCache.set(srcCandidate, null);
+    return null;
+  }
+
+  async function preloadTooltipImages() {
+    if (!chapterBodyEl) return;
+    const glossEls = Array.from(chapterBodyEl.querySelectorAll('.gloss'));
+    if (!glossEls.length) return;
+    for (const el of glossEls) {
+      const dataImg = el.getAttribute('data-img');
+      if (!dataImg) continue;
+      if (resolvedUrlCache.has(dataImg) && resolvedUrlCache.get(dataImg) === null) continue;
+      try {
+        const resolved = await resolveTooltipImage(dataImg);
+        if (resolved) {
+          if (preloadedImgCache.has(resolved)) continue;
+          const pimg = new Image(); pimg.crossOrigin = 'anonymous'; pimg.decoding = 'async';
+          preloadedImgCache.set(resolved, pimg);
+          pimg.onload = () => {};
+          pimg.onerror = () => { preloadedImgCache.delete(resolved); };
+          pimg.src = resolved;
+        }
+      } catch (err) {}
+    }
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') return;
+    if (!chapterBodyEl) return;
+    const glossEls = Array.from(chapterBodyEl.querySelectorAll('.gloss'));
+    glossEls.forEach(async (el) => {
+      const dataImg = el.getAttribute('data-img'); if (!dataImg) return;
+      const resolved = resolvedUrlCache.has(dataImg) ? resolvedUrlCache.get(dataImg) : await resolveTooltipImage(dataImg);
+      if (resolved && (!preloadedImgCache.has(resolved) || !preloadedImgCache.get(resolved).complete)) {
+        try {
+          const pimg = new Image(); pimg.crossOrigin = 'anonymous'; pimg.decoding = 'async';
+          preloadedImgCache.set(resolved, pimg);
+          pimg.onload = () => {};
+          pimg.onerror = () => { preloadedImgCache.delete(resolved); };
+          pimg.src = resolved;
+        } catch (e) {}
+      }
+    });
+  });
+
+  /* ---------- Tippy init (gloss) ---------- */
+  function initGlossTippy() {
+    if (!window.tippy) return;
+    document.querySelectorAll('.gloss').forEach(el => { try { if (el._tippy) el._tippy.destroy(); } catch (e) {} });
+
+    tippy('.gloss', {
+      allowHTML: true, interactive: true, delay: [60, 80], maxWidth: 520, placement: 'top', offset: [0, 8],
+      appendTo: () => document.body,
+      popperOptions: {
+        strategy: 'fixed',
+        modifiers: [
+          { name: 'computeStyles', options: { adaptive: false } },
+          { name: 'preventOverflow', options: { padding: 8, altAxis: true } },
+          { name: 'flip', options: { fallbackPlacements: ['bottom', 'right', 'left'] } }
+        ]
+      },
+      content: 'Loading...',
+      onShow: async (instance) => {
+        const reference = instance.reference;
+        let contentHTML = reference.getAttribute('data-tippy-content') || reference.getAttribute('data-tip') || reference.getAttribute('title') || reference.innerHTML || '';
+        if (reference.getAttribute('title')) reference.removeAttribute('title');
+        const dataImg = reference.getAttribute('data-img');
+        const imgAlt = reference.getAttribute('data-img-alt') || '';
+        const wrapper = document.createElement('div');
+        let resolved = null;
+        if (dataImg) {
+          if (resolvedUrlCache.has(dataImg)) resolved = resolvedUrlCache.get(dataImg);
+          else resolved = await resolveTooltipImage(dataImg);
+        }
+        if (resolved) {
+          if (!preloadedImgCache.has(resolved) || !preloadedImgCache.get(resolved).complete) {
+            try {
+              const pimg = new Image(); pimg.crossOrigin = 'anonymous'; pimg.decoding = 'async';
+              preloadedImgCache.set(resolved, pimg);
+              pimg.onload = () => {};
+              pimg.onerror = () => { preloadedImgCache.delete(resolved); };
+              pimg.src = resolved;
+            } catch (e) {}
+          }
+          const imgEl = document.createElement('img');
+          imgEl.className = 'tooltip-img'; imgEl.src = resolved; imgEl.alt = imgAlt; imgEl.loading = 'eager'; imgEl.style.cursor='pointer';
+          imgEl.addEventListener('click', (ev) => { ev.stopPropagation(); try { openImageViewer(resolved, imgAlt); } catch (e) {} try { instance.hide(); } catch (e) {} });
+          imgEl.addEventListener('load', () => { try { if (instance.popperInstance && typeof instance.popperInstance.update === 'function') instance.popperInstance.update(); else if (typeof instance.update === 'function') instance.update(); } catch (e) {} });
+          wrapper.appendChild(imgEl);
+        }
+        const contentDiv = document.createElement('div'); contentDiv.className = 'tooltip-body'; contentDiv.innerHTML = contentHTML; wrapper.appendChild(contentDiv);
+        try { instance.setContent(wrapper); } catch (e) { instance.setContent(wrapper.outerHTML); }
+      }
+    });
+  }
+
+  /* ---------- Nav tippies ---------- */
+  function refreshNavTippies() {
+    if (!window.tippy) return;
+    [bottomPrev, bottomNext, topPrev, topNext].forEach(btn => { if (!btn) return; try { if (btn._tippy) btn._tippy.destroy(); } catch (e) {} });
+    if (bottomPrev) tippy(bottomPrev, { content: () => bottomPrev.dataset.title || '', placement: 'top', delay: [80, 40], offset: [0, 8], appendTo: () => document.body });
+    if (bottomNext) tippy(bottomNext, { content: () => bottomNext.dataset.title || '', placement: 'top', delay: [80, 40], offset: [0, 8], appendTo: () => document.body });
+    if (topPrev) tippy(topPrev, { content: () => topPrev.dataset.title || '', placement: 'bottom', delay: [80, 40], offset: [0, 8], appendTo: () => document.body });
+    if (topNext) tippy(topNext, { content: () => topNext.dataset.title || '', placement: 'bottom', delay: [80, 40], offset: [0, 8], appendTo: () => document.body });
+  }
+
+  /* ---------- Chapters aside open/close ---------- */
+  let chaptersOpen = false;
+  const EDGE_TRIGGER_PX = 12;
+  function openChapters() { if (chaptersOpen) return; chaptersOpen = true; document.body.classList.add('chapters-open'); }
+  function closeChapters() { if (!chaptersOpen) return; chaptersOpen = false; document.body.classList.remove('chapters-open'); }
+
+  document.addEventListener('mousemove', (e) => { if (window.innerWidth <= 700) return; if (e.clientX <= EDGE_TRIGGER_PX) openChapters(); });
+  if (chaptersAside) {
+    chaptersAside.addEventListener('mouseenter', openChapters);
+    chaptersAside.addEventListener('mouseleave', (ev) => { if (ev.clientX <= EDGE_TRIGGER_PX) return; closeChapters(); });
+  }
+  document.addEventListener('click', (e) => { if (!chaptersOpen) return; if (chaptersAside && chaptersAside.contains(e.target)) return; if (e.clientX <= EDGE_TRIGGER_PX) return; closeChapters(); });
+
+  /* ---------- Top nav behavior (kept) ---------- */
+  function positionTopNav() {
+    if (!topNav || !headerEl) return;
+    const hRect = headerEl.getBoundingClientRect();
+    const topNavRect = topNav.getBoundingClientRect();
+    const top = Math.max(6, hRect.top + (hRect.height / 2) - (topNavRect.height / 2));
+    topNav.style.top = `${top}px`;
+  }
+  let lastScrollY = window.scrollY;
+  let scheduled = false;
+  let hideDelayTimer = null;
+  const HIDE_DELAY_MS = 1000;
+  function clearHideTimer() { if (hideDelayTimer) { clearTimeout(hideDelayTimer); hideDelayTimer = null; } }
+  function bottomNavIsVisible() {
+    if (!bottomNav) return false;
+    const r = bottomNav.getBoundingClientRect();
+    return (r.top < window.innerHeight) && (r.bottom > 0);
+  }
+  function showTopNavImmediate() {
+    if (bottomNavIsVisible()) { hideTopNavImmediate(); return; }
+    if (!topNav) return;
+    topNav.classList.add('visible-top'); topNav.setAttribute('aria-hidden', 'false'); clearHideTimer();
+  }
+  function hideTopNavImmediate() {
+    if (!topNav) return;
+    topNav.classList.remove('visible-top'); topNav.setAttribute('aria-hidden', 'true'); clearHideTimer();
+  }
+  function scheduleHideTopNav() {
+    if (hideDelayTimer) return;
+    hideDelayTimer = setTimeout(() => { if (!bottomNavIsVisible()) hideTopNavImmediate(); hideDelayTimer = null; }, HIDE_DELAY_MS);
+  }
+  function onScrollCheck() {
+    const curY = window.scrollY;
+    const scrollingUp = curY < lastScrollY;
+    const atTop = curY <= 10;
+    if (bottomNavIsVisible()) { hideTopNavImmediate(); clearHideTimer(); }
+    else if (atTop || scrollingUp) { clearHideTimer(); showTopNavImmediate(); }
+    else { scheduleHideTopNav(); }
+    lastScrollY = curY;
+  }
+  window.addEventListener('scroll', () => {
+    if (scheduled) return;
+    scheduled = true;
+    requestAnimationFrame(() => { onScrollCheck(); scheduled = false; });
+  }, { passive: true });
+  window.addEventListener('resize', () => { positionTopNav(); onScrollCheck(); });
+  const observer = new IntersectionObserver((entries) => { const anyVisible = entries.some(en => en.isIntersecting); if (anyVisible) hideTopNavImmediate(); }, { root: null, threshold: 0.01 });
+  if (bottomNav) observer.observe(bottomNav);
+  function initialTopNavSetup() {
+    positionTopNav();
+    if (window.scrollY <= 10 && !bottomNavIsVisible()) showTopNavImmediate();
+    else hideTopNavImmediate();
+  }
+  initialTopNavSetup();
+  setTimeout(initialTopNavSetup, 80);
+
+  /* ---------- Image viewer (kept) ---------- */
+  if (!document.getElementById('image-overlay')) {
+    const overlay = document.createElement('div');
+    overlay.id = 'image-overlay';
+    overlay.innerHTML = `<div class="viewer" role="dialog" aria-modal="true"><img class="viewer-img" src="" alt=""></div>`;
+    document.body.appendChild(overlay);
+  }
+  const overlay = document.getElementById('image-overlay');
+  const overlayImg = overlay.querySelector('.viewer-img');
+
+  let isZoomed = false, pointerDown = false, pointerStart = { x: 0, y: 0 }, imgPos = { x: 0, y: 0 }, dragMoved = false, suppressClick = false;
+  const DRAG_THRESHOLD = 4;
+
+  function openImageViewer(src, alt = '') {
+    overlayImg.src = src; overlayImg.alt = alt || '';
+    const marginPx = 40;
+    overlayImg.style.maxWidth = `calc(100vw - ${marginPx}px)`; overlayImg.style.maxHeight = `calc(100vh - ${Math.round(marginPx * 1.5)}px)`;
+    overlay.classList.add('visible'); isZoomed = false; imgPos = { x: 0, y: 0 }; overlayImg.style.transform = `translate(0px, 0px) scale(1)`; overlayImg.classList.remove('zoomed'); overlay.style.cursor = 'default'; document.body.style.overflow = 'hidden';
+    const viewer = overlay.querySelector('.viewer'); if (viewer) { viewer.scrollTop = 0; viewer.scrollLeft = 0; }
+  }
+
+  function closeImageViewer() { overlay.classList.remove('visible'); overlayImg.src = ''; isZoomed = false; pointerDown = false; dragMoved = false; suppressClick = false; document.body.style.overflow = ''; overlayImg.style.maxWidth = ''; overlayImg.style.maxHeight = ''; }
+
+  function applyImageTransform() {
+    const scale = isZoomed ? 2 : 1;
+    overlayImg.style.transform = `translate(${imgPos.x}px, ${imgPos.y}px) scale(${scale})`;
+    if (isZoomed) overlayImg.classList.add('zoomed'); else overlayImg.classList.remove('zoomed');
+  }
+
+  overlayImg.addEventListener('click', (ev) => {
+    if (suppressClick) { suppressClick = false; return; }
+    isZoomed = !isZoomed;
+    if (!isZoomed) imgPos = { x: 0, y: 0 };
+    applyImageTransform();
+  });
+
+  overlayImg.addEventListener('mousedown', (ev) => {
+    if (!isZoomed) return; ev.preventDefault(); pointerDown = true; dragMoved = false; pointerStart = { x: ev.clientX, y: ev.clientY }; overlayImg.style.cursor = 'grabbing';
+  });
+
+  window.addEventListener('mousemove', (ev) => {
+    if (!pointerDown || !isZoomed) return;
+    const dx = ev.clientX - pointerStart.x; const dy = ev.clientY - pointerStart.y;
+    if (!dragMoved && (Math.abs(dx) + Math.abs(dy) >= DRAG_THRESHOLD)) dragMoved = true;
+    if (dragMoved) { pointerStart = { x: ev.clientX, y: ev.clientY }; imgPos.x += dx; imgPos.y += dy; applyImageTransform(); }
+  });
+
+  window.addEventListener('mouseup', (ev) => {
+    if (pointerDown && dragMoved) { suppressClick = true; setTimeout(() => { suppressClick = false; }, 0); }
+    pointerDown = false; overlayImg.style.cursor = isZoomed ? 'grab' : 'zoom-in';
+  });
+
+  overlay.addEventListener('click', (ev) => { if (ev.target === overlay) closeImageViewer(); });
+  window.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && overlay.classList.contains('visible')) closeImageViewer(); });
+
+  // Bind images to viewer without replacing nodes (keeps blur classes intact)
+  function bindImagesToViewer() {
+    const imgs = chapterBodyEl.querySelectorAll('img');
+    imgs.forEach(img => {
+      img.style.cursor = 'pointer';
+      if (!img._viewerBound) {
+        img.addEventListener('click', (e) => {
+          const src = img.getAttribute('src') || img.getAttribute('data-src') || '';
+          if (!src) return;
+          openImageViewer(src, img.getAttribute('alt') || '');
+        });
+        img._viewerBound = true;
+      }
+    });
+  }
+
+  /* ---------- Persist scroll on reload (sessionStorage) ---------- */
+  window.addEventListener('beforeunload', () => {
+    try {
+      if (currentIndex >= 0 && chapters[currentIndex] && chapters[currentIndex].file) {
+        const key = 'scroll:' + chapters[currentIndex].file;
+        sessionStorage.setItem(key, String(window.scrollY || 0));
+      }
+    } catch (e) {}
+  });
+
+  /* ---------- Navigation & chapters ---------- */
   function isDoneEntry(entry) { if (!entry) return false; return entry.done !== false; }
   function findPrevDoneIndex(fromIndex) { for (let i = (fromIndex === undefined ? currentIndex - 1 : fromIndex); i >= 0; i--) if (isDoneEntry(chapters[i])) return i; return -1; }
   function findNextDoneIndex(fromIndex) { for (let i = (fromIndex === undefined ? currentIndex + 1 : fromIndex); i < chapters.length; i++) if (isDoneEntry(chapters[i])) return i; return -1; }
@@ -855,7 +801,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // keyboard navigation
   document.addEventListener('keydown', (e) => {
     const active = document.activeElement;
     if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) return;
@@ -863,7 +808,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.key === 'ArrowRight') { const next = findNextDoneIndex(); if (next !== -1) goToChapter(next); }
   });
 
-  /* ---------------------- load chapters.json and render list ---------------------- */
+  /* ---------- Load chapters list ---------- */
   async function loadChapters() {
     chapterBodyEl.textContent = 'Загрузка...';
     try {
@@ -879,7 +824,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const a = document.createElement('a');
         a.href = '#';
         a.textContent = c.title || `Глава ${i+1}`;
-        // clip long names to a single line using CSS ellipsis (styles.css already does)
         if (!isDoneEntry(c)) {
           a.classList.add('undone');
         } else {
@@ -889,7 +833,6 @@ document.addEventListener('DOMContentLoaded', () => {
         chaptersListEl.appendChild(li);
       });
 
-      // restore last-chapter-file (so page loads to last read)
       const saved = localStorage.getItem('last-chapter-file');
       if (saved) {
         const idx = chapters.findIndex(ch => ch && ch.file === saved && isDoneEntry(ch));
@@ -906,7 +849,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  /* ---------------------- load a single chapter (markdown -> html via marked) ---------------------- */
+  /* ---------- Load a single chapter ---------- */
   async function loadChapter(filename, title) {
     chapterTitleEl.textContent = title || '';
     chapterBodyEl.textContent = 'Загрузка главы...';
@@ -918,30 +861,26 @@ document.addEventListener('DOMContentLoaded', () => {
       const html = (window.marked) ? marked.parse(md) : '<p>Ошибка: библиотека marked не загружена.</p>';
       chapterBodyEl.innerHTML = html;
 
-      // apply center alignment for chapter title if present in content (user requested earlier)
-      const contentTitle = chapterBodyEl.querySelector('h1, h2, h3, .chapter-title');
-      if (contentTitle) contentTitle.style.textAlign = 'center';
-
-      // determine blur enable for this chapter (chapters list may include 'blur': false)
+      // detect blur enable flag from chapters list
       let blurEnabledForChapter = true;
       try {
         const chObj = chapters[currentIndex];
         if (chObj && chObj.blur === false) blurEnabledForChapter = false;
       } catch (e) {}
 
-      // initialize blur targets (also captures glow info)
+      // initialize blur targets now (capture glow info internally)
       initBlurTargetsForChapter(filename, blurEnabledForChapter);
 
       // preload tooltip images and init tippy
-      await preloadTooltipImages();
+      preloadTooltipImages();
       initGlossTippy();
 
-      // bind images to viewer and tooltips (images clickable)
-      bindImagesAndTooltips();
+      // bind images to viewer (no node replacement)
+      bindImagesToViewer();
 
       updateNavButtons();
 
-      // restore scroll position only on refresh (we save on beforeunload)
+      // restore scroll on reload (sessionStorage)
       try {
         const key = 'scroll:' + filename;
         const v = sessionStorage.getItem(key);
@@ -962,35 +901,25 @@ document.addEventListener('DOMContentLoaded', () => {
       // initial unblur check
       requestAnimationFrame(checkAndUnblurVisibleTargets);
 
-      // refresh top nav position & tippies
-      positionTopNav();
-      refreshNavTippies();
-
     } catch (err) {
       chapterBodyEl.textContent = 'Ошибка загрузки главы: ' + err.message;
       console.error('loadChapter error:', err);
     }
   }
 
-  // persist scroll ONLY on unload/refresh
-  window.addEventListener('beforeunload', () => {
-    try {
-      if (currentIndex >= 0 && chapters[currentIndex] && chapters[currentIndex].file) {
-        const key = 'scroll:' + chapters[currentIndex].file;
-        sessionStorage.setItem(key, String(window.scrollY || 0));
-      }
-    } catch (e) {}
-  });
+  /* ---------- Blur toggle button initialization ---------- */
+  if (blurToggle) {
+    const enabled = isVisualBlurEnabled();
+    setVisualBlurEnabled(enabled);
+    blurToggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const newState = !isVisualBlurEnabled();
+      setVisualBlurEnabled(newState);
+    });
+  }
 
-  /* ---------------------- tooltip link color tweak (CSS var) ---------------------- */
-  // the color is set in applyColorHex as --tooltip-link-color
-
-  /* ---------------------- start app ---------------------- */
+  /* ---------- Start ---------- */
   loadChapters();
   updateNavButtons();
-
-  // ensure top nav shows if at top after load (user requested)
-  setTimeout(() => { positionTopNav(); if (window.scrollY <= 10 && !bottomNavIsVisible()) showTopNavImmediate(); }, 140);
-
-  /* ---------------------- end DOMContentLoaded ---------------------- */
-}); // end of DOMContentLoaded
+  setTimeout(() => { positionTopNav(); if (window.scrollY <= 10 && !bottomNavIsVisible()) showTopNavImmediate(); }, 120);
+});
