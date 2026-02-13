@@ -330,8 +330,15 @@ document.addEventListener('DOMContentLoaded', () => {
         else el.style.setProperty('--glow-density', '1');
         if (!Number.isNaN(bright) && bright > 0) el.style.setProperty('--glow-brightness', String(bright));
         else el.style.setProperty('--glow-brightness', '1');
-        // ensure initial opacity variable exists (CSS handles the rest)
-        el.style.setProperty('--glow-opacity', el.classList.contains('unblurred') ? '1' : '1');
+
+        // copy plain text into data-glow attribute for the ::after pseudo-element to draw the glow.
+        // we use textContent to avoid copying inner HTML (pseudo-element supports only text content).
+        const txt = el.textContent || '';
+        // trim leading/trailing newlines that may create layout issues
+        el.setAttribute('data-glow', txt.replace(/^\n+|\n+$/g, ''));
+
+        // remove any inline text-shadow on the real text (we draw glow via ::after)
+        el.style.textShadow = 'none';
       } catch (e) {
         // ignore
       }
