@@ -138,7 +138,7 @@ body.chapters-open #chapters-list{ transform:translateX(0); }
 }
 
 /* Hover reveal: temporarily remove blur + forced color so original colors show.
-   Important: use !important to override the .is-blurred rules when hovered. */
+   Important: use !important only here so it overrides forced color while hovered. */
 .blur-target.hover-reveal {
   filter: none !important;
 }
@@ -182,7 +182,7 @@ body.blur-visual-off .blur-target, body.blur-visual-off .blur-target * { color: 
 /* utilities */
 .visually-hidden { position: absolute !important; height: 1px; width: 1px; overflow: hidden; clip: rect(1px,1px,1px,1px); white-space: nowrap; }
 
-/* ===================== GLOW STYLES ===================== */
+/* ===================== GLOW STYLES (fixed & smooth) ===================== */
 
 /* Each .glow element will have inline CSS vars added by JS:
    --glow-rgb: "R, G, B"
@@ -190,43 +190,47 @@ body.blur-visual-off .blur-target, body.blur-visual-off .blur-target * { color: 
    --glow-brightness: numeric (default 1)
 */
 .glow {
-  /* defaults */
   --glow-density: 1;
   --glow-brightness: 1;
-
-  /* computed sizes */
   --g1: calc(6px * var(--glow-density));
   --g2: calc(12px * var(--glow-density));
   --g3: calc(18px * var(--glow-density));
 
-  /* text shadow uses the element's original color from --glow-rgb */
+  /* default text-shadow uses the captured --glow-rgb */
   text-shadow:
     0 0 var(--g1) rgba(var(--glow-rgb, 255,255,255), calc(0.45 * var(--glow-brightness))),
     0 0 var(--g2) rgba(var(--glow-rgb, 255,255,255), calc(0.22 * var(--glow-brightness))),
     0 0 var(--g3) rgba(var(--glow-rgb, 255,255,255), calc(0.12 * var(--glow-brightness)));
   transition: text-shadow var(--blur-duration) ease, opacity var(--blur-duration) ease;
   opacity: 1;
-  /* keep pointer events normal so tooltips still work */
 }
 
-/* When the containing element is blurred — hide the glow entirely.
-   Hover-reveal will override this (see next rule). */
-.blur-target.is-blurred .glow {
-  text-shadow: none !important;
-  opacity: 0 !important;
+/* When the containing element is blurred, hide glow (covers both cases: glow as descendant OR the element itself) */
+.blur-target.is-blurred .glow,
+.blur-target.is-blurred.glow {
+  text-shadow: none;
+  opacity: 0;
+  transition: text-shadow var(--blur-duration) ease, opacity var(--blur-duration) ease;
 }
 
 /* When temporarily revealing (hover-reveal) show original glow even though element has .is-blurred */
-.blur-target.hover-reveal .glow {
+.blur-target.hover-reveal .glow,
+.blur-target.hover-reveal.glow {
   opacity: 1 !important;
-  /* restore text-shadow using the inline --glow-rgb variable */
   text-shadow:
     0 0 var(--g1) rgba(var(--glow-rgb, 255,255,255), calc(0.45 * var(--glow-brightness))) !important,
     0 0 var(--g2) rgba(var(--glow-rgb, 255,255,255), calc(0.22 * var(--glow-brightness))) !important,
     0 0 var(--g3) rgba(var(--glow-rgb, 255,255,255), calc(0.12 * var(--glow-brightness))) !important;
+  transition: text-shadow var(--blur-duration) ease, opacity var(--blur-duration) ease;
 }
 
-/* Ensure unblurred text shows glow normally */
-.blur-target.unblurred .glow {
+/* Ensure unblurred text shows glow normally (both descendant and same-element cases) */
+.blur-target.unblurred .glow,
+.blur-target.unblurred.glow {
   opacity: 1;
+  text-shadow:
+    0 0 var(--g1) rgba(var(--glow-rgb, 255,255,255), calc(0.45 * var(--glow-brightness))),
+    0 0 var(--g2) rgba(var(--glow-rgb, 255,255,255), calc(0.22 * var(--glow-brightness))),
+    0 0 var(--g3) rgba(var(--glow-rgb, 255,255,255), calc(0.12 * var(--glow-brightness)));
+  transition: text-shadow var(--blur-duration) ease, opacity var(--blur-duration) ease;
 }
