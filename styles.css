@@ -125,20 +125,16 @@ body.chapters-open #chapters-list{ transform:translateX(0); }
 }
 
 /* When blurred: apply blur filter on the element and force descendant text color to the accent color.
-   Using a class is robust across DOM node replacements and triggers smooth transitions. */
+   Forcing color uses !important because it needs to override inline styles from content. */
 .blur-target.is-blurred {
-  filter: blur(6px); /* the filter value; keep consistent with JS BLUR_FILTER */
+  filter: blur(6px);
 }
-
-/* Force descendant colors to site accent while blurred (hide inline colored text).
-   color transition is applied for smoothness. */
 .blur-target.is-blurred, .blur-target.is-blurred * {
   color: var(--accent) !important;
   transition: color var(--blur-duration) ease !important;
 }
 
-/* Hover reveal: temporarily remove blur + forced color so original colors show.
-   Important: use !important only here so it overrides forced color while hovered. */
+/* Hover reveal: temporarily remove blur + forced color so original colors show. */
 .blur-target.hover-reveal {
   filter: none !important;
 }
@@ -182,55 +178,48 @@ body.blur-visual-off .blur-target, body.blur-visual-off .blur-target * { color: 
 /* utilities */
 .visually-hidden { position: absolute !important; height: 1px; width: 1px; overflow: hidden; clip: rect(1px,1px,1px,1px); white-space: nowrap; }
 
-/* ===================== GLOW STYLES (fixed & smooth) ===================== */
+/* ===================== GLOW STYLES (fixed) ===================== */
 
 /* Each .glow element will have inline CSS vars added by JS:
    --glow-rgb: "R, G, B"
    --glow-density: numeric (default 1)
    --glow-brightness: numeric (default 1)
+   We use --glow-opacity to smoothly fade the glow in/out while leaving the text color transitions alone.
 */
 .glow {
   --glow-density: 1;
   --glow-brightness: 1;
+  --glow-opacity: 1;
+
   --g1: calc(6px * var(--glow-density));
   --g2: calc(12px * var(--glow-density));
   --g3: calc(18px * var(--glow-density));
 
-  /* default text-shadow uses the captured --glow-rgb */
+  /* text-shadow uses the captured --glow-rgb and multiplies alpha by --glow-opacity.
+     text-shadow and opacity both animate smoothly with --blur-duration. */
   text-shadow:
-    0 0 var(--g1) rgba(var(--glow-rgb, 255,255,255), calc(0.45 * var(--glow-brightness))),
-    0 0 var(--g2) rgba(var(--glow-rgb, 255,255,255), calc(0.22 * var(--glow-brightness))),
-    0 0 var(--g3) rgba(var(--glow-rgb, 255,255,255), calc(0.12 * var(--glow-brightness)));
-  transition: text-shadow var(--blur-duration) ease, opacity var(--blur-duration) ease;
+    0 0 var(--g1) rgba(var(--glow-rgb, 255,255,255), calc(0.45 * var(--glow-brightness) * var(--glow-opacity))),
+    0 0 var(--g2) rgba(var(--glow-rgb, 255,255,255), calc(0.22 * var(--glow-brightness) * var(--glow-opacity))),
+    0 0 var(--g3) rgba(var(--glow-rgb, 255,255,255), calc(0.12 * var(--glow-brightness) * var(--glow-opacity)));
+  transition: color var(--blur-duration) ease, text-shadow var(--blur-duration) ease, opacity var(--blur-duration) ease;
   opacity: 1;
 }
 
-/* When the containing element is blurred, hide glow (covers both cases: glow as descendant OR the element itself) */
-.blur-target.is-blurred .glow,
-.blur-target.is-blurred.glow {
-  text-shadow: none;
+/* While the block is blurred: hide the glow smoothly by setting --glow-opacity to 0 and lowering opacity.
+   Text color is still forced to --accent by the blur rules above; the glow uses the captured color var, so it won't become white. */
+.blur-target.is-blurred .glow {
+  --glow-opacity: 0;
   opacity: 0;
-  transition: text-shadow var(--blur-duration) ease, opacity var(--blur-duration) ease;
 }
 
-/* When temporarily revealing (hover-reveal) show original glow even though element has .is-blurred */
-.blur-target.hover-reveal .glow,
-.blur-target.hover-reveal.glow {
-  opacity: 1 !important;
-  text-shadow:
-    0 0 var(--g1) rgba(var(--glow-rgb, 255,255,255), calc(0.45 * var(--glow-brightness))) !important,
-    0 0 var(--g2) rgba(var(--glow-rgb, 255,255,255), calc(0.22 * var(--glow-brightness))) !important,
-    0 0 var(--g3) rgba(var(--glow-rgb, 255,255,255), calc(0.12 * var(--glow-brightness))) !important;
-  transition: text-shadow var(--blur-duration) ease, opacity var(--blur-duration) ease;
-}
-
-/* Ensure unblurred text shows glow normally (both descendant and same-element cases) */
-.blur-target.unblurred .glow,
-.blur-target.unblurred.glow {
+/* Hover reveal shows the glow temporarily (smoothly) */
+.blur-target.hover-reveal .glow {
+  --glow-opacity: 1;
   opacity: 1;
-  text-shadow:
-    0 0 var(--g1) rgba(var(--glow-rgb, 255,255,255), calc(0.45 * var(--glow-brightness))),
-    0 0 var(--g2) rgba(var(--glow-rgb, 255,255,255), calc(0.22 * var(--glow-brightness))),
-    0 0 var(--g3) rgba(var(--glow-rgb, 255,255,255), calc(0.12 * var(--glow-brightness)));
-  transition: text-shadow var(--blur-duration) ease, opacity var(--blur-duration) ease;
+}
+
+/* Unblurred state shows glow normally */
+.blur-target.unblurred .glow {
+  --glow-opacity: 1;
+  opacity: 1;
 }
