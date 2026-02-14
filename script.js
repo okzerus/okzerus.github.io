@@ -40,6 +40,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const resolvedUrlCache = new Map();
   const preloadedImgCache = new Map();
 
+  // *** moved edgeBtn declaration here to avoid TDZ errors when functions called during init ***
+  let edgeBtn = null;
+
   /* blur config */
   const BLUR_THRESHOLD_Y_RATIO = 0.5; // middle of viewport
   const BLUR_VISUAL_KEY = 'blur-visual-enabled';
@@ -930,7 +933,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   /* ------------------- EDGE SCROLL BUTTON ------------------- */
   // Create the button and wire it up
-  let edgeBtn = null;
   function createEdgeScrollButton() {
     if (edgeBtn) return;
     edgeBtn = document.createElement('button');
