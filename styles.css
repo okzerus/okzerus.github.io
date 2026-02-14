@@ -11,6 +11,11 @@
   --tooltip-link-color: #bfe8ff;
   --tooltip-image-height: 200px;
   --blur-duration: 360ms; /* change this to affect smoothness */
+
+  /* edge button sizing (tweak here) */
+  --edge-btn-w: 34px;
+  --edge-btn-h: 34px;
+  --edge-btn-radius: 18px;
 }
 
 /* sensible defaults */
@@ -99,7 +104,7 @@ body.chapters-open #chapters-list{ transform:translateX(0); }
 #chapters-list a{ color:var(--accent); text-decoration:none; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width: calc(220px - 24px); padding-right:6px; }
 #chapters-list a.undone { color: var(--muted-dark); text-decoration: line-through; pointer-events: none; cursor: default; opacity: 0.75; }
 
-/* content area centered - make it position:relative so edge button can stick out */
+/* content area centered - make it position:relative so edge button can be positioned relative if needed */
 #content{ max-width: 960px; margin: 18px auto; background:var(--card); padding:24px; border-radius:8px; box-shadow:0 2px 6px rgba(0,0,0,0.06); position:relative; }
 #chapter-title{ font-size:40px; font-weight:700; margin: 0 0 16px; text-align:center; word-break:break-word; }
 
@@ -115,33 +120,42 @@ body.chapters-open #chapters-list{ transform:translateX(0); }
 #top-nav{ position:fixed; left:50%; transform: translateX(-50%) translateY(-6px); z-index:1300; opacity:0; pointer-events:none; display:flex; gap:12px; transition: opacity 260ms ease, transform 260ms ease; }
 #top-nav.visible-top{ opacity:1; transform: translateX(-50%) translateY(0); pointer-events:auto; }
 
-/* EDGE SCROLL BUTTON (new) - half the nav size roughly */
+/* EDGE SCROLL BUTTON (new) - fixed position so it stays in viewport
+   Visual style: same background as content (.card), no border/shadow so it blends into the edge
+   The pill shape will have the left side rounded so it appears to grow from the content.
+*/
 .edge-scroll-btn {
-  position: absolute;
-  right: -18px; /* sticks out from content */
+  position: fixed;
   top: 50%;
   transform: translateY(-50%);
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
+  width: var(--edge-btn-w);
+  height: var(--edge-btn-h);
   background: var(--card);
   color: var(--btn-fg);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 6px 18px rgba(0,0,0,0.28);
-  border: 2px solid rgba(var(--bg-r), var(--bg-g), var(--bg-b), 0.50);
-  cursor: pointer;
   z-index: 1250;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 260ms ease, transform 200ms cubic-bezier(.2,.9,.3,1);
+  transition: opacity 220ms ease, left 220ms ease;
   font-size: 14px;
   line-height: 1;
+  border: none;
+  box-shadow: none;
+  /* pill: rounded left side and slightly rounded right to look organic */
+  border-radius: calc(var(--edge-btn-radius)) calc(var(--edge-btn-radius) / 2) calc(var(--edge-btn-radius)) calc(var(--edge-btn-radius) / 2);
 }
+
+/* When visible: clickable */
 .edge-scroll-btn.visible {
   opacity: 1;
   pointer-events: auto;
+}
+
+/* smaller hit area on mobile */
+@media (max-width:700px){
+  .edge-scroll-btn { display:none; }
 }
 
 /* ========== BLUR styling (class-based, smooth) ========== */
@@ -209,27 +223,19 @@ body.blur-visual-off .blur-target, body.blur-visual-off .blur-target * { color: 
 
 /* ===================== GLOW STYLES (moved to ::after, fixed selectors) ===================== */
 
-/* The glow will be rendered by a pseudo-element so we can hide it independently from the visible text.
-   JS will copy plain text into data-glow for each .glow element and set --glow-rgb, --glow-density, --glow-brightness.
-*/
 .glow {
   position: relative;
-  z-index: 1; /* ensure original text sits above the glow pseudo-element */
-  text-shadow: none !important; /* real text must not have text-shadow */
+  z-index: 1;
+  text-shadow: none !important;
 }
-
-/* Default CSS vars */
 .glow {
   --glow-density: 1;
   --glow-brightness: 1;
   --glow-opacity: 1;
-
   --g1: calc(6px * var(--glow-density));
   --g2: calc(12px * var(--glow-density));
   --g3: calc(18px * var(--glow-density));
 }
-
-/* the pseudo-element that draws the glow (matches element's text using data-glow attr) */
 .glow::after {
   content: attr(data-glow);
   position: absolute;
@@ -253,26 +259,18 @@ body.blur-visual-off .blur-target, body.blur-visual-off .blur-target * { color: 
   transition: text-shadow var(--blur-duration) ease, opacity var(--blur-duration) ease;
   opacity: 1;
 }
-
-/* FIXED: cover both descendant case and same-element case with explicit selectors */
-
-/* While the block is blurred: remove the pseudo-element glow (both when .glow is a child, and when the element itself is .glow) */
 .blur-target.is-blurred .glow::after,
 .blur-target.is-blurred.glow::after {
   text-shadow: none !important;
   opacity: 0 !important;
   transition: text-shadow var(--blur-duration) ease !important, opacity var(--blur-duration) ease !important;
 }
-
-/* Hover reveal temporarily restores glow even while blurred */
 .blur-target.hover-reveal .glow::after,
 .blur-target.hover-reveal.glow::after {
   text-shadow: var(--glow-shadow) !important;
   opacity: 1 !important;
   transition: text-shadow var(--blur-duration) ease !important, opacity var(--blur-duration) ease !important;
 }
-
-/* Unblurred restores glow (both cases) */
 .blur-target.unblurred .glow::after,
 .blur-target.unblurred.glow::after {
   text-shadow: var(--glow-shadow) !important;
