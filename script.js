@@ -1,6 +1,8 @@
-// script.js - glow capture + class-based blur (replace file)
+// script.js - full app (nav, chapters, blur, glow, tooltips, image viewer, color picker, edge scroll button)
+// Replace file with this full script.
+
 document.addEventListener('DOMContentLoaded', () => {
-  /* DOM refs */
+  /* ---------------------- DOM refs ---------------------- */
   const chaptersListEl = document.getElementById('chapters');
   const chapterBodyEl = document.getElementById('chapter-body');
   const chapterTitleEl = document.getElementById('chapter-title');
@@ -31,22 +33,18 @@ document.addEventListener('DOMContentLoaded', () => {
     return;
   }
 
-  /* state */
+  /* ---------------------- state ---------------------- */
   let chapters = [];
   let currentIndex = -1;
   let lastChapterFile = null;
   const resolvedUrlCache = new Map();
   const preloadedImgCache = new Map();
 
-  /* blur & animation config */
+  /* blur config */
   const BLUR_THRESHOLD_Y_RATIO = 0.5; // middle of viewport
   const BLUR_VISUAL_KEY = 'blur-visual-enabled';
 
-  /* ========== color picker & theme helpers (kept) ========== */
-  const DEFAULT_BG_HEX = '#0b0f13';
-  const CARD_LIGHTNESS_DELTA = 0.03333333333333333;
-  const CONTRAST_LUMINANCE_THRESHOLD = 0.50;
-
+  /* ---------- small helpers (color conversions) ---------- */
   function hexToRgb(hex) {
     hex = (hex || '').replace('#', '');
     if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
@@ -100,6 +98,11 @@ document.addEventListener('DOMContentLoaded', () => {
     return 0.2126 * srgb[0] + 0.7152 * srgb[1] + 0.0722 * srgb[2];
   }
 
+  /* ---------- color picker helpers ---------- */
+  const DEFAULT_BG_HEX = '#0b0f13';
+  const CARD_LIGHTNESS_DELTA = 0.03333333333333333;
+  const CONTRAST_LUMINANCE_THRESHOLD = 0.50;
+
   function computeCardFromBgHex(bgHex) {
     const { r, g, b } = hexToRgb(bgHex);
     const hsl = rgbToHsl(r, g, b);
@@ -131,10 +134,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  /* Color picker (kept) */
-  const STORAGE_KEY = 'site-bg-color';
-  let hsv = { h: 210, s: 0.3, v: 0.05 };
-
+  /* small HSV helpers for the custom picker */
   function hsvToRgb(h, s, v) {
     h = (h % 360 + 360) % 360;
     const c = v * s;
@@ -163,8 +163,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     return { h, s, v };
   }
-  function persistHex(hex) { try { localStorage.setItem(STORAGE_KEY, hex); } catch (e) {} }
+
+  const STORAGE_KEY = 'site-bg-color';
+  let hsv = { h: 210, s: 0.3, v: 0.05 };
+
   function applyHsvState() { const { r, g, b } = hsvToRgb(hsv.h, hsv.s, hsv.v); const hex = rgbToHex(r, g, b); applyColorHex(hex); }
+  function persistHex(hex) { try { localStorage.setItem(STORAGE_KEY, hex); } catch (e) {} }
 
   function updatePickerUI() {
     if (!colorArea || !hueSlider || !colorAreaCursor || !hueCursor) return;
@@ -201,6 +205,7 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('touchend', (e) => { handlers.end && handlers.end(e.changedTouches && e.changedTouches[0]); }, { passive: false });
   }
 
+  /* ---------- Color popup wiring ---------- */
   function handleHuePointer(e) {
     if (!hueSlider) return;
     const rect = hueSlider.getBoundingClientRect();
@@ -245,8 +250,7 @@ document.addEventListener('DOMContentLoaded', () => {
     applyHsvState(); requestAnimationFrame(updatePickerUI);
   })();
 
-  /* ========== Blur logic (class-based) ========== */
-
+  /* ---------- blur / glow / read tracking ---------- */
   function readStorageKeyFor(filename) { return 'read:' + filename; }
   function loadReadIndicesFor(filename) {
     try {
@@ -282,10 +286,11 @@ document.addEventListener('DOMContentLoaded', () => {
         el.classList.add('is-blurred');
       });
     }
+    // update edge button whenever visual blur toggles
+    updateEdgeScrollVisibility();
   }
 
-  // Collect targets: top-level children; images inside blocks become their own targets.
-  // NOTE: images are included even if not loaded yet.
+  // collect targets (top-level children and images inside blocks)
   function collectTargets() {
     const targets = [];
     const children = Array.from(chapterBodyEl.children);
@@ -300,7 +305,6 @@ document.addEventListener('DOMContentLoaded', () => {
     return targets;
   }
 
-  // Parse an rgb/rgba string into r,g,b numbers. Returns object {r,g,b} or null.
   function parseRgbString(rgbStr) {
     if (!rgbStr) return null;
     const m = rgbStr.match(/rgba?\(\s*([0-9]+)[,\s]+([0-9]+)[,\s]+([0-9]+)/i);
@@ -308,7 +312,6 @@ document.addEventListener('DOMContentLoaded', () => {
     return { r: Number(m[1]), g: Number(m[2]), b: Number(m[3]) };
   }
 
-  // Capture original color + glow attributes for all .glow elements
   function captureGlowInfo() {
     if (!chapterBodyEl) return;
     const glowEls = Array.from(chapterBodyEl.querySelectorAll('.glow'));
@@ -320,10 +323,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (rgb) {
           el.style.setProperty('--glow-rgb', `${rgb.r}, ${rgb.g}, ${rgb.b}`);
         } else {
-          // fallback to white
           el.style.setProperty('--glow-rgb', `255, 255, 255`);
         }
-        // density & brightness from attributes (defaults 1)
         const dens = parseFloat(el.getAttribute('glow-density'));
         const bright = parseFloat(el.getAttribute('glow-brightness'));
         if (!Number.isNaN(dens) && dens > 0) el.style.setProperty('--glow-density', String(dens));
@@ -331,17 +332,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!Number.isNaN(bright) && bright > 0) el.style.setProperty('--glow-brightness', String(bright));
         else el.style.setProperty('--glow-brightness', '1');
 
-        // copy plain text into data-glow attribute for the ::after pseudo-element to draw the glow.
-        // we use textContent to avoid copying inner HTML (pseudo-element supports only text content).
+        // copy text into data-glow for ::after renderer
         const txt = el.textContent || '';
-        // trim leading/trailing newlines that may create layout issues
         el.setAttribute('data-glow', txt.replace(/^\n+|\n+$/g, ''));
 
-        // remove any inline text-shadow on the real text (we draw glow via ::after)
         el.style.textShadow = 'none';
-      } catch (e) {
-        // ignore
-      }
+      } catch (e) {}
     });
   }
 
@@ -366,6 +362,8 @@ document.addEventListener('DOMContentLoaded', () => {
         saveReadIndicesFor(lastChapterFile, set);
       }
     }
+    // update edge button because a blurred item changed state
+    updateEdgeScrollVisibility();
   }
 
   function revealTemp(el) {
@@ -382,13 +380,13 @@ document.addEventListener('DOMContentLoaded', () => {
   function initBlurTargetsForChapter(filename, blurEnabled = true) {
     if (!chapterBodyEl) return;
 
-    // FIRST: capture glow info while original colors are still present
+    // capture glow info first
     captureGlowInfo();
 
-    // cleanup existing (preserve 'unblurred' if it exists)
+    // cleanup existing
     chapterBodyEl.querySelectorAll('.blur-target').forEach(old => {
       old.classList.remove('is-blurred', 'hover-reveal');
-      old.classList.remove('blur-target'); // will re-add
+      old.classList.remove('blur-target');
     });
 
     const targets = collectTargets();
@@ -398,14 +396,12 @@ document.addEventListener('DOMContentLoaded', () => {
       el.dataset.blurIndex = idx;
       el.classList.add('blur-target');
 
-      // if blur disabled for this chapter, mark unblurred
       if (!blurEnabled) {
         el.classList.add('unblurred');
         el.classList.remove('is-blurred');
         return;
       }
 
-      // initial state
       if (el.classList.contains('unblurred') || readSet.has(idx)) {
         el.classList.add('unblurred');
         el.classList.remove('is-blurred');
@@ -417,15 +413,17 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       }
 
-      // attach hover handlers
       el.addEventListener('mouseenter', () => { if (!el.classList.contains('unblurred')) revealTemp(el); });
       el.addEventListener('mouseleave', () => { if (!el.classList.contains('unblurred')) hideTemp(el); });
       el.addEventListener('touchstart', () => { if (!el.classList.contains('unblurred')) revealTemp(el); }, {passive:true});
       el.addEventListener('touchend', () => { if (!el.classList.contains('unblurred')) hideTemp(el); }, {passive:true});
     });
+
+    // once targets are initialized, update edge button visibility
+    updateEdgeScrollVisibility();
   }
 
-  // Unblur logic when scrolling - images unblur when top crosses center (same as text)
+  /* ---------- Unblur on scroll ---------- */
   let scrollScheduled = false;
   function checkAndUnblurVisibleTargets() {
     if (!chapterBodyEl) return;
@@ -447,6 +445,9 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       if (trigger) removeBlurFromTarget(el, true);
     });
+
+    // update edge button each time we check
+    updateEdgeScrollVisibility();
   }
 
   window.addEventListener('scroll', () => {
@@ -459,7 +460,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }, { passive: true });
   window.addEventListener('resize', () => { checkAndUnblurVisibleTargets(); });
 
-  /* ========== Tooltip image resolve & preload (kept) ========== */
+  /* ---------- tooltip images resolve & preload ---------- */
   function testImageUrl(url, timeout = 3000) {
     return new Promise(resolve => {
       const img = new Image();
@@ -544,7 +545,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  /* ---------- Tippy init (gloss) ---------- */
+  /* ---------- tippy init for .gloss ---------- */
   function initGlossTippy() {
     if (!window.tippy) return;
     document.querySelectorAll('.gloss').forEach(el => { try { if (el._tippy) el._tippy.destroy(); } catch (e) {} });
@@ -595,7 +596,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  /* ---------- Nav tippies ---------- */
+  /* ---------- nav tippies ---------- */
   function refreshNavTippies() {
     if (!window.tippy) return;
     [bottomPrev, bottomNext, topPrev, topNext].forEach(btn => { if (!btn) return; try { if (btn._tippy) btn._tippy.destroy(); } catch (e) {} });
@@ -605,7 +606,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (topNext) tippy(topNext, { content: () => topNext.dataset.title || '', placement: 'bottom', delay: [80, 40], offset: [0, 8], appendTo: () => document.body });
   }
 
-  /* ---------- Chapters aside open/close ---------- */
+  /* ---------- chapters aside open/close ---------- */
   let chaptersOpen = false;
   const EDGE_TRIGGER_PX = 12;
   function openChapters() { if (chaptersOpen) return; chaptersOpen = true; document.body.classList.add('chapters-open'); }
@@ -618,7 +619,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   document.addEventListener('click', (e) => { if (!chaptersOpen) return; if (chaptersAside && chaptersAside.contains(e.target)) return; if (e.clientX <= EDGE_TRIGGER_PX) return; closeChapters(); });
 
-  /* ---------- Top nav behavior (kept) ---------- */
+  /* ---------- top nav behavior ---------- */
   function positionTopNav() {
     if (!topNav || !headerEl) return;
     const hRect = headerEl.getBoundingClientRect();
@@ -674,7 +675,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initialTopNavSetup();
   setTimeout(initialTopNavSetup, 80);
 
-  /* ---------- Image viewer (kept) ---------- */
+  /* ---------- image viewer ---------- */
   if (!document.getElementById('image-overlay')) {
     const overlay = document.createElement('div');
     overlay.id = 'image-overlay';
@@ -729,7 +730,7 @@ document.addEventListener('DOMContentLoaded', () => {
   overlay.addEventListener('click', (ev) => { if (ev.target === overlay) closeImageViewer(); });
   window.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && overlay.classList.contains('visible')) closeImageViewer(); });
 
-  // Bind images to viewer without replacing nodes (keeps blur classes intact)
+  // Bind images to viewer
   function bindImagesToViewer() {
     const imgs = chapterBodyEl.querySelectorAll('img');
     imgs.forEach(img => {
@@ -745,7 +746,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  /* ---------- Persist scroll on reload (sessionStorage) ---------- */
+  /* ---------- persist scroll on page reload only (sessionStorage) ---------- */
   window.addEventListener('beforeunload', () => {
     try {
       if (currentIndex >= 0 && chapters[currentIndex] && chapters[currentIndex].file) {
@@ -755,7 +756,7 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (e) {}
   });
 
-  /* ---------- Navigation & chapters ---------- */
+  /* ---------- nav helpers (done flag aware) ---------- */
   function isDoneEntry(entry) { if (!entry) return false; return entry.done !== false; }
   function findPrevDoneIndex(fromIndex) { for (let i = (fromIndex === undefined ? currentIndex - 1 : fromIndex); i >= 0; i--) if (isDoneEntry(chapters[i])) return i; return -1; }
   function findNextDoneIndex(fromIndex) { for (let i = (fromIndex === undefined ? currentIndex + 1 : fromIndex); i < chapters.length; i++) if (isDoneEntry(chapters[i])) return i; return -1; }
@@ -815,7 +816,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.key === 'ArrowRight') { const next = findNextDoneIndex(); if (next !== -1) goToChapter(next); }
   });
 
-  /* ---------- Load chapters list ---------- */
+  /* ---------- load chapters list ---------- */
   async function loadChapters() {
     chapterBodyEl.textContent = 'Загрузка...';
     try {
@@ -856,7 +857,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  /* ---------- Load a single chapter ---------- */
+  /* ---------- load a single chapter ---------- */
   async function loadChapter(filename, title) {
     chapterTitleEl.textContent = title || '';
     chapterBodyEl.textContent = 'Загрузка главы...';
@@ -908,13 +909,15 @@ document.addEventListener('DOMContentLoaded', () => {
       // initial unblur check
       requestAnimationFrame(checkAndUnblurVisibleTargets);
 
+      // update edge scroll button visibility now that chapter loaded
+      updateEdgeScrollVisibility();
     } catch (err) {
       chapterBodyEl.textContent = 'Ошибка загрузки главы: ' + err.message;
       console.error('loadChapter error:', err);
     }
   }
 
-  /* ---------- Blur toggle button initialization ---------- */
+  /* ---------- blur toggle button ---------- */
   if (blurToggle) {
     const enabled = isVisualBlurEnabled();
     setVisualBlurEnabled(enabled);
@@ -925,7 +928,86 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  /* ---------- Start ---------- */
+  /* ------------------- EDGE SCROLL BUTTON ------------------- */
+  // Create the button and wire it up
+  let edgeBtn = null;
+  function createEdgeScrollButton() {
+    if (edgeBtn) return;
+    edgeBtn = document.createElement('button');
+    edgeBtn.className = 'edge-scroll-btn';
+    edgeBtn.id = 'edge-scroll-btn';
+    edgeBtn.setAttribute('aria-label', 'Перейти к следующему скрытому фрагменту');
+    edgeBtn.innerHTML = '▼';
+    // attach inside #content so it visually continues the content background
+    const content = document.getElementById('content');
+    if (content) {
+      content.appendChild(edgeBtn);
+      edgeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const next = findNextBlurTargetElement();
+        if (next) scrollToTargetElement(next);
+      });
+    }
+  }
+
+  // find the next blurred target element below the current viewport
+  function findNextBlurTargetElement() {
+    if (!chapterBodyEl) return null;
+    const nodes = Array.from(chapterBodyEl.querySelectorAll('.blur-target:not(.unblurred)'));
+    if (!nodes.length) return null;
+    // compute absolute top for each and pick the first whose top > currentScroll + 2
+    const curScroll = window.scrollY || 0;
+    const candidates = nodes.map(el => ({ el, top: (el.getBoundingClientRect().top + window.scrollY) }));
+    candidates.sort((a,b) => a.top - b.top);
+    for (const c of candidates) {
+      if (c.top > curScroll + 2) return c.el;
+    }
+    // none below -> return null (do not jump forward chapters)
+    return null;
+  }
+
+  // scroll so that the element center is near viewport center
+  function scrollToTargetElement(el) {
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const elCenterY = rect.top + window.scrollY + (rect.height / 2);
+    const targetScroll = Math.max(0, Math.round(elCenterY - (window.innerHeight / 2)));
+    window.scrollTo({ top: targetScroll, behavior: 'smooth' });
+  }
+
+  // update edge button visibility: show only when blur is enabled and there are next blurred items
+  function updateEdgeScrollVisibility() {
+    // ensure button exists
+    createEdgeScrollButton();
+    if (!edgeBtn) return;
+    // if blur disabled globally: hide
+    if (!isVisualBlurEnabled()) {
+      edgeBtn.classList.remove('visible');
+      return;
+    }
+    // also hide if chapter blur disabled
+    let chapterBlurEnabled = true;
+    try {
+      const c = chapters[currentIndex];
+      if (c && c.blur === false) chapterBlurEnabled = false;
+    } catch (e) {}
+    if (!chapterBlurEnabled) {
+      edgeBtn.classList.remove('visible');
+      return;
+    }
+    // find next blurred target
+    const next = findNextBlurTargetElement();
+    if (next) {
+      edgeBtn.classList.add('visible');
+    } else {
+      edgeBtn.classList.remove('visible');
+    }
+  }
+
+  /* ------------------- initial create of edge button ------------------- */
+  createEdgeScrollButton();
+
+  /* ---------- start ---------- */
   loadChapters();
   updateNavButtons();
   setTimeout(() => { positionTopNav(); if (window.scrollY <= 10 && !bottomNavIsVisible()) showTopNavImmediate(); }, 120);
