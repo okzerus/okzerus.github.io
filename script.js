@@ -1,5 +1,5 @@
 // script.js - full app (nav, chapters, blur, glow, tooltips, image viewer, color picker, edge scroll button)
-// Replace file with this full script.
+// Full replacement: fixes TDZ errors by declaring edge-related state early.
 
 document.addEventListener('DOMContentLoaded', () => {
   /* ---------------------- DOM refs ---------------------- */
@@ -40,8 +40,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const resolvedUrlCache = new Map();
   const preloadedImgCache = new Map();
 
-  // edge button reference (declared early)
+  // edge button reference and positional state (declared early to avoid TDZ)
   let edgeBtn = null;
+  let lastEdgePos = null;
+  let edgePosScheduled = false;
 
   /* blur config */
   const BLUR_THRESHOLD_Y_RATIO = 0.5; // middle of viewport
@@ -101,7 +103,7 @@ document.addEventListener('DOMContentLoaded', () => {
     return 0.2126 * srgb[0] + 0.7152 * srgb[1] + 0.0722 * srgb[2];
   }
 
-  /* ---------- color picker helpers (same as before) ---------- */
+  /* ---------- color picker helpers ---------- */
   const DEFAULT_BG_HEX = '#0b0f13';
   const CARD_LIGHTNESS_DELTA = 0.03333333333333333;
   const CONTRAST_LUMINANCE_THRESHOLD = 0.50;
@@ -205,10 +207,10 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     element.addEventListener('touchstart', (e) => { if (e.touches && e.touches[0]) handlers.start && handlers.start(e.touches[0]); e.preventDefault(); }, { passive: false });
     window.addEventListener('touchmove', (e) => { if (e.touches && e.touches[0]) handlers.move && handlers.move(e.touches[0]); }, { passive: false });
-    window.addEventListener('touchend', (e) => { handlers.end && handlers.end(e.changedTouches && e.changedTouches[0]); }, {passive:false});
+    window.addEventListener('touchend', (e) => { handlers.end && handlers.end(e.changedTouches && e.changedTouches[0]); }, { passive: false });
   }
 
-  /* ---------- Color popup wiring (kept) ---------- */
+  /* ---------- Color popup wiring ---------- */
   function handleHuePointer(e) {
     if (!hueSlider) return;
     const rect = hueSlider.getBoundingClientRect();
@@ -253,7 +255,7 @@ document.addEventListener('DOMContentLoaded', () => {
     applyHsvState(); requestAnimationFrame(updatePickerUI);
   })();
 
-  /* ---------- blur / glow / read tracking (kept) ---------- */
+  /* ---------- blur / glow / read tracking ---------- */
   function readStorageKeyFor(filename) { return 'read:' + filename; }
   function loadReadIndicesFor(filename) {
     try {
@@ -461,9 +463,9 @@ document.addEventListener('DOMContentLoaded', () => {
       scrollScheduled = false;
     });
   }, { passive: true });
-  window.addEventListener('resize', () => { checkAndUnblurVisibleTargets(); updateEdgeScrollPosition(); });
+  window.addEventListener('resize', () => { checkAndUnblurVisibleTargets(); scheduleEdgePosUpdate(); });
 
-  /* ---------- tooltip images resolve & preload (kept) ---------- */
+  /* ---------- tooltip images resolve & preload ---------- */
   function testImageUrl(url, timeout = 3000) {
     return new Promise(resolve => {
       const img = new Image();
@@ -548,7 +550,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  /* ---------- tippy init for .gloss (kept) ---------- */
+  /* ---------- tippy init for .gloss ---------- */
   function initGlossTippy() {
     if (!window.tippy) return;
     document.querySelectorAll('.gloss').forEach(el => { try { if (el._tippy) el._tippy.destroy(); } catch (e) {} });
@@ -609,7 +611,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (topNext) tippy(topNext, { content: () => topNext.dataset.title || '', placement: 'bottom', delay: [80, 40], offset: [0, 8], appendTo: () => document.body });
   }
 
-  /* ---------- chapters aside open/close (kept) ---------- */
+  /* ---------- chapters aside open/close ---------- */
   let chaptersOpen = false;
   const EDGE_TRIGGER_PX = 12;
   function openChapters() { if (chaptersOpen) return; chaptersOpen = true; document.body.classList.add('chapters-open'); }
@@ -622,7 +624,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   document.addEventListener('click', (e) => { if (!chaptersOpen) return; if (chaptersAside && chaptersAside.contains(e.target)) return; if (e.clientX <= EDGE_TRIGGER_PX) return; closeChapters(); });
 
-  /* ---------- top nav behavior (kept) ---------- */
+  /* ---------- top nav behavior ---------- */
   function positionTopNav() {
     if (!topNav || !headerEl) return;
     const hRect = headerEl.getBoundingClientRect();
@@ -678,7 +680,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initialTopNavSetup();
   setTimeout(initialTopNavSetup, 80);
 
-  /* ---------- image viewer (kept) ---------- */
+  /* ---------- image viewer ---------- */
   if (!document.getElementById('image-overlay')) {
     const overlay = document.createElement('div');
     overlay.id = 'image-overlay';
@@ -953,8 +955,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // position the edge button so its left edge sits exactly on content's right edge minus half the button width,
-  // making it visually protrude out of the content area. This keeps it fixed on screen while scrolling.
-  let lastEdgePos = null;
+  // making it visually protrude to the right. This keeps it fixed on screen while scrolling.
   function updateEdgeScrollPosition() {
     if (!edgeBtn) return;
     const content = document.getElementById('content');
@@ -968,7 +969,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     // compute left so button sits halfway over the content edge (protruding to the right)
     const btnW = edgeBtn.offsetWidth || parseInt(getComputedStyle(document.documentElement).getPropertyValue('--edge-btn-w')) || 34;
-    const leftPx = Math.round(rect.right - (btnW / 2));
+    const leftPx = Math.round(rect.right + window.scrollX - (btnW / 2));
+    // avoid unnecessary writes
+    if (lastEdgePos === leftPx) return;
     edgeBtn.style.left = `${leftPx}px`;
     // vertical center is handled by CSS top:50%/translateY(-50%)
     lastEdgePos = leftPx;
@@ -979,12 +982,14 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!chapterBodyEl) return null;
     const nodes = Array.from(chapterBodyEl.querySelectorAll('.blur-target:not(.unblurred)'));
     if (!nodes.length) return null;
+    // compute absolute top for each and pick the first whose top > currentScroll + 2
     const curScroll = window.scrollY || 0;
     const candidates = nodes.map(el => ({ el, top: (el.getBoundingClientRect().top + window.scrollY) }));
     candidates.sort((a,b) => a.top - b.top);
     for (const c of candidates) {
       if (c.top > curScroll + 2) return c.el;
     }
+    // none below -> return null (do not jump forward chapters)
     return null;
   }
 
@@ -1008,6 +1013,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (c && c.blur === false) chapterBlurEnabled = false;
     } catch (e) {}
     if (!chapterBlurEnabled) { edgeBtn.classList.remove('visible'); return; }
+    // find next blurred target
     const next = findNextBlurTargetElement();
     if (next) {
       edgeBtn.classList.add('visible');
@@ -1019,7 +1025,6 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // keep button positioned on scroll/resize (throttle with rAF)
-  let edgePosScheduled = false;
   function scheduleEdgePosUpdate() {
     if (edgePosScheduled) return;
     edgePosScheduled = true;
