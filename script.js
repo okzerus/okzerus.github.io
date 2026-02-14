@@ -946,10 +946,30 @@ document.addEventListener('DOMContentLoaded', () => {
     // attach to body (fixed). We'll position it so it visually continues the content area.
     document.body.appendChild(edgeBtn);
     edgeBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const next = findNextBlurTargetElement();
-      if (next) scrollToTargetElement(next);
-    });
+  e.stopPropagation();
+  const next = findNextBlurTargetElement();
+  if (!next) return;
+
+  // VISUAL: immediately remove the visual blur so the reader sees the content right away.
+  // Do NOT add `.unblurred` here — we want the normal scroll-based logic to mark it read
+  // (and add .unblurred) only when the reader's viewport actually reaches it.
+  next.classList.remove('is-blurred');
+
+  // Also add a temporary class so any "hover" reveal rules apply consistently while scrolling.
+  // This temporary class will be harmless if the scroll finishes and `removeBlurFromTarget` runs,
+  // because that function adds `.unblurred` and removes `.is-blurred`.
+  next.classList.add('hover-reveal');
+
+  // Remove the temporary hover-reveal after a short time so we don't accidentally leave it
+  // forever if something goes wrong. The normal unblur flow will still mark the item read.
+  setTimeout(() => next.classList.remove('hover-reveal'), 2500);
+
+  // Now scroll to the target smoothly.
+  scrollToTargetElement(next);
+
+  // update edge button visibility right away (it may change after unblurring)
+  updateEdgeScrollVisibility();
+});
     // initial position
     updateEdgeScrollPosition();
   }
