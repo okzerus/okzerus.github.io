@@ -992,44 +992,77 @@ document.addEventListener('DOMContentLoaded', () => {
     lastEdgePos = leftPx;
   }
 
-  // find the next blurred target element below the current viewport
-// replace the old findNextBlurTargetElement()
+// --- Replace your current findNextBlurTargetElement() with this ---
 function findNextBlurTargetElement() {
   if (!chapterBodyEl) return null;
+
+  // gather candidates (only non-unblurred blur-targets)
   const nodes = Array.from(chapterBodyEl.querySelectorAll('.blur-target:not(.unblurred)'));
   if (!nodes.length) return null;
 
+  const MIN_HEIGHT_PX = 18; // threshold to ignore tiny spacer elements (tweak if needed)
+
+  function isMeaningfulElement(el) {
+    // images are always meaningful
+    if (el.tagName && el.tagName.toLowerCase() === 'img') return true;
+
+    // if element has an image inside - meaningful
+    if (el.querySelector && el.querySelector('img')) return true;
+
+    // if there's visible text content (non-empty after trimming) - meaningful
+    if (el.textContent && el.textContent.trim().length > 0) return true;
+
+    // finally check computed height, ignore tiny spacers
+    const r = el.getBoundingClientRect();
+    if (r.height >= MIN_HEIGHT_PX) return true;
+
+    return false;
+  }
+
+  // compute centers for meaningful elements only
   const curScroll = window.scrollY || 0;
+  const candidates = [];
+  nodes.forEach(el => {
+    try {
+      if (!isMeaningfulElement(el)) return;
+      const rect = el.getBoundingClientRect();
+      const center = rect.top + window.scrollY + (rect.height / 2);
+      candidates.push({ el, center });
+    } catch (e) {}
+  });
 
-  // Compute absolute center of each element and sort by it.
-  const candidates = nodes.map(el => {
-    const rect = el.getBoundingClientRect();
-    const center = rect.top + window.scrollY + (rect.height / 2);
-    return { el, center };
-  }).sort((a, b) => a.center - b.center);
+  if (!candidates.length) return null;
+  candidates.sort((a, b) => a.center - b.center);
 
-  // Return the first element whose center is below the current scroll position (a bit of epsilon).
+  // small epsilon so we don't pick something we are basically already at
+  const EPS = 2;
   for (const c of candidates) {
-    if (c.center > curScroll + 2) return c.el;
+    if (c.center > curScroll + EPS) return c.el;
   }
   return null;
 }
 
-// replace the old scrollToTargetElement()
+// --- Replace your current scrollToTargetElement() with this ---
 function scrollToTargetElement(el) {
   if (!el) return;
 
-  // Use two requestAnimationFrames to ensure layout is stable (this avoids off-by-a-bit jumps).
-  const doScroll = () => {
-    const rect = el.getBoundingClientRect();
-    const elCenterY = rect.top + window.scrollY + (rect.height / 2);
-    const maxScroll = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
-    let target = Math.round(elCenterY - (window.innerHeight / 2));
-    if (target < 0) target = 0;
-    if (target > maxScroll) target = maxScroll;
-    window.scrollTo({ top: target, behavior: 'smooth' });
-  };
+  // Ensure layout stabilizes then compute exact center and scroll there.
+  function doScroll() {
+    try {
+      const rect = el.getBoundingClientRect();
+      const elCenterY = rect.top + window.scrollY + (rect.height / 2);
+      const maxScroll = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+      let target = Math.round(elCenterY - (window.innerHeight / 2));
+      if (target < 0) target = 0;
+      if (target > maxScroll) target = maxScroll;
+      window.scrollTo({ top: target, behavior: 'smooth' });
+    } catch (e) {
+      // fallback: simple scroll to element top if something goes wrong
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }
 
+  // double rAF to be robust against immediate DOM/CSS changes
   requestAnimationFrame(() => requestAnimationFrame(doScroll));
 }
 
