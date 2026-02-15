@@ -993,29 +993,46 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // find the next blurred target element below the current viewport
-  function findNextBlurTargetElement() {
-    if (!chapterBodyEl) return null;
-    const nodes = Array.from(chapterBodyEl.querySelectorAll('.blur-target:not(.unblurred)'));
-    if (!nodes.length) return null;
-    // compute absolute top for each and pick the first whose top > currentScroll + 2
-    const curScroll = window.scrollY || 0;
-    const candidates = nodes.map(el => ({ el, top: (el.getBoundingClientRect().top + window.scrollY) }));
-    candidates.sort((a,b) => a.top - b.top);
-    for (const c of candidates) {
-      if (c.top > curScroll + 2) return c.el;
-    }
-    // none below -> return null (do not jump forward chapters)
-    return null;
-  }
+// replace the old findNextBlurTargetElement()
+function findNextBlurTargetElement() {
+  if (!chapterBodyEl) return null;
+  const nodes = Array.from(chapterBodyEl.querySelectorAll('.blur-target:not(.unblurred)'));
+  if (!nodes.length) return null;
 
-  // scroll so that the element center is near viewport center
-  function scrollToTargetElement(el) {
-    if (!el) return;
+  const curScroll = window.scrollY || 0;
+
+  // Compute absolute center of each element and sort by it.
+  const candidates = nodes.map(el => {
+    const rect = el.getBoundingClientRect();
+    const center = rect.top + window.scrollY + (rect.height / 2);
+    return { el, center };
+  }).sort((a, b) => a.center - b.center);
+
+  // Return the first element whose center is below the current scroll position (a bit of epsilon).
+  for (const c of candidates) {
+    if (c.center > curScroll + 2) return c.el;
+  }
+  return null;
+}
+
+// replace the old scrollToTargetElement()
+function scrollToTargetElement(el) {
+  if (!el) return;
+
+  // Use two requestAnimationFrames to ensure layout is stable (this avoids off-by-a-bit jumps).
+  const doScroll = () => {
     const rect = el.getBoundingClientRect();
     const elCenterY = rect.top + window.scrollY + (rect.height / 2);
-    const targetScroll = Math.max(0, Math.round(elCenterY - (window.innerHeight / 2)));
-    window.scrollTo({ top: targetScroll, behavior: 'smooth' });
-  }
+    const maxScroll = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+    let target = Math.round(elCenterY - (window.innerHeight / 2));
+    if (target < 0) target = 0;
+    if (target > maxScroll) target = maxScroll;
+    window.scrollTo({ top: target, behavior: 'smooth' });
+  };
+
+  requestAnimationFrame(() => requestAnimationFrame(doScroll));
+}
+
 
   // update edge button visibility: show only when blur is enabled and there are next blurred items
   function updateEdgeScrollVisibility() {
