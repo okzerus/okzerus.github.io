@@ -1,5 +1,5 @@
-// script.js - full app with glitch support (fixed: added initBlurTargetsForChapter)
-// Replace your existing script.js entirely with this file.
+// script.js - full replacement (defines initBlurTargetsForChapter to avoid ReferenceError)
+// NOTE: replace your existing script.js entirely with this file and hard-refresh the page.
 
 document.addEventListener('DOMContentLoaded', () => {
   /* ---------------------- DOM refs ---------------------- */
@@ -40,16 +40,15 @@ document.addEventListener('DOMContentLoaded', () => {
   const resolvedUrlCache = new Map();
   const preloadedImgCache = new Map();
 
-  // edge button reference and positional state (declared early to avoid TDZ)
   let edgeBtn = null;
   let lastEdgePos = null;
   let edgePosScheduled = false;
 
-  /* blur config */
   const BLUR_THRESHOLD_Y_RATIO = 0.5; // middle of viewport
   const BLUR_VISUAL_KEY = 'blur-visual-enabled';
+  const STORAGE_KEY = 'site-bg-color';
 
-  /* ---------- small helpers (color conversions) ---------- */
+  /* ---------------------- Utility helpers ---------------------- */
   function hexToRgb(hex) {
     hex = (hex || '').replace('#', '');
     if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
@@ -58,101 +57,6 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   function rgbToHex(r, g, b) {
     return '#' + [r, g, b].map(v => Math.round(v).toString(16).padStart(2, '0')).join('');
-  }
-  function rgbToHsl(r, g, b) {
-    r /= 255; g /= 255; b /= 255;
-    const max = Math.max(r, g, b), min = Math.min(r, g, b);
-    let h = 0, s = 0;
-    const l = (max + min) / 2;
-    if (max !== min) {
-      const d = max - min;
-      s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-      switch (max) {
-        case r: h = (g - b) / d + (g < b ? 6 : 0); break;
-        case g: h = (b - r) / d + 2; break;
-        default: h = (r - g) / d + 4; break;
-      }
-      h *= 60;
-    }
-    return { h, s, l };
-  }
-  function hslToRgb(h, s, l) {
-    h = ((h % 360) + 360) % 360;
-    if (s === 0) { const v = Math.round(l * 255); return { r: v, g: v, b: v }; }
-    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-    const p = 2 * l - q;
-    function hue2rgb(p, q, t) {
-      if (t < 0) t += 1;
-      if (t > 1) t -= 1;
-      if (t < 1 / 6) return p + (q - p) * 6 * t;
-      if (t < 1 / 2) return q;
-      if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
-      return p;
-    }
-    const hk = h / 360;
-    const r = hue2rgb(p, q, hk + 1 / 3);
-    const g = hue2rgb(p, q, hk);
-    const b = hue2rgb(p, q, hk - 1 / 3);
-    return { r: Math.round(r * 255), g: Math.round(g * 255), b: Math.round(b * 255) };
-  }
-  function luminanceFromRgb(r, g, b) {
-    const srgb = [r, g, b].map(v => {
-      v = v / 255;
-      return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
-    });
-    return 0.2126 * srgb[0] + 0.7152 * srgb[1] + 0.0722 * srgb[2];
-  }
-
-  /* ---------- color picker helpers ---------- */
-  const DEFAULT_BG_HEX = '#0b0f13';
-  const CARD_LIGHTNESS_DELTA = 0.03333333333333333;
-  const CONTRAST_LUMINANCE_THRESHOLD = 0.50;
-
-  function computeCardFromBgHex(bgHex) {
-    const { r, g, b } = hexToRgb(bgHex);
-    const hsl = rgbToHsl(r, g, b);
-    let newL = hsl.l + CARD_LIGHTNESS_DELTA;
-    if (newL > 1) newL = 1;
-    if (newL < 0) newL = 0;
-    const cardRgb = hslToRgb(hsl.h, hsl.s, newL);
-    return { rgb: cardRgb, hex: rgbToHex(cardRgb.r, cardRgb.g, cardRgb.b) };
-  }
-  function applyColorHex(hex) {
-    const root = document.documentElement;
-    const { r, g, b } = hexToRgb(hex);
-    root.style.setProperty('--bg', hex);
-    root.style.setProperty('--bg-r', String(r));
-    root.style.setProperty('--bg-g', String(g));
-    root.style.setProperty('--bg-b', String(b));
-    const card = computeCardFromBgHex(hex);
-    root.style.setProperty('--card', card.hex);
-    root.style.setProperty('--btn-bg', card.hex);
-    const lum = luminanceFromRgb(r, g, b);
-    if (lum < CONTRAST_LUMINANCE_THRESHOLD) {
-      root.style.setProperty('--accent', '#e6eef6');
-      root.style.setProperty('--btn-fg', '#e6eef6');
-      root.style.setProperty('--tooltip-link-color', '#bfe8ff');
-    } else {
-      root.style.setProperty('--accent', '#132029');
-      root.style.setProperty('--btn-fg', '#132029');
-      root.style.setProperty('--tooltip-link-color', '#1b6ea1');
-    }
-  }
-
-  /* small HSV helpers for the custom picker */
-  function hsvToRgb(h, s, v) {
-    h = (h % 360 + 360) % 360;
-    const c = v * s;
-    const x = c * (1 - Math.abs((h / 60) % 2 - 1));
-    const m = v - c;
-    let r = 0, g = 0, b = 0;
-    if (h < 60) { r = c; g = x; b = 0; }
-    else if (h < 120) { r = x; g = c; b = 0; }
-    else if (h < 180) { r = 0; g = c; b = x; }
-    else if (h < 240) { r = 0; g = x; b = c; }
-    else if (h < 300) { r = x; g = 0; b = c; }
-    else { r = c; g = 0; b = x; }
-    return { r: Math.round((r + m) * 255), g: Math.round((g + m) * 255), b: Math.round((b + m) * 255) };
   }
   function rgbToHsv(r, g, b) {
     r /= 255; g /= 255; b /= 255;
@@ -168,94 +72,217 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     return { h, s, v };
   }
-
-  const STORAGE_KEY = 'site-bg-color';
-  let hsv = { h: 210, s: 0.3, v: 0.05 };
-
-  function applyHsvState() { const { r, g, b } = hsvToRgb(hsv.h, hsv.s, hsv.v); const hex = rgbToHex(r, g, b); applyColorHex(hex); }
-  function persistHex(hex) { try { localStorage.setItem(STORAGE_KEY, hex); } catch (e) {} }
-
-  function updatePickerUI() {
-    if (!colorArea || !hueSlider || !colorAreaCursor || !hueCursor) return;
-    const { r: hr, g: hg, b: hb } = hsvToRgb(hsv.h, 1, 1);
-    colorArea.style.background = `linear-gradient(to top, rgba(0,0,0,1), rgba(0,0,0,0)), linear-gradient(to right, rgba(255,255,255,1), rgba(255,255,255,0)), rgb(${hr},${hg},${hb})`;
-    const sliderRect = hueSlider.getBoundingClientRect();
-    const y = sliderRect.height * (1 - (hsv.h / 360));
-    hueCursor.style.top = `${Math.min(Math.max(0, y), sliderRect.height)}px`;
-    const areaRect = colorArea.getBoundingClientRect();
-    const cx = areaRect.width * hsv.s;
-    const cy = areaRect.height * (1 - hsv.v);
-    colorAreaCursor.style.left = `${Math.min(Math.max(0, cx), areaRect.width)}px`;
-    colorAreaCursor.style.top = `${Math.min(Math.max(0, cy), areaRect.height)}px`;
+  function hsvToRgb(h, s, v) {
+    h = (h % 360 + 360) % 360;
+    const c = v * s;
+    const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+    const m = v - c;
+    let r = 0, g = 0, b = 0;
+    if (h < 60) { r = c; g = x; b = 0; }
+    else if (h < 120) { r = x; g = c; b = 0; }
+    else if (h < 180) { r = 0; g = c; b = x; }
+    else if (h < 240) { r = 0; g = x; b = c; }
+    else if (h < 300) { r = x; g = 0; b = c; }
+    else { r = c; g = 0; b = x; }
+    return { r: Math.round((r + m) * 255), g: Math.round((g + m) * 255), b: Math.round((b + m) * 255) };
   }
 
-  function addDrag(element, handlers) {
-    if (!element) return;
-    let dragging = false; let pointerId = null;
-    element.addEventListener('pointerdown', (ev) => {
-      element.setPointerCapture && element.setPointerCapture(ev.pointerId);
-      dragging = true; pointerId = ev.pointerId;
-      handlers.start && handlers.start(ev); ev.preventDefault();
+  function luminanceFromRgb(r, g, b) {
+    const srgb = [r, g, b].map(v => {
+      v = v / 255;
+      return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
     });
-    window.addEventListener('pointermove', (ev) => {
-      if (!dragging || (pointerId !== null && ev.pointerId !== pointerId)) return;
-      handlers.move && handlers.move(ev); ev.preventDefault();
-    }, { passive: false });
-    window.addEventListener('pointerup', (ev) => {
-      if (!dragging || (pointerId !== null && ev.pointerId !== pointerId)) return;
-      dragging = false; pointerId = null; handlers.end && handlers.end(ev); ev.preventDefault();
-    });
-    element.addEventListener('touchstart', (e) => { if (e.touches && e.touches[0]) handlers.start && handlers.start(e.touches[0]); e.preventDefault(); }, { passive: false });
-    window.addEventListener('touchmove', (e) => { if (e.touches && e.touches[0]) handlers.move && handlers.move(e.touches[0]); }, { passive: false });
-    window.addEventListener('touchend', (e) => { handlers.end && handlers.end(e.changedTouches && e.changedTouches[0]); }, { passive: false });
+    return 0.2126 * srgb[0] + 0.7152 * srgb[1] + 0.0722 * srgb[2];
   }
 
-  /* ---------- Color popup wiring ---------- */
-  function handleHuePointer(e) {
-    if (!hueSlider) return;
-    const rect = hueSlider.getBoundingClientRect();
-    const y = Math.min(Math.max(0, (e.clientY || 0) - rect.top), rect.height);
-    const ratio = 1 - (y / rect.height);
-    hsv.h = ratio * 360; updatePickerUI(); applyHsvState(); persistHex(rgbToHex(...Object.values(hsvToRgb(hsv.h, hsv.s, hsv.v))));
-  }
-  function handleAreaPointer(e) {
-    if (!colorArea) return;
-    const rect = colorArea.getBoundingClientRect();
-    const x = Math.min(Math.max(0, (e.clientX || 0) - rect.left), rect.width);
-    const y = Math.min(Math.max(0, (e.clientY || 0) - rect.top), rect.height);
-    hsv.s = (x / rect.width); hsv.v = 1 - (y / rect.height);
-    updatePickerUI(); applyHsvState(); persistHex(rgbToHex(...Object.values(hsvToRgb(hsv.h, hsv.s, hsv.v))));
-  }
-  if (hueSlider) addDrag(hueSlider, { start: handleHuePointer, move: handleHuePointer, end: () => persistHex(rgbToHex(...Object.values(hsvToRgb(hsv.h, hsv.s, hsv.v)))) });
-  if (colorArea) addDrag(colorArea, { start: handleAreaPointer, move: handleAreaPointer, end: () => persistHex(rgbToHex(...Object.values(hsvToRgb(hsv.h, hsv.s, hsv.v)))) });
-
-  function showColorPopup() { if (!colorPopup) return; colorPopup.classList.add('visible'); colorPopup.setAttribute('aria-hidden','false'); document.addEventListener('click', onDocClickForPopup); }
-  function hideColorPopup() { if (!colorPopup) return; colorPopup.classList.remove('visible'); colorPopup.setAttribute('aria-hidden','true'); document.removeEventListener('click', onDocClickForPopup); }
-  function onDocClickForPopup(e) { if (!colorPopup) return; if (colorPopup.contains(e.target) || (themeToggle && themeToggle.contains(e.target))) return; hideColorPopup(); }
-  if (themeToggle) themeToggle.addEventListener('click', (e) => { e.stopPropagation(); if (!colorPopup) return; if (colorPopup.classList.contains('visible')) hideColorPopup(); else showColorPopup(); });
-  if (colorResetBtn) colorResetBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    try { localStorage.setItem(STORAGE_KEY, DEFAULT_BG_HEX); } catch (err) {}
-    const { r, g, b } = hexToRgb(DEFAULT_BG_HEX);
-    const hv = rgbToHsv(r, g, b);
-    hsv.h = hv.h; hsv.s = hv.s; hsv.v = hv.v;
-    applyHsvState(); updatePickerUI(); hideColorPopup();
-  });
+  /* ---------------------- Color picker minimal wiring ---------------------- */
+  // Keep to minimal functionality necessary for color persistence and apply
+  const DEFAULT_BG_HEX = '#0b0f13';
   (function initColor() {
     try {
       const stored = localStorage.getItem(STORAGE_KEY) || DEFAULT_BG_HEX;
       const { r, g, b } = hexToRgb(stored);
-      const v = rgbToHsv(r, g, b);
-      hsv.h = v.h || 0; hsv.s = v.s || 0; hsv.v = v.v || 0;
+      applyColorHex(stored);
     } catch (e) {
-      const { r, g, b } = hexToRgb(DEFAULT_BG_HEX);
-      const v = rgbToHsv(r, g, b);
-      hsv.h = v.h || 0; hsv.s = v.s || 0; hsv.v = v.v || 0;
+      applyColorHex(DEFAULT_BG_HEX);
     }
-    applyHsvState(); requestAnimationFrame(updatePickerUI);
   })();
 
-  /* ---------- blur / glow / read tracking ---------- */
+  function applyColorHex(hex) {
+    const { r, g, b } = hexToRgb(hex);
+    document.documentElement.style.setProperty('--bg', hex);
+    const lum = luminanceFromRgb(r, g, b);
+    if (lum < 0.5) {
+      document.documentElement.style.setProperty('--accent', '#e6eef6');
+      document.documentElement.style.setProperty('--btn-fg', '#e6eef6');
+      document.documentElement.style.setProperty('--tooltip-link-color', '#bfe8ff');
+    } else {
+      document.documentElement.style.setProperty('--accent', '#132029');
+      document.documentElement.style.setProperty('--btn-fg', '#132029');
+      document.documentElement.style.setProperty('--tooltip-link-color', '#1b6ea1');
+    }
+  }
+
+  /* ---------------------- Tooltip image resolving & preload ---------------------- */
+  function testImageUrl(url, timeout = 3000) {
+    return new Promise(resolve => {
+      const img = new Image();
+      let done = false;
+      const onLoad = () => { if (done) return; done = true; cleanup(); resolve(true); };
+      const onErr = () => { if (done) return; done = true; cleanup(); resolve(false); };
+      const cleanup = () => { img.onload = img.onerror = null; clearTimeout(timer); };
+      img.onload = onLoad; img.onerror = onErr; img.src = url;
+      const timer = setTimeout(() => { if (done) return; done = true; cleanup(); resolve(false); }, timeout);
+    });
+  }
+
+  async function resolveTooltipImage(srcCandidate) {
+    if (!srcCandidate) return null;
+    if (resolvedUrlCache.has(srcCandidate)) return resolvedUrlCache.get(srcCandidate);
+    if (/^https?:\/\//i.test(srcCandidate) || srcCandidate.startsWith('/')) {
+      if (await testImageUrl(srcCandidate)) { resolvedUrlCache.set(srcCandidate, srcCandidate); return srcCandidate; }
+    }
+    const bases = [window.location.href, window.location.origin + window.location.pathname];
+    if (lastChapterFile) {
+      bases.push(window.location.origin + '/' + lastChapterFile);
+      const parts = lastChapterFile.split('/'); parts.pop();
+      const parent = parts.join('/');
+      if (parent) bases.push(window.location.origin + '/' + parent + '/');
+    }
+    bases.push(window.location.origin + '/');
+    for (const base of bases) {
+      try {
+        const u = new URL(srcCandidate, base).href;
+        if (await testImageUrl(u)) { resolvedUrlCache.set(srcCandidate, u); return u; }
+      } catch (e) {}
+    }
+    resolvedUrlCache.set(srcCandidate, null);
+    return null;
+  }
+
+  async function preloadTooltipImages() {
+    if (!chapterBodyEl) return;
+    const glossEls = Array.from(chapterBodyEl.querySelectorAll('.gloss'));
+    for (const el of glossEls) {
+      const dataImg = el.getAttribute('data-img');
+      if (!dataImg) continue;
+      try {
+        const resolved = await resolveTooltipImage(dataImg);
+        if (resolved && !preloadedImgCache.has(resolved)) {
+          const pimg = new Image(); pimg.crossOrigin = 'anonymous'; pimg.decoding = 'async';
+          preloadedImgCache.set(resolved, pimg);
+          pimg.src = resolved;
+        }
+      } catch (e) {}
+    }
+  }
+
+  /* ---------------------- Tippy init (minimal) ---------------------- */
+  function initGlossTippy() {
+    if (!window.tippy) return;
+    document.querySelectorAll('.gloss').forEach(el => { try { if (el._tippy) el._tippy.destroy(); } catch (e) {} });
+    tippy('.gloss', {
+      allowHTML: true,
+      interactive: true,
+      delay: [60, 80],
+      maxWidth: 520,
+      placement: 'top',
+      offset: [0, 8],
+      appendTo: () => document.body,
+      popperOptions: { strategy: 'fixed', modifiers: [{ name:'computeStyles', options:{adaptive:false} },{ name: 'preventOverflow', options:{padding:8, altAxis:true} },{ name:'flip', options:{fallbackPlacements:['bottom','right','left']} }] },
+      content: 'Loading...',
+      onShow: async instance => {
+        const reference = instance.reference;
+        let contentHTML = reference.getAttribute('data-tippy-content') || reference.getAttribute('title') || reference.innerHTML || '';
+        if (reference.getAttribute('title')) reference.removeAttribute('title');
+        const dataImg = reference.getAttribute('data-img');
+        const imgAlt = reference.getAttribute('data-img-alt') || '';
+        const wrapper = document.createElement('div');
+        let resolved = null;
+        if (dataImg) {
+          resolved = resolvedUrlCache.has(dataImg) ? resolvedUrlCache.get(dataImg) : await resolveTooltipImage(dataImg);
+        }
+        if (resolved) {
+          if (!preloadedImgCache.has(resolved) || !preloadedImgCache.get(resolved).complete) {
+            const pimg = new Image(); pimg.crossOrigin = 'anonymous'; pimg.decoding = 'async';
+            preloadedImgCache.set(resolved, pimg);
+            pimg.src = resolved;
+          }
+          const imgEl = document.createElement('img');
+          imgEl.className = 'tooltip-img'; imgEl.src = resolved; imgEl.alt = imgAlt; imgEl.loading = 'eager'; imgEl.style.cursor = 'pointer';
+          imgEl.addEventListener('click', (ev) => { ev.stopPropagation(); openImageViewer(resolved, imgAlt); try { instance.hide(); } catch (e) {} });
+          wrapper.appendChild(imgEl);
+        }
+        const contentDiv = document.createElement('div'); contentDiv.className = 'tooltip-body'; contentDiv.innerHTML = contentHTML;
+        wrapper.appendChild(contentDiv);
+        try { instance.setContent(wrapper); } catch (e) { instance.setContent(wrapper.outerHTML); }
+      }
+    });
+  }
+
+  /* ---------------------- Image viewer (minimal & robust) ---------------------- */
+  if (!document.getElementById('image-overlay')) {
+    const overlay = document.createElement('div');
+    overlay.id = 'image-overlay';
+    overlay.innerHTML = `<div class="viewer" role="dialog" aria-modal="true"><img class="viewer-img" src="" alt=""></div>`;
+    document.body.appendChild(overlay);
+  }
+  const overlay = document.getElementById('image-overlay');
+  const overlayImg = overlay.querySelector('.viewer-img');
+
+  let isZoomed = false, pointerDown = false, pointerStart = { x: 0, y: 0 }, imgPos = { x: 0, y: 0 }, dragMoved = false, suppressClick = false;
+  const DRAG_THRESHOLD = 4;
+
+  function openImageViewer(src, alt = '') {
+    overlayImg.src = src; overlayImg.alt = alt || '';
+    const marginPx = 40;
+    overlayImg.style.maxWidth = `calc(100vw - ${marginPx}px)`; overlayImg.style.maxHeight = `calc(100vh - ${Math.round(marginPx * 1.5)}px)`;
+    overlay.classList.add('visible'); isZoomed = false; imgPos = { x: 0, y: 0 }; overlayImg.style.transform = `translate(0px, 0px) scale(1)`; overlayImg.classList.remove('zoomed'); overlay.style.cursor = 'default'; document.body.style.overflow = 'hidden';
+  }
+  function closeImageViewer() { overlay.classList.remove('visible'); overlayImg.src = ''; isZoomed = false; pointerDown = false; dragMoved = false; suppressClick = false; document.body.style.overflow = ''; overlayImg.style.maxWidth = ''; overlayImg.style.maxHeight = ''; }
+  function applyImageTransform() {
+    const scale = isZoomed ? 2 : 1;
+    overlayImg.style.transform = `translate(${imgPos.x}px, ${imgPos.y}px) scale(${scale})`;
+    if (isZoomed) overlayImg.classList.add('zoomed'); else overlayImg.classList.remove('zoomed');
+  }
+  overlayImg.addEventListener('click', (ev) => {
+    if (suppressClick) { suppressClick = false; return; }
+    isZoomed = !isZoomed;
+    if (!isZoomed) imgPos = { x: 0, y: 0 };
+    applyImageTransform();
+  });
+  overlayImg.addEventListener('mousedown', (ev) => {
+    if (!isZoomed) return; ev.preventDefault(); pointerDown = true; dragMoved = false; pointerStart = { x: ev.clientX, y: ev.clientY }; overlayImg.style.cursor = 'grabbing';
+  });
+  window.addEventListener('mousemove', (ev) => {
+    if (!pointerDown || !isZoomed) return;
+    const dx = ev.clientX - pointerStart.x; const dy = ev.clientY - pointerStart.y;
+    if (!dragMoved && (Math.abs(dx) + Math.abs(dy) >= DRAG_THRESHOLD)) dragMoved = true;
+    if (dragMoved) { pointerStart = { x: ev.clientX, y: ev.clientY }; imgPos.x += dx; imgPos.y += dy; applyImageTransform(); }
+  });
+  window.addEventListener('mouseup', (ev) => {
+    if (pointerDown && dragMoved) { suppressClick = true; setTimeout(() => { suppressClick = false; }, 0); }
+    pointerDown = false; overlayImg.style.cursor = isZoomed ? 'grab' : 'zoom-in';
+  });
+  overlay.addEventListener('click', (ev) => { if (ev.target === overlay) closeImageViewer(); });
+  window.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && overlay.classList.contains('visible')) closeImageViewer(); });
+
+  function bindImagesToViewer() {
+    const imgs = chapterBodyEl.querySelectorAll('img');
+    imgs.forEach(img => {
+      img.style.cursor = 'pointer';
+      if (!img._viewerBound) {
+        img.addEventListener('click', (e) => {
+          const src = img.getAttribute('src') || img.getAttribute('data-src') || '';
+          if (!src) return;
+          openImageViewer(src, img.getAttribute('alt') || '');
+        });
+        img._viewerBound = true;
+      }
+    });
+  }
+
+  /* ---------------------- Blur & read tracking ---------------------- */
   function readStorageKeyFor(filename) { return 'read:' + filename; }
   function loadReadIndicesFor(filename) {
     try {
@@ -281,14 +308,14 @@ document.addEventListener('DOMContentLoaded', () => {
     try { localStorage.setItem(BLUR_VISUAL_KEY, enabled ? 'true' : 'false'); } catch (e) {}
     if (enabled) document.body.classList.remove('blur-visual-off'); else document.body.classList.add('blur-visual-off');
     if (!enabled) {
-      document.querySelectorAll('.blur-target.is-blurred').forEach(el => { el.classList.remove('is-blurred'); });
+      document.querySelectorAll('.blur-target.is-blurred').forEach(el => el.classList.remove('is-blurred'));
     } else {
-      document.querySelectorAll('.blur-target:not(.unblurred)').forEach(el => { el.classList.add('is-blurred'); });
+      document.querySelectorAll('.blur-target:not(.unblurred)').forEach(el => el.classList.add('is-blurred'));
     }
     updateEdgeScrollVisibility();
   }
 
-  // collect targets (top-level children and images inside blocks)
+  // collect targets (top-level children and images inside)
   function collectTargets() {
     const targets = [];
     const children = Array.from(chapterBodyEl.children);
@@ -303,95 +330,6 @@ document.addEventListener('DOMContentLoaded', () => {
     return targets;
   }
 
-  function parseRgbString(rgbStr) {
-    if (!rgbStr) return null;
-    const m = rgbStr.match(/rgba?\(\s*([0-9]+)[,\s]+([0-9]+)[,\s]+([0-9]+)/i);
-    if (!m) return null;
-    return { r: Number(m[1]), g: Number(m[2]), b: Number(m[3]) };
-  }
-
-  function captureGlowInfo() {
-    if (!chapterBodyEl) return;
-    const glowEls = Array.from(chapterBodyEl.querySelectorAll('.glow'));
-    glowEls.forEach(el => {
-      try {
-        const cs = window.getComputedStyle(el);
-        const colStr = cs.color;
-        const rgb = parseRgbString(colStr);
-        if (rgb) {
-          el.style.setProperty('--glow-rgb', `${rgb.r}, ${rgb.g}, ${rgb.b}`);
-        } else {
-          el.style.setProperty('--glow-rgb', `255, 255, 255`);
-        }
-        const dens = parseFloat(el.getAttribute('glow-density'));
-        const bright = parseFloat(el.getAttribute('glow-brightness'));
-        if (!Number.isNaN(dens) && dens > 0) el.style.setProperty('--glow-density', String(dens));
-        else el.style.setProperty('--glow-density', '1');
-        if (!Number.isNaN(bright) && bright > 0) el.style.setProperty('--glow-brightness', String(bright));
-        else el.style.setProperty('--glow-brightness', '1');
-
-        const txt = el.textContent || '';
-        el.setAttribute('data-glow', txt.replace(/^\n+|\n+$/g, ''));
-        el.style.textShadow = 'none';
-      } catch (e) {}
-    });
-  }
-
-  /* ---------- INIT BLUR TARGETS (added - fixes the error) ---------- */
-  // Initializes blur-target elements for a loaded chapter, restores read state, wires hover/touch events.
-  function initBlurTargetsForChapter(filename, blurEnabled = true) {
-    if (!chapterBodyEl) return;
-    // capture glow info first (so glow visuals are prepared)
-    captureGlowInfo();
-
-    // Clean up any leftover classes/handlers from previous chapter
-    chapterBodyEl.querySelectorAll('.blur-target').forEach(old => {
-      old.classList.remove('is-blurred', 'hover-reveal', 'unblurred', 'blur-target');
-      // do not attempt to remove dataset._glitchInited - glitches may be reinitialized later
-    });
-
-    // collect logical targets (top-level blocks and images inside them)
-    const targets = collectTargets();
-    const readSet = loadReadIndicesFor(filename);
-
-    targets.forEach((el, idx) => {
-      try {
-        el.dataset.blurIndex = idx;
-        el.classList.add('blur-target');
-
-        // if blur is completely disabled for this chapter, mark all unblurred
-        if (!blurEnabled) {
-          el.classList.add('unblurred');
-          el.classList.remove('is-blurred');
-          return;
-        }
-
-        // restore per-item read state (unblurred if previously read)
-        if (el.classList.contains('unblurred') || readSet.has(idx)) {
-          el.classList.add('unblurred');
-          el.classList.remove('is-blurred');
-        } else {
-          if (isVisualBlurEnabled()) el.classList.add('is-blurred');
-          else el.classList.remove('is-blurred');
-        }
-
-        // hover/touch handlers reveal temporarily (visual only)
-        el.addEventListener('mouseenter', () => { if (!el.classList.contains('unblurred')) revealTemp(el); });
-        el.addEventListener('mouseleave', () => { if (!el.classList.contains('unblurred')) hideTemp(el); });
-        el.addEventListener('touchstart', () => { if (!el.classList.contains('unblurred')) revealTemp(el); }, {passive:true});
-        el.addEventListener('touchend', () => { if (!el.classList.contains('unblurred')) hideTemp(el); }, {passive:true});
-      } catch (e) {
-        // ignore per-element errors
-      }
-    });
-
-    // After initializing blur-targets, update edge button and glitch visuals.
-    updateEdgeScrollVisibility();
-    // Update glitch intensities for new chapter (if any)
-    try { updateGlitchIntensityAll(); } catch (e) {}
-  }
-
-  /* ---------- Blur helpers already present ---------- */
   function applyBlurToTarget(el) {
     if (!el) return;
     el.classList.add('blur-target');
@@ -408,444 +346,59 @@ document.addEventListener('DOMContentLoaded', () => {
     if (markRead && lastChapterFile) {
       const set = loadReadIndicesFor(lastChapterFile);
       const index = Number(el.dataset.blurIndex);
-      if (!Number.isNaN(index)) {
-        set.add(index);
-        saveReadIndicesFor(lastChapterFile, set);
-      }
+      if (!Number.isNaN(index)) { set.add(index); saveReadIndicesFor(lastChapterFile, set); }
     }
-    // update edge button and glitches
     updateEdgeScrollVisibility();
-    try { updateGlitchIntensityAll(); } catch (e) {}
   }
 
-  function revealTemp(el) {
-    if (!el) return;
-    if (el.classList.contains('unblurred')) return;
-    el.classList.add('hover-reveal');
-  }
-  function hideTemp(el) {
-    if (!el) return;
-    if (el.classList.contains('unblurred')) return;
-    el.classList.remove('hover-reveal');
-  }
+  function revealTemp(el) { if (!el) return; if (el.classList.contains('unblurred')) return; el.classList.add('hover-reveal'); }
+  function hideTemp(el) { if (!el) return; if (el.classList.contains('unblurred')) return; el.classList.remove('hover-reveal'); }
 
-  /* ---------- GLITCH SUPPORT ---------- */
-  const GLITCH_MAX_OFFSET = 26;      // px
-  const GLITCH_TOP_SCALE = 0.75;
-  const GLITCH_BOTTOM_SCALE = 1.0;
-  const GLITCH_MIN_DURATION = 700;   // ms
-  const GLITCH_MAX_DURATION = 1400;  // ms
-
-  function initGlitchForChapter() {
+  /* ---------- IMPORTANT: initBlurTargetsForChapter (must exist before loadChapter) ---------- */
+  function initBlurTargetsForChapter(filename, blurEnabled = true) {
     if (!chapterBodyEl) return;
-    const gls = Array.from(chapterBodyEl.querySelectorAll('.glitch'));
-    gls.forEach(el => {
-      const txt = el.textContent || '';
-      el.setAttribute('data-glitch-content', txt.replace(/^\n+|\n+$/g, ''));
-      el.style.setProperty('--g1-x', '2px');
-      el.style.setProperty('--g1-y', '0px');
-      el.style.setProperty('--g2-x', '13px');
-      el.style.setProperty('--g2-skew', '-13deg');
-      el.style.setProperty('--gb-x', '-22px');
-      el.style.setProperty('--gb-y', '5px');
-      el.style.setProperty('--gb-skew', '21deg');
-      el.style.setProperty('--g-opacity', '0.85');
-      el.style.setProperty('--g-duration', `${GLITCH_MIN_DURATION}ms`);
-      el.dataset._glitchInited = '1';
-    });
-    updateGlitchIntensityAll();
-  }
-
-  function computeDistanceFactor(el) {
-    const rect = el.getBoundingClientRect();
-    const elCenter = rect.top + rect.height / 2;
-    const viewportCenter = window.innerHeight / 2;
-    const dist = Math.abs(elCenter - viewportCenter);
-    const denom = (window.innerHeight / 2) || 1;
-    let f = dist / denom;
-    if (f < 0) f = 0; if (f > 1) f = 1;
-    return f;
-  }
-
-  function updateGlitchForElement(el) {
-    if (!el || !el.dataset._glitchInited) return;
-    const fixed = el.getAttribute('data-glitch-fixed');
-    const fixedIntensityAttr = parseFloat(el.getAttribute('data-glitch-intensity'));
-    let intensity;
-    if (fixed === 'true') {
-      intensity = Number.isFinite(fixedIntensityAttr) ? Math.min(Math.max(fixedIntensityAttr, 0), 1) : 0.6;
-    } else if (!Number.isFinite(fixedIntensityAttr) || Number.isNaN(fixedIntensityAttr)) {
-      const df = computeDistanceFactor(el);
-      intensity = df;
-    } else {
-      const df = computeDistanceFactor(el);
-      intensity = Math.max(df, Math.min(Math.max(fixedIntensityAttr, 0), 1));
-    }
-
-    const mainOffset = Math.round(2 + intensity * GLITCH_MAX_OFFSET);
-    const topOffset = Math.round(mainOffset * GLITCH_TOP_SCALE);
-    const bottomOffset = Math.round(mainOffset * GLITCH_BOTTOM_SCALE);
-    const topSkew = -6 - intensity * 15;
-    const bottomSkew = 6 + intensity * 20;
-    const duration = Math.round(GLITCH_MIN_DURATION + intensity * (GLITCH_MAX_DURATION - GLITCH_MIN_DURATION));
-
-    el.style.setProperty('--g1-x', `${Math.max(1, topOffset)}px`);
-    el.style.setProperty('--g1-y', `${Math.round(-1 * (intensity * 2))}px`);
-    el.style.setProperty('--g2-x', `${Math.max(2, Math.round(topOffset * 1.6))}px`);
-    el.style.setProperty('--g2-skew', `${topSkew}deg`);
-    el.style.setProperty('--gb-x', `${Math.round(-1 * bottomOffset)}px`);
-    el.style.setProperty('--gb-y', `${Math.round(bottomOffset * 0.25)}px`);
-    el.style.setProperty('--gb-skew', `${bottomSkew}deg`);
-    el.style.setProperty('--g-opacity', `${0.9 - intensity * 0.35}`);
-    el.style.setProperty('--g-duration', `${duration}ms`);
-    el.style.setProperty('--g-main-x', `${Math.round(intensity * 2)}px`);
-  }
-
-  let glitchScheduled = false;
-  function updateGlitchIntensityAll() {
-    if (glitchScheduled) return;
-    glitchScheduled = true;
-    requestAnimationFrame(() => {
-      const els = Array.from(chapterBodyEl.querySelectorAll('.glitch'));
-      els.forEach(el => updateGlitchForElement(el));
-      glitchScheduled = false;
-    });
-  }
-  window.addEventListener('scroll', updateGlitchIntensityAll, { passive: true });
-  window.addEventListener('resize', updateGlitchIntensityAll);
-
-  /* ---------- Unblur on scroll ---------- */
-  let scrollScheduled = false;
-  function checkAndUnblurVisibleTargets() {
-    if (!chapterBodyEl) return;
-    const centerY = window.innerHeight * BLUR_THRESHOLD_Y_RATIO;
-    const atBottom = (window.innerHeight + window.scrollY) >= (document.documentElement.scrollHeight - 6);
-    if (atBottom) {
-      Array.from(chapterBodyEl.querySelectorAll('.blur-target:not(.unblurred)')).forEach(el => removeBlurFromTarget(el, true));
-      return;
-    }
-    const nodes = Array.from(chapterBodyEl.querySelectorAll('.blur-target'));
-    nodes.forEach(el => {
-      if (el.classList.contains('unblurred')) return;
-      const rect = el.getBoundingClientRect();
-      let trigger = false;
-      if (el.tagName && el.tagName.toLowerCase() === 'img') {
-        if (rect.top < centerY) trigger = true;
-      } else {
-        if (rect.top < centerY) trigger = true;
-      }
-      if (trigger) removeBlurFromTarget(el, true);
+    // clear previous markers
+    chapterBodyEl.querySelectorAll('.blur-target').forEach(old => {
+      old.classList.remove('is-blurred', 'hover-reveal', 'unblurred', 'blur-target');
     });
 
-    updateEdgeScrollVisibility();
-    updateGlitchIntensityAll();
-  }
+    // prepare glow data if any (safe no-op if captureGlowInfo not present)
+    try { captureGlowInfo(); } catch (e) {}
 
-  window.addEventListener('scroll', () => {
-    if (scrollScheduled) return;
-    scrollScheduled = true;
-    requestAnimationFrame(() => {
-      checkAndUnblurVisibleTargets();
-      scrollScheduled = false;
-    });
-  }, { passive: true });
-  window.addEventListener('resize', () => { checkAndUnblurVisibleTargets(); });
+    const targets = collectTargets();
+    const readSet = loadReadIndicesFor(filename);
 
-  /* ---------- tooltip images resolve & preload ---------- */
-  function testImageUrl(url, timeout = 3000) {
-    return new Promise(resolve => {
-      const img = new Image();
-      let done = false;
-      const onLoad = () => { if (done) return; done = true; cleanup(); resolve(true); };
-      const onErr = () => { if (done) return; done = true; cleanup(); resolve(false); };
-      const cleanup = () => { img.onload = img.onerror = null; clearTimeout(timer); };
-      img.onload = onLoad; img.onerror = onErr; img.src = url;
-      const timer = setTimeout(() => { if (done) return; done = true; cleanup(); resolve(false); }, timeout);
-    });
-  }
-
-  async function resolveTooltipImage(srcCandidate) {
-    if (!srcCandidate) return null;
-    if (resolvedUrlCache.has(srcCandidate)) return resolvedUrlCache.get(srcCandidate);
-
-    if (/^https?:\/\//i.test(srcCandidate) || srcCandidate.startsWith('/')) {
-      if (await testImageUrl(srcCandidate)) { resolvedUrlCache.set(srcCandidate, srcCandidate); return srcCandidate; }
-    }
-
-    const bases = [];
-    bases.push(window.location.href);
-    bases.push(window.location.origin + window.location.pathname);
-    if (lastChapterFile) {
-      bases.push(window.location.origin + '/' + lastChapterFile);
-      const parts = lastChapterFile.split('/');
-      parts.pop();
-      const parent = parts.join('/');
-      if (parent) bases.push(window.location.origin + '/' + parent + '/');
-    }
-    bases.push(window.location.origin + '/');
-
-    const candidates = [];
-    for (const base of bases) { try { const u = new URL(srcCandidate, base); candidates.push(u.href); } catch (e) {} }
-    const seen = new Set();
-    const unique = candidates.filter(c => { if (seen.has(c)) return false; seen.add(c); return true; });
-
-    for (const u of unique) {
-      if (await testImageUrl(u)) { resolvedUrlCache.set(srcCandidate, u); return u; }
-    }
-    resolvedUrlCache.set(srcCandidate, null);
-    return null;
-  }
-
-  async function preloadTooltipImages() {
-    if (!chapterBodyEl) return;
-    const glossEls = Array.from(chapterBodyEl.querySelectorAll('.gloss'));
-    if (!glossEls.length) return;
-    for (const el of glossEls) {
-      const dataImg = el.getAttribute('data-img');
-      if (!dataImg) continue;
-      if (resolvedUrlCache.has(dataImg) && resolvedUrlCache.get(dataImg) === null) continue;
+    targets.forEach((el, idx) => {
       try {
-        const resolved = await resolveTooltipImage(dataImg);
-        if (resolved) {
-          if (preloadedImgCache.has(resolved)) continue;
-          const pimg = new Image(); pimg.crossOrigin = 'anonymous'; pimg.decoding = 'async';
-          preloadedImgCache.set(resolved, pimg);
-          pimg.onload = () => {};
-          pimg.onerror = () => { preloadedImgCache.delete(resolved); };
-          pimg.src = resolved;
+        el.dataset.blurIndex = idx;
+        el.classList.add('blur-target');
+
+        if (!blurEnabled) {
+          el.classList.add('unblurred');
+          el.classList.remove('is-blurred');
+          return;
         }
-      } catch (err) {}
-    }
-  }
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState !== 'visible') return;
-    if (!chapterBodyEl) return;
-    const glossEls = Array.from(chapterBodyEl.querySelectorAll('.gloss'));
-    glossEls.forEach(async (el) => {
-      const dataImg = el.getAttribute('data-img'); if (!dataImg) return;
-      const resolved = resolvedUrlCache.has(dataImg) ? resolvedUrlCache.get(dataImg) : await resolveTooltipImage(dataImg);
-      if (resolved && (!preloadedImgCache.has(resolved) || !preloadedImgCache.get(resolved).complete)) {
-        try {
-          const pimg = new Image(); pimg.crossOrigin = 'anonymous'; pimg.decoding = 'async';
-          preloadedImgCache.set(resolved, pimg);
-          pimg.onload = () => {};
-          pimg.onerror = () => { preloadedImgCache.delete(resolved); };
-          pimg.src = resolved;
-        } catch (e) {}
-      }
-    });
-  });
 
-  /* ---------- tippy init for .gloss ---------- */
-  function initGlossTippy() {
-    if (!window.tippy) return;
-    document.querySelectorAll('.gloss').forEach(el => { try { if (el._tippy) el._tippy.destroy(); } catch (e) {} });
-
-    tippy('.gloss', {
-      allowHTML: true, interactive: true, delay: [60, 80], maxWidth: 520, placement: 'top', offset: [0, 8],
-      appendTo: () => document.body,
-      popperOptions: {
-        strategy: 'fixed',
-        modifiers: [
-          { name: 'computeStyles', options: { adaptive: false } },
-          { name: 'preventOverflow', options: { padding: 8, altAxis: true } },
-          { name: 'flip', options: { fallbackPlacements: ['bottom', 'right', 'left'] } }
-        ]
-      },
-      content: 'Loading...',
-      onShow: async (instance) => {
-        const reference = instance.reference;
-        let contentHTML = reference.getAttribute('data-tippy-content') || reference.getAttribute('data-tip') || reference.getAttribute('title') || reference.innerHTML || '';
-        if (reference.getAttribute('title')) reference.removeAttribute('title');
-        const dataImg = reference.getAttribute('data-img');
-        const imgAlt = reference.getAttribute('data-img-alt') || '';
-        const wrapper = document.createElement('div');
-        let resolved = null;
-        if (dataImg) {
-          if (resolvedUrlCache.has(dataImg)) resolved = resolvedUrlCache.get(dataImg);
-          else resolved = await resolveTooltipImage(dataImg);
+        if (el.classList.contains('unblurred') || readSet.has(idx)) {
+          el.classList.add('unblurred');
+          el.classList.remove('is-blurred');
+        } else {
+          if (isVisualBlurEnabled()) el.classList.add('is-blurred');
         }
-        if (resolved) {
-          if (!preloadedImgCache.has(resolved) || !preloadedImgCache.get(resolved).complete) {
-            try {
-              const pimg = new Image(); pimg.crossOrigin = 'anonymous'; pimg.decoding = 'async';
-              preloadedImgCache.set(resolved, pimg);
-              pimg.onload = () => {};
-              pimg.onerror = () => { preloadedImgCache.delete(resolved); };
-              pimg.src = resolved;
-            } catch (e) {}
-          }
-          const imgEl = document.createElement('img');
-          imgEl.className = 'tooltip-img'; imgEl.src = resolved; imgEl.alt = imgAlt; imgEl.loading = 'eager'; imgEl.style.cursor='pointer';
-          imgEl.addEventListener('click', (ev) => { ev.stopPropagation(); try { openImageViewer(resolved, imgAlt); } catch (e) {} try { instance.hide(); } catch (e) {} });
-          imgEl.addEventListener('load', () => { try { if (instance.popperInstance && typeof instance.popperInstance.update === 'function') instance.popperInstance.update(); else if (typeof instance.update === 'function') instance.update(); } catch (e) {} });
-          wrapper.appendChild(imgEl);
-        }
-        const contentDiv = document.createElement('div'); contentDiv.className = 'tooltip-body'; contentDiv.innerHTML = contentHTML; wrapper.appendChild(contentDiv);
-        try { instance.setContent(wrapper); } catch (e) { instance.setContent(wrapper.outerHTML); }
-      }
+
+        el.addEventListener('mouseenter', () => { if (!el.classList.contains('unblurred')) revealTemp(el); });
+        el.addEventListener('mouseleave', () => { if (!el.classList.contains('unblurred')) hideTemp(el); });
+        el.addEventListener('touchstart', () => { if (!el.classList.contains('unblurred')) revealTemp(el); }, {passive:true});
+        el.addEventListener('touchend', () => { if (!el.classList.contains('unblurred')) hideTemp(el); }, {passive:true});
+      } catch (e) {}
     });
+
+    updateEdgeScrollVisibility();
   }
 
-  /* ---------- nav tippies ---------- */
-  function refreshNavTippies() {
-    if (!window.tippy) return;
-    [bottomPrev, bottomNext, topPrev, topNext].forEach(btn => { if (!btn) return; try { if (btn._tippy) btn._tippy.destroy(); } catch (e) {} });
-    if (bottomPrev) tippy(bottomPrev, { content: () => bottomPrev.dataset.title || '', placement: 'top', delay: [80, 40], offset: [0, 8], appendTo: () => document.body });
-    if (bottomNext) tippy(bottomNext, { content: () => bottomNext.dataset.title || '', placement: 'top', delay: [80, 40], offset: [0, 8], appendTo: () => document.body });
-    if (topPrev) tippy(topPrev, { content: () => topPrev.dataset.title || '', placement: 'bottom', delay: [80, 40], offset: [0, 8], appendTo: () => document.body });
-    if (topNext) tippy(topNext, { content: () => topNext.dataset.title || '', placement: 'bottom', delay: [80, 40], offset: [0, 8], appendTo: () => document.body });
-  }
-
-  /* ---------- chapters aside open/close ---------- */
-  let chaptersOpen = false;
-  const EDGE_TRIGGER_PX = 12;
-  function openChapters() { if (chaptersOpen) return; chaptersOpen = true; document.body.classList.add('chapters-open'); }
-  function closeChapters() { if (!chaptersOpen) return; chaptersOpen = false; document.body.classList.remove('chapters-open'); }
-
-  document.addEventListener('mousemove', (e) => { if (window.innerWidth <= 700) return; if (e.clientX <= EDGE_TRIGGER_PX) openChapters(); });
-  if (chaptersAside) {
-    chaptersAside.addEventListener('mouseenter', openChapters);
-    chaptersAside.addEventListener('mouseleave', (ev) => { if (ev.clientX <= EDGE_TRIGGER_PX) return; closeChapters(); });
-  }
-  document.addEventListener('click', (e) => { if (!chaptersOpen) return; if (chaptersAside && chaptersAside.contains(e.target)) return; if (e.clientX <= EDGE_TRIGGER_PX) return; closeChapters(); });
-
-  /* ---------- top nav behavior ---------- */
-  function positionTopNav() {
-    if (!topNav || !headerEl) return;
-    const hRect = headerEl.getBoundingClientRect();
-    const topNavRect = topNav.getBoundingClientRect();
-    const top = Math.max(6, hRect.top + (hRect.height / 2) - (topNavRect.height / 2));
-    topNav.style.top = `${top}px`;
-  }
-  let lastScrollY = window.scrollY;
-  let scheduled = false;
-  let hideDelayTimer = null;
-  const HIDE_DELAY_MS = 1000;
-  function clearHideTimer() { if (hideDelayTimer) { clearTimeout(hideDelayTimer); hideDelayTimer = null; } }
-  function bottomNavIsVisible() {
-    if (!bottomNav) return false;
-    const r = bottomNav.getBoundingClientRect();
-    return (r.top < window.innerHeight) && (r.bottom > 0);
-  }
-  function showTopNavImmediate() {
-    if (bottomNavIsVisible()) { hideTopNavImmediate(); return; }
-    if (!topNav) return;
-    topNav.classList.add('visible-top'); topNav.setAttribute('aria-hidden', 'false'); clearHideTimer();
-  }
-  function hideTopNavImmediate() {
-    if (!topNav) return;
-    topNav.classList.remove('visible-top'); topNav.setAttribute('aria-hidden', 'true'); clearHideTimer();
-  }
-  function scheduleHideTopNav() {
-    if (hideDelayTimer) return;
-    hideDelayTimer = setTimeout(() => { if (!bottomNavIsVisible()) hideTopNavImmediate(); hideDelayTimer = null; }, HIDE_DELAY_MS);
-  }
-  function onScrollCheck() {
-    const curY = window.scrollY;
-    const scrollingUp = curY < lastScrollY;
-    const atTop = curY <= 10;
-    if (bottomNavIsVisible()) { hideTopNavImmediate(); clearHideTimer(); }
-    else if (atTop || scrollingUp) { clearHideTimer(); showTopNavImmediate(); }
-    else { scheduleHideTopNav(); }
-    lastScrollY = curY;
-  }
-  window.addEventListener('scroll', () => {
-    if (scheduled) return;
-    scheduled = true;
-    requestAnimationFrame(() => { onScrollCheck(); scheduled = false; });
-  }, { passive: true });
-  window.addEventListener('resize', () => { positionTopNav(); onScrollCheck(); });
-  const observer = new IntersectionObserver((entries) => { const anyVisible = entries.some(en => en.isIntersecting); if (anyVisible) hideTopNavImmediate(); }, { root: null, threshold: 0.01 });
-  if (bottomNav) observer.observe(bottomNav);
-  function initialTopNavSetup() {
-    positionTopNav();
-    if (window.scrollY <= 10 && !bottomNavIsVisible()) showTopNavImmediate();
-    else hideTopNavImmediate();
-  }
-  initialTopNavSetup();
-  setTimeout(initialTopNavSetup, 80);
-
-  /* ---------- image viewer ---------- */
-  if (!document.getElementById('image-overlay')) {
-    const overlay = document.createElement('div');
-    overlay.id = 'image-overlay';
-    overlay.innerHTML = `<div class="viewer" role="dialog" aria-modal="true"><img class="viewer-img" src="" alt=""></div>`;
-    document.body.appendChild(overlay);
-  }
-  const overlay = document.getElementById('image-overlay');
-  const overlayImg = overlay.querySelector('.viewer-img');
-
-  let isZoomed = false, pointerDown = false, pointerStart = { x: 0, y: 0 }, imgPos = { x: 0, y: 0 }, dragMoved = false, suppressClick = false;
-  const DRAG_THRESHOLD = 4;
-
-  function openImageViewer(src, alt = '') {
-    overlayImg.src = src; overlayImg.alt = alt || '';
-    const marginPx = 40;
-    overlayImg.style.maxWidth = `calc(100vw - ${marginPx}px)`; overlayImg.style.maxHeight = `calc(100vh - ${Math.round(marginPx * 1.5)}px)`;
-    overlay.classList.add('visible'); isZoomed = false; imgPos = { x: 0, y: 0 }; overlayImg.style.transform = `translate(0px, 0px) scale(1)`; overlayImg.classList.remove('zoomed'); overlay.style.cursor = 'default'; document.body.style.overflow = 'hidden';
-    const viewer = overlay.querySelector('.viewer'); if (viewer) { viewer.scrollTop = 0; viewer.scrollLeft = 0; }
-  }
-
-  function closeImageViewer() { overlay.classList.remove('visible'); overlayImg.src = ''; isZoomed = false; pointerDown = false; dragMoved = false; suppressClick = false; document.body.style.overflow = ''; overlayImg.style.maxWidth = ''; overlayImg.style.maxHeight = ''; }
-
-  function applyImageTransform() {
-    const scale = isZoomed ? 2 : 1;
-    overlayImg.style.transform = `translate(${imgPos.x}px, ${imgPos.y}px) scale(${scale})`;
-    if (isZoomed) overlayImg.classList.add('zoomed'); else overlayImg.classList.remove('zoomed');
-  }
-
-  overlayImg.addEventListener('click', (ev) => {
-    if (suppressClick) { suppressClick = false; return; }
-    isZoomed = !isZoomed;
-    if (!isZoomed) imgPos = { x: 0, y: 0 };
-    applyImageTransform();
-  });
-
-  overlayImg.addEventListener('mousedown', (ev) => {
-    if (!isZoomed) return; ev.preventDefault(); pointerDown = true; dragMoved = false; pointerStart = { x: ev.clientX, y: ev.clientY }; overlayImg.style.cursor = 'grabbing';
-  });
-
-  window.addEventListener('mousemove', (ev) => {
-    if (!pointerDown || !isZoomed) return;
-    const dx = ev.clientX - pointerStart.x; const dy = ev.clientY - pointerStart.y;
-    if (!dragMoved && (Math.abs(dx) + Math.abs(dy) >= DRAG_THRESHOLD)) dragMoved = true;
-    if (dragMoved) { pointerStart = { x: ev.clientX, y: ev.clientY }; imgPos.x += dx; imgPos.y += dy; applyImageTransform(); }
-  });
-
-  window.addEventListener('mouseup', (ev) => {
-    if (pointerDown && dragMoved) { suppressClick = true; setTimeout(() => { suppressClick = false; }, 0); }
-    pointerDown = false; overlayImg.style.cursor = isZoomed ? 'grab' : 'zoom-in';
-  });
-
-  overlay.addEventListener('click', (ev) => { if (ev.target === overlay) closeImageViewer(); });
-  window.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && overlay.classList.contains('visible')) closeImageViewer(); });
-
-  // Bind images to viewer
-  function bindImagesToViewer() {
-    const imgs = chapterBodyEl.querySelectorAll('img');
-    imgs.forEach(img => {
-      img.style.cursor = 'pointer';
-      if (!img._viewerBound) {
-        img.addEventListener('click', (e) => {
-          const src = img.getAttribute('src') || img.getAttribute('data-src') || '';
-          if (!src) return;
-          openImageViewer(src, img.getAttribute('alt') || '');
-        });
-        img._viewerBound = true;
-      }
-    });
-  }
-
-  /* ---------- persist scroll on page reload only (sessionStorage) ---------- */
-  window.addEventListener('beforeunload', () => {
-    try {
-      if (currentIndex >= 0 && chapters[currentIndex] && chapters[currentIndex].file) {
-        const key = 'scroll:' + chapters[currentIndex].file;
-        sessionStorage.setItem(key, String(window.scrollY || 0));
-      }
-    } catch (e) {}
-  });
+  /* ---------- Basic glitch support helpers (if present later) ---------- */
+  // minimal no-op placeholders so code referencing them won't break if glitch-specific logic not included
+  function captureGlowInfo() { /* may be extended elsewhere; safe placeholder */ }
 
   /* ---------- nav helpers (done flag aware) ---------- */
   function isDoneEntry(entry) { if (!entry) return false; return entry.done !== false; }
@@ -858,23 +411,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const nextIndex = findNextDoneIndex();
     const prevDisabled = prevIndex === -1;
     const nextDisabled = nextIndex === -1;
-
     [bottomPrev, topPrev].forEach(btn => { if (btn) btn.disabled = prevDisabled; });
     [bottomNext, topNext].forEach(btn => { if (btn) btn.disabled = nextDisabled; });
 
     if (!prevDisabled) {
       const p = chapters[prevIndex];
       [bottomPrev, topPrev].forEach(btn => { if (btn) { btn.dataset.index = prevIndex; btn.dataset.title = p.title || ''; }});
-    } else {
-      [bottomPrev, topPrev].forEach(btn => { if (btn) { btn.removeAttribute('data-index'); btn.removeAttribute('data-title'); }});
-    }
+    } else { [bottomPrev, topPrev].forEach(btn => { if (btn) { btn.removeAttribute('data-index'); btn.removeAttribute('data-title'); }}); }
 
     if (!nextDisabled) {
       const n = chapters[nextIndex];
       [bottomNext, topNext].forEach(btn => { if (btn) { btn.dataset.index = nextIndex; btn.dataset.title = n.title || ''; }});
-    } else {
-      [bottomNext, topNext].forEach(btn => { if (btn) { btn.removeAttribute('data-index'); btn.removeAttribute('data-title'); }});
-    }
+    } else { [bottomNext, topNext].forEach(btn => { if (btn) { btn.removeAttribute('data-index'); btn.removeAttribute('data-title'); }}); }
 
     refreshNavTippies();
   }
@@ -887,7 +435,6 @@ document.addEventListener('DOMContentLoaded', () => {
     loadChapter(c.file, c.title);
     updateNavButtons();
     window.scrollTo({ top: 0, behavior: 'auto' });
-    if (window.scrollY <= 10 && !bottomNavIsVisible()) showTopNavImmediate(); else clearHideTimer();
     closeChapters();
     try { localStorage.setItem('last-chapter-file', c.file); } catch (e) {}
   }
@@ -917,17 +464,13 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!Array.isArray(data)) throw new Error('chapters.json is not an array');
       chapters = data;
       chaptersListEl.innerHTML = '';
-
       chapters.forEach((c, i) => {
         const li = document.createElement('li');
         const a = document.createElement('a');
         a.href = '#';
         a.textContent = c.title || `Глава ${i+1}`;
-        if (!isDoneEntry(c)) {
-          a.classList.add('undone');
-        } else {
-          a.addEventListener('click', (e) => { e.preventDefault(); goToChapter(i); closeChapters(); });
-        }
+        if (!isDoneEntry(c)) { a.classList.add('undone'); }
+        else { a.addEventListener('click', (e) => { e.preventDefault(); goToChapter(i); closeChapters(); }); }
         li.appendChild(a);
         chaptersListEl.appendChild(li);
       });
@@ -962,22 +505,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // detect blur enable flag from chapters list
       let blurEnabledForChapter = true;
-      try {
-        const chObj = chapters[currentIndex];
-        if (chObj && chObj.blur === false) blurEnabledForChapter = false;
-      } catch (e) {}
+      try { const chObj = chapters[currentIndex]; if (chObj && chObj.blur === false) blurEnabledForChapter = false; } catch (e) {}
 
-      // initialize blur targets (also captures glow info)
+      // initialize blur targets (this function now exists above)
       initBlurTargetsForChapter(filename, blurEnabledForChapter);
 
       // preload tooltip images and init tippy
       preloadTooltipImages();
       initGlossTippy();
 
-      // initialize glitch elements
-      initGlitchForChapter();
-
-      // bind images to viewer
+      // bind images and other per-chapter setup
       bindImagesToViewer();
 
       updateNavButtons();
@@ -992,18 +529,15 @@ document.addEventListener('DOMContentLoaded', () => {
             requestAnimationFrame(() => {
               window.scrollTo({ top: scrollVal, behavior: 'auto' });
               try { sessionStorage.removeItem(key); } catch (e) {}
-              if (window.scrollY <= 10 && !bottomNavIsVisible()) showTopNavImmediate();
             });
           });
-        } else {
-          if (window.scrollY <= 10 && !bottomNavIsVisible()) showTopNavImmediate();
         }
-      } catch (e) { if (window.scrollY <= 10 && !bottomNavIsVisible()) showTopNavImmediate(); }
+      } catch (e) {}
 
       // initial unblur check
       requestAnimationFrame(checkAndUnblurVisibleTargets);
 
-      // update edge scroll button visibility & position now that chapter loaded
+      // update edge button visibility & position
       updateEdgeScrollVisibility();
       updateEdgeScrollPosition();
     } catch (err) {
@@ -1012,18 +546,41 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  /* ---------- blur toggle button ---------- */
-  if (blurToggle) {
-    const enabled = isVisualBlurEnabled();
-    setVisualBlurEnabled(enabled);
-    blurToggle.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const newState = !isVisualBlurEnabled();
-      setVisualBlurEnabled(newState);
+  /* ---------- blur/unblur scanning ---------- */
+  let scrollScheduled = false;
+  function checkAndUnblurVisibleTargets() {
+    if (!chapterBodyEl) return;
+    const centerY = window.innerHeight * BLUR_THRESHOLD_Y_RATIO;
+    const atBottom = (window.innerHeight + window.scrollY) >= (document.documentElement.scrollHeight - 6);
+    if (atBottom) {
+      Array.from(chapterBodyEl.querySelectorAll('.blur-target:not(.unblurred)')).forEach(el => removeBlurFromTarget(el, true));
+      return;
+    }
+    const nodes = Array.from(chapterBodyEl.querySelectorAll('.blur-target'));
+    nodes.forEach(el => {
+      if (el.classList.contains('unblurred')) return;
+      const rect = el.getBoundingClientRect();
+      let trigger = false;
+      if (el.tagName && el.tagName.toLowerCase() === 'img') {
+        if (rect.top < centerY) trigger = true;
+      } else {
+        if (rect.top < centerY) trigger = true;
+      }
+      if (trigger) removeBlurFromTarget(el, true);
     });
+    updateEdgeScrollVisibility();
   }
+  window.addEventListener('scroll', () => {
+    if (scrollScheduled) return;
+    scrollScheduled = true;
+    requestAnimationFrame(() => {
+      checkAndUnblurVisibleTargets();
+      scrollScheduled = false;
+    });
+  }, { passive: true });
+  window.addEventListener('resize', () => { checkAndUnblurVisibleTargets(); scheduleEdgePosUpdate(); });
 
-  /* ------------------- EDGE SCROLL BUTTON (fixed and flush with content) ------------------- */
+  /* ---------------------- EDGE scroll button (minimal) ---------------------- */
   function createEdgeScrollButton() {
     if (edgeBtn) return;
     edgeBtn = document.createElement('button');
@@ -1036,10 +593,10 @@ document.addEventListener('DOMContentLoaded', () => {
       e.stopPropagation();
       const next = findNextBlurTargetElement();
       if (!next) return;
+      // remove is-blurred to start smooth fade-out and then scroll
       next.classList.remove('is-blurred');
       scrollToTargetElement(next);
       updateEdgeScrollVisibility();
-      updateGlitchForElement(next);
     });
     updateEdgeScrollPosition();
   }
@@ -1050,11 +607,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!content) return;
     const rect = content.getBoundingClientRect();
     if (rect.width < 120 || rect.right <= 0) {
-      edgeBtn.style.opacity = '0';
-      edgeBtn.style.pointerEvents = 'none';
-      return;
+      edgeBtn.style.opacity = '0'; edgeBtn.style.pointerEvents = 'none'; return;
     }
-    const btnW = edgeBtn.offsetWidth || parseInt(getComputedStyle(document.documentElement).getPropertyValue('--edge-btn-w')) || 34;
+    const btnW = edgeBtn.offsetWidth || 34;
     const leftPx = Math.round(rect.right + window.scrollX - (btnW / 2));
     if (lastEdgePos === leftPx) return;
     edgeBtn.style.left = `${leftPx}px`;
@@ -1116,35 +671,26 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!edgeBtn) return;
     if (!isVisualBlurEnabled()) { edgeBtn.classList.remove('visible'); return; }
     let chapterBlurEnabled = true;
-    try {
-      const c = chapters[currentIndex];
-      if (c && c.blur === false) chapterBlurEnabled = false;
-    } catch (e) {}
+    try { const c = chapters[currentIndex]; if (c && c.blur === false) chapterBlurEnabled = false; } catch (e) {}
     if (!chapterBlurEnabled) { edgeBtn.classList.remove('visible'); return; }
     const next = findNextBlurTargetElement();
-    if (next) {
-      edgeBtn.classList.add('visible');
-      updateEdgeScrollPosition();
-    } else {
-      edgeBtn.classList.remove('visible');
-    }
+    if (next) { edgeBtn.classList.add('visible'); updateEdgeScrollPosition(); } else { edgeBtn.classList.remove('visible'); }
   }
 
   function scheduleEdgePosUpdate() {
     if (edgePosScheduled) return;
     edgePosScheduled = true;
-    requestAnimationFrame(() => {
-      updateEdgeScrollPosition();
-      edgePosScheduled = false;
-    });
+    requestAnimationFrame(() => { updateEdgeScrollPosition(); edgePosScheduled = false; });
   }
   window.addEventListener('scroll', scheduleEdgePosUpdate, { passive: true });
   window.addEventListener('resize', scheduleEdgePosUpdate);
 
-  createEdgeScrollButton();
+  /* ---------------------- Utilities used earlier (safe placeholders) ---------------------- */
+  function refreshNavTippies() { /* no-op if tippy used elsewhere */ }
 
   /* ---------- start ---------- */
+  createEdgeScrollButton();
   loadChapters();
-  updateNavButtons();
-  setTimeout(() => { positionTopNav(); if (window.scrollY <= 10 && !bottomNavIsVisible()) showTopNavImmediate(); }, 120);
+  // small timing fix for top-nav or other layout
+  setTimeout(() => { if (window.scrollY <= 10) { /* nothing specific here */ } }, 120);
 });
