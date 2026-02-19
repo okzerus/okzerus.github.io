@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Distortion Detective [RU]</title>
+<link rel="icon" href="favicon.ico" sizes="16x16" />
 <link rel="stylesheet" href="styles.css">
 <!-- Tippy CSS -->
 <link rel="stylesheet" href="https://unpkg.com/tippy.js@6/dist/tippy.css">
@@ -12,25 +13,25 @@
 <header>
   <h1 id="site-title">Distortion Detective [RU]</h1>
   <div class="header-controls">
-    <!-- Blur toggle (new) -->
-    <button id="blur-toggle" aria-label="Переключить блюр" title="Переключить блюр">◧</button>
+    <!-- blur toggle (new button) -->
+    <button id="blur-toggle" aria-label="Toggle blur" title="Toggle blur">👁️</button>
 
+    <!-- theme / color picker button (keeps sun symbol as requested) -->
     <div class="color-picker-container">
-      <button id="theme-toggle" aria-label="Выбрать цвет фона" title="Выбрать цвет фона">☀︎</button>
+      <button id="theme-toggle" aria-label="Open color picker" title="Открыть палитру">☀︎</button>
 
-      <!-- custom inline picker panel -->
-      <div id="color-popup" class="color-popup" role="dialog" aria-hidden="true">
+      <!-- color popup (custom picker) -->
+      <div id="color-popup" class="color-popup" aria-hidden="true">
         <div class="picker">
-          <div id="color-area" class="color-area" aria-label="Градиент цвета" role="application">
+          <div id="color-area" class="color-area" aria-hidden="false">
             <div id="color-area-cursor" class="area-cursor"></div>
           </div>
-          <div id="hue-slider" class="hue-slider" aria-label="Слайдер оттенка" role="application">
+          <div id="hue-slider" class="hue-slider" aria-hidden="false">
             <div id="hue-cursor" class="hue-cursor"></div>
           </div>
         </div>
-
         <div class="picker-reset-wrap">
-          <button id="color-reset" class="small">Сброс</button>
+          <button id="color-reset" class="small">Сбросить</button>
         </div>
       </div>
     </div>
@@ -38,27 +39,32 @@
 </header>
 
 <main>
-  <aside id="chapters-list">
+  <aside id="chapters-list" aria-label="Список глав">
     <h2>Главы</h2>
     <ul id="chapters"></ul>
   </aside>
 
   <section id="content">
-    <div id="chapter-title"></div>
+    <div id="chapter-title" role="heading" aria-level="1"></div>
     <article id="chapter-body">Загрузка...</article>
 
-    <div id="bottom-nav" class="chapter-nav">
-      <button id="bottom-prev" class="nav-btn" aria-label="Предыдущая глава" disabled>◀</button>
-      <button id="bottom-next" class="nav-btn" aria-label="Следующая глава" disabled>▶</button>
-    </div>
+    <!-- edge scroll button will be created by script if needed -->
   </section>
 </main>
 
-<div id="top-nav" aria-hidden="true">
-  <button id="top-prev" class="nav-btn" aria-label="Предыдущая глава" disabled>◀</button>
-  <button id="top-next" class="nav-btn" aria-label="Следующая глава" disabled>▶</button>
+<!-- bottom navigation pair (shown at bottom of chapter) -->
+<div id="bottom-nav" class="nav-buttons" aria-hidden="false">
+  <button id="bottom-prev" class="nav-btn" aria-label="Назад" disabled>◀</button>
+  <button id="bottom-next" class="nav-btn" aria-label="Вперёд" disabled>▶</button>
 </div>
 
+<!-- top navigation pair (positioned and controlled by JS) -->
+<div id="top-nav" aria-hidden="true">
+  <button id="top-prev" class="nav-btn" aria-label="Назад" disabled>◀</button>
+  <button id="top-next" class="nav-btn" aria-label="Вперёд" disabled>▶</button>
+</div>
+
+<!-- dependencies -->
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script src="https://unpkg.com/@popperjs/core@2"></script>
 <script src="https://unpkg.com/tippy.js@6"></script>
