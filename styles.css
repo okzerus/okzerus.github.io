@@ -11,15 +11,18 @@
   --tooltip-link-color: #bfe8ff;
   --tooltip-image-height: 200px;
   --blur-duration: 360ms; /* change this to affect smoothness */
-
-  /* edge button sizing (tweak here) */
   --edge-btn-w: 34px;
   --edge-btn-h: 34px;
   --edge-btn-radius: 18px;
 }
 
-/* sensible defaults */
-html { --bg: var(--bg-dark); --card: var(--card-dark); --btn-bg: var(--card-dark); --accent: var(--accent-dark); --btn-fg: var(--accent-dark); }
+/* theme-aware vars */
+html[data-theme="dark"]{
+  --bg:var(--bg-dark); --card:var(--card-dark); --accent:var(--accent-dark); --muted:var(--muted-dark); --btn-bg:var(--card-dark); --btn-fg:var(--accent-dark);
+}
+html[data-theme="light"]{
+  --bg:#f9f9fb; --card:#ffffff; --accent:#132029; --muted:#66707a; --btn-bg:#eef3f6; --btn-fg:#132029;
+}
 
 body{
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
@@ -41,7 +44,7 @@ header{
 header h1{ margin:0; font-size:18px; font-weight:700; flex:1 }
 .header-controls{ display:flex; gap:8px; align-items:center; position:relative }
 
-/* Blur toggle / theme toggle */
+/* Toggle buttons */
 #blur-toggle, #theme-toggle{
   width:40px; height:40px; border-radius:10px; border:0; background:var(--btn-bg); color:var(--btn-fg);
   font-size:16px; cursor:pointer; display:flex; align-items:center; justify-content:center;
@@ -49,7 +52,6 @@ header h1{ margin:0; font-size:18px; font-weight:700; flex:1 }
   transition: box-shadow 180ms ease, transform 120ms ease;
   border: 2px solid rgba(var(--bg-r), var(--bg-g), var(--bg-b), 0.50);
 }
-#blur-toggle{ margin-right:6px; }
 #blur-toggle:hover, #theme-toggle:hover{ transform: translateY(-2px); box-shadow: 0 12px 28px rgba(0,0,0,0.26), inset 0 1px 0 rgba(255,255,255,0.10); }
 
 /* Color popup panel */
@@ -104,7 +106,7 @@ body.chapters-open #chapters-list{ transform:translateX(0); }
 #chapters-list a{ color:var(--accent); text-decoration:none; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width: calc(220px - 24px); padding-right:6px; }
 #chapters-list a.undone { color: var(--muted-dark); text-decoration: line-through; pointer-events: none; cursor: default; opacity: 0.75; }
 
-/* content area centered - make it position:relative so edge button can be positioned relative if needed */
+/* content area centered */
 #content{ max-width: 960px; margin: 18px auto; background:var(--card); padding:24px; border-radius:8px; box-shadow:0 2px 6px rgba(0,0,0,0.06); position:relative; }
 #chapter-title{ font-size:40px; font-weight:700; margin: 0 0 16px; text-align:center; word-break:break-word; }
 
@@ -120,10 +122,7 @@ body.chapters-open #chapters-list{ transform:translateX(0); }
 #top-nav{ position:fixed; left:50%; transform: translateX(-50%) translateY(-6px); z-index:1300; opacity:0; pointer-events:none; display:flex; gap:12px; transition: opacity 260ms ease, transform 260ms ease; }
 #top-nav.visible-top{ opacity:1; transform: translateX(-50%) translateY(0); pointer-events:auto; }
 
-/* EDGE SCROLL BUTTON (new) - fixed position so it stays in viewport
-   Visual style: same background as content (.card), no border/shadow so it blends into the edge
-   The pill shape will have the left side rounded so it appears to grow from the content.
-*/
+/* EDGE SCROLL BUTTON */
 .edge-scroll-btn {
   position: fixed;
   top: 50%;
@@ -143,32 +142,17 @@ body.chapters-open #chapters-list{ transform:translateX(0); }
   line-height: 1;
   border: none;
   box-shadow: none;
-  /* pill: rounded left side and slightly rounded right to look organic */
   border-radius: calc(var(--edge-btn-radius)) calc(var(--edge-btn-radius) / 2) calc(var(--edge-btn-radius)) calc(var(--edge-btn-radius) / 2);
 }
-
-/* When visible: clickable */
-.edge-scroll-btn.visible {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-/* smaller hit area on mobile */
-@media (max-width:700px){
-  .edge-scroll-btn { display:none; }
-}
+.edge-scroll-btn.visible { opacity: 1; pointer-events: auto; }
+@media (max-width:700px){ .edge-scroll-btn { display:none; } }
 
 /* ========== BLUR styling (class-based, smooth) ========== */
-
-/* Targets that can be blurred */
 .blur-target {
   transition: filter var(--blur-duration) ease;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
-
-/* When blurred: apply blur filter on the element and force descendant text color to the accent color.
-   Forcing color uses !important because it needs to override inline styles from content. */
 .blur-target.is-blurred {
   filter: blur(6px);
 }
@@ -176,8 +160,6 @@ body.chapters-open #chapters-list{ transform:translateX(0); }
   color: var(--accent) !important;
   transition: color var(--blur-duration) ease !important;
 }
-
-/* Hover reveal: temporarily remove blur + forced color so original colors show. */
 .blur-target.hover-reveal {
   filter: none !important;
 }
@@ -185,18 +167,14 @@ body.chapters-open #chapters-list{ transform:translateX(0); }
   color: unset !important;
   transition: color calc(var(--blur-duration) / 3) ease !important;
 }
-
-/* Permanently unblurred marker */
 .blur-target.unblurred { filter: none !important; }
-
-/* When the user turns visual blur off globally, hide blur visually but keep the 'unblurred' state untouched */
 body.blur-visual-off .blur-target { filter: none !important; }
 body.blur-visual-off .blur-target, body.blur-visual-off .blur-target * { color: unset !important; }
 
 /* Gloss styling */
 .gloss{ text-decoration:underline dotted; cursor:help; }
 
-/* Tooltip and image viewer adjustments (kept as before) */
+/* Tooltip tweaks */
 .tippy-box .tippy-content a, .tippy-box a { color: var(--tooltip-link-color) !important; text-decoration: underline; }
 .tippy-box { z-index: 99999 !important; }
 .tippy-box .tippy-content { padding: 0; box-sizing: border-box; overflow: visible; }
@@ -210,70 +188,119 @@ body.blur-visual-off .blur-target, body.blur-visual-off .blur-target * { color: 
 #image-overlay img.viewer-img { display:block; width:auto; height:auto; max-width: calc(100vw - 40px); max-height: calc(100vh - 60px); user-select:none; -webkit-user-drag:none; transform-origin:center center; transition:none; cursor: zoom-in; }
 #image-overlay img.viewer-img.zoomed { cursor: grab; }
 
-/* responsive tweaks */
-@media (max-width:1100px){ #content{ max-width:760px; padding:20px; } }
-@media (max-width:700px){
-  #content{ max-width: calc(100% - 20px); margin: 12px auto; }
-  #chapters-list{ display:none; }
-  #top-nav{ right:10px; left:auto; transform:none; }
-}
-
-/* utilities */
-.visually-hidden { position: absolute !important; height: 1px; width: 1px; overflow: hidden; clip: rect(1px,1px,1px,1px); white-space: nowrap; }
-
-/* ===================== GLOW STYLES (moved to ::after, fixed selectors) ===================== */
-
-.glow {
-  position: relative;
-  z-index: 1;
-  text-shadow: none !important;
-}
-.glow {
-  --glow-density: 1;
-  --glow-brightness: 1;
-  --glow-opacity: 1;
-  --g1: calc(6px * var(--glow-density));
-  --g2: calc(12px * var(--glow-density));
-  --g3: calc(18px * var(--glow-density));
-}
+/* ========== GLOW (kept) ========== */
+.glow { position: relative; z-index:1; text-shadow:none !important; }
+.glow { --glow-density:1; --glow-brightness:1; --glow-opacity:1; --g1: calc(6px * var(--glow-density)); --g2: calc(12px * var(--glow-density)); --g3: calc(18px * var(--glow-density)); }
 .glow::after {
   content: attr(data-glow);
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: 100%;
-  height: 100%;
-  white-space: pre-wrap;
-  pointer-events: none;
-  color: transparent;
-  z-index: 0;
-  display: block;
-  line-height: inherit;
-  font: inherit;
-  text-align: inherit;
-  --glow-shadow:
-    0 0 var(--g1) rgba(var(--glow-rgb, 255,255,255), calc(0.45 * var(--glow-brightness) * var(--glow-opacity))),
-    0 0 var(--g2) rgba(var(--glow-rgb, 255,255,255), calc(0.22 * var(--glow-brightness) * var(--glow-opacity))),
-    0 0 var(--g3) rgba(var(--glow-rgb, 255,255,255), calc(0.12 * var(--glow-brightness) * var(--glow-opacity)));
+  position: absolute; left:0; top:0; width:100%; height:100%; white-space: pre-wrap; pointer-events:none; color:transparent; z-index:0; display:block; line-height:inherit; font:inherit; text-align:inherit;
+  --glow-shadow: 0 0 var(--g1) rgba(var(--glow-rgb,255,255,255), calc(0.45 * var(--glow-brightness) * var(--glow-opacity))), 0 0 var(--g2) rgba(var(--glow-rgb,255,255,255), calc(0.22 * var(--glow-brightness) * var(--glow-opacity))), 0 0 var(--g3) rgba(var(--glow-rgb,255,255,255), calc(0.12 * var(--glow-brightness) * var(--glow-opacity)));
   text-shadow: var(--glow-shadow);
   transition: text-shadow var(--blur-duration) ease, opacity var(--blur-duration) ease;
   opacity: 1;
 }
 .blur-target.is-blurred .glow::after,
-.blur-target.is-blurred.glow::after {
-  text-shadow: none !important;
-  opacity: 0 !important;
-  transition: text-shadow var(--blur-duration) ease !important, opacity var(--blur-duration) ease !important;
-}
+.blur-target.is-blurred.glow::after { text-shadow: none !important; opacity: 0 !important; transition: text-shadow var(--blur-duration) ease !important, opacity var(--blur-duration) ease !important; }
 .blur-target.hover-reveal .glow::after,
-.blur-target.hover-reveal.glow::after {
-  text-shadow: var(--glow-shadow) !important;
-  opacity: 1 !important;
-  transition: text-shadow var(--blur-duration) ease !important, opacity var(--blur-duration) ease !important;
+.blur-target.hover-reveal.glow::after { text-shadow: var(--glow-shadow) !important; opacity: 1 !important; transition: text-shadow var(--blur-duration) ease !important, opacity var(--blur-duration) ease !important; }
+.blur-target.unblurred .glow::after, .blur-target.unblurred.glow::after { text-shadow: var(--glow-shadow) !important; opacity: 1 !important; transition: text-shadow var(--blur-duration) ease !important, opacity var(--blur-duration) ease !important; }
+
+/* ========== GLITCH styles ========== */
+/* The .glitch element renders its text normally and has two extra layers via ::before and ::after.
+   Those pseudo elements mirror the text and are animated using CSS keyframes that reference CSS variables.
+   JS updates these variables per element to control intensity/duration.
+*/
+.glitch {
+  position: relative;
+  display: inline-block;
+  color: inherit;
+  background: transparent;
+  z-index: 1;
+  /* ensure transitions inherit when unblurring */
+  transition: color var(--blur-duration) ease;
 }
-.blur-target.unblurred .glow::after,
-.blur-target.unblurred.glow::after {
-  text-shadow: var(--glow-shadow) !important;
-  opacity: 1 !important;
-  transition: text-shadow var(--blur-duration) ease !important, opacity var(--blur-duration) ease !important;
+
+/* Mirror text for pseudo elements using data-glitch-content attr (set by JS after chapter load) */
+.glitch::before,
+.glitch::after {
+  content: attr(data-glitch-content);
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  pointer-events: none;
+  z-index: 0;
+  mix-blend-mode: normal;
+  /* default variables (can be overridden by JS) */
+  --g1-x: 2px;
+  --g1-y: 0px;
+  --g2-x: 13px;
+  --g2-skew: -13deg;
+  --gb-x: -22px;
+  --gb-y: 5px;
+  --gb-skew: 21deg;
+  --g-opacity: 0.85;
+  --g-duration: 1000ms;
+}
+
+/* top slice */
+.glitch::before {
+  clip-path: polygon(0 0, 100% 0, 100% 33%, 0 33%);
+  -webkit-clip-path: polygon(0 0, 100% 0, 100% 33%, 0 33%);
+  color: rgba(255,80,80,var(--g-opacity));
+  transform-origin: left top;
+  animation: glitchTop var(--g-duration) linear infinite;
+}
+
+/* bottom slice */
+.glitch::after {
+  clip-path: polygon(0 67%, 100% 67%, 100% 100%, 0 100%);
+  -webkit-clip-path: polygon(0 67%, 100% 67%, 100% 100%, 0 100%);
+  color: rgba(120,180,255,var(--g-opacity));
+  transform-origin: left bottom;
+  animation: glitchBottom calc(var(--g-duration) * 1.3) linear infinite;
+}
+
+/* main shift (element itself can also be slightly offset) */
+.glitch.shift { transform: translateX(var(--g-main-x,0px)); }
+
+/* keyframes use the variables; JS will set variables dynamically per element */
+@keyframes glitchMain {
+  2%,64% { transform: translate(var(--g1-x,2px), var(--g1-y,0px)) skew(0deg); }
+  4%,60% { transform: translate(calc(var(--g1-x,2px) * -1), 0) skew(0deg); }
+  62% { transform: translate(var(--g2-x,13px), 0) skew(var(--g2-skew,-5deg)); }
+}
+@keyframes glitchTop {
+  2%,64%{ transform: translate(calc(var(--g1-x,2px)), calc(var(--g1-y, -2px))); }
+  4%,60%{ transform: translate(calc(var(--g1-x, -2px) * -1), calc(var(--g1-y, 2px))); }
+  62%{ transform: translate(var(--g2-x, 13px), calc(var(--g1-y,-1px))) skew(var(--g2-skew,-13deg)); }
+}
+@keyframes glitchBottom {
+  2%,64%{ transform: translate(calc(var(--gb-x,-2px)), 0); }
+  4%,60%{ transform: translate(calc(var(--gb-x,-2px)), 0); }
+  62%{ transform: translate(var(--gb-x, -22px), var(--gb-y,5px)) skew(var(--gb-skew,21deg)); }
+}
+
+/* When element is blurred, hide pseudo layers smoothly */
+.blur-target.is-blurred .glitch::before,
+.blur-target.is-blurred .glitch::after {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--blur-duration) ease;
+}
+/* Hover reveal / unblur should restore opacity */
+.blur-target.hover-reveal .glitch::before,
+.blur-target.hover-reveal .glitch::after,
+.blur-target.unblurred .glitch::before,
+.blur-target.unblurred .glitch::after {
+  opacity: 1;
+  transition: opacity var(--blur-duration) ease;
+}
+
+/* small adjustments for responsiveness */
+@media (max-width:1100px){ #content{ max-width:760px; padding:20px; } }
+@media (max-width:700px){
+  #content{ max-width: calc(100% - 20px); margin: 12px auto; }
+  #chapters-list{ display:none; }
+  #top-nav{ right:10px; left:auto; transform:none; }
 }
