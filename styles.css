@@ -1,58 +1,44 @@
 :root{
-  --bg-dark:#0b0f13;
-  --card-dark:#0f1520;
-  --accent-dark:#e6eef6;
-  --muted-dark:#9aa6b2;
+  --bg-dark:#0b0f13; --card-dark:#0f1520; --accent-dark:#e6eef6; --muted-dark:#9aa6b2;
+  --bg-light:#f9f9fb; --card-light:#ffffff; --accent-light:#132029; --muted-light:#66707a;
 
-  --bg-r: 11;
-  --bg-g: 15;
-  --bg-b: 19;
+  --bg-r: 11; --bg-g: 15; --bg-b: 19;
 
   --tooltip-link-color: #bfe8ff;
   --tooltip-image-height: 200px;
-  --blur-duration: 360ms; /* change this to affect smoothness */
-  --edge-btn-w: 34px;
-  --edge-btn-h: 34px;
-  --edge-btn-radius: 18px;
+  --blur-duration: 360ms;
+  --edge-btn-w: 34px; --edge-btn-h: 34px; --edge-btn-radius: 18px;
 }
 
-/* theme-aware vars */
+/* theme-aware variables */
 html[data-theme="dark"]{
   --bg:var(--bg-dark); --card:var(--card-dark); --accent:var(--accent-dark); --muted:var(--muted-dark); --btn-bg:var(--card-dark); --btn-fg:var(--accent-dark);
 }
 html[data-theme="light"]{
-  --bg:#f9f9fb; --card:#ffffff; --accent:#132029; --muted:#66707a; --btn-bg:#eef3f6; --btn-fg:#132029;
+  --bg:var(--bg-light); --card:var(--card-light); --accent:var(--accent-light); --muted:var(--muted-light); --btn-bg:var(--btn-bg-light); --btn-fg:var(--accent-light);
 }
 
 body{
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
-  margin:0;
-  background:var(--bg);
-  color:var(--accent);
-  -webkit-font-smoothing:antialiased;
-  -moz-osx-font-smoothing:grayscale;
+  margin:0; background:var(--bg); color:var(--accent);
+  -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale;
 }
-
-/* Header */
 header{
-  background:var(--card);
-  padding:10px 16px;
-  box-shadow:0 1px 0 rgba(0,0,0,0.06);
+  background:var(--card); padding:10px 16px; box-shadow:0 1px 0 rgba(0,0,0,0.06);
   display:flex; align-items:center; gap:12px;
-  transition: transform 180ms ease;
 }
-header h1{ margin:0; font-size:18px; font-weight:700; flex:1 }
-.header-controls{ display:flex; gap:8px; align-items:center; position:relative }
+header h1{margin:0; font-size:18px; font-weight:700; flex:1}
+.header-controls{display:flex;gap:8px; align-items:center; position:relative}
 
-/* Toggle buttons */
+/* Blur toggle / theme toggle */
 #blur-toggle, #theme-toggle{
   width:40px; height:40px; border-radius:10px; border:0; background:var(--btn-bg); color:var(--btn-fg);
   font-size:16px; cursor:pointer; display:flex; align-items:center; justify-content:center;
   box-shadow: 0 8px 20px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.08);
   transition: box-shadow 180ms ease, transform 120ms ease;
-  border: 2px solid rgba(var(--bg-r), var(--bg-g), var(--bg-b), 0.50);
+  border: 2px solid rgba(var(--bg-r), var(--bg-g), var(--bg-b), 0.45);
 }
-#blur-toggle:hover, #theme-toggle:hover{ transform: translateY(-2px); box-shadow: 0 12px 28px rgba(0,0,0,0.26), inset 0 1px 0 rgba(255,255,255,0.10); }
+#blur-toggle:hover, #theme-toggle:hover{ transform: translateY(-2px); }
 
 /* Color popup panel */
 .color-picker-container { position: relative; display:inline-block; }
@@ -66,17 +52,10 @@ header h1{ margin:0; font-size:18px; font-weight:700; flex:1 }
   box-shadow: 0 10px 24px rgba(0,0,0,0.20);
   z-index: 1400;
   min-width: 280px;
-
-  opacity: 0;
-  transform: translateY(-8px) scale(0.99);
-  pointer-events: none;
+  opacity: 0; transform: translateY(-8px) scale(0.99); pointer-events: none;
   transition: opacity 160ms ease, transform 160ms ease;
 }
-.color-popup.visible {
-  opacity: 1;
-  transform: translateY(0) scale(1);
-  pointer-events: auto;
-}
+.color-popup.visible { opacity:1; transform: translateY(0) scale(1); pointer-events:auto; }
 
 /* picker layout */
 .picker { display:flex; gap:10px; align-items:center; }
@@ -85,8 +64,8 @@ header h1{ margin:0; font-size:18px; font-weight:700; flex:1 }
 .hue-slider { width: 20px; height: 160px; border-radius:6px; position:relative; cursor: ns-resize; background: linear-gradient(to top, red, yellow, lime, cyan, blue, magenta, red); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.03); }
 .hue-cursor { position:absolute; left: -4px; right: -4px; height:6px; border-radius:4px; background:#fff; box-shadow:0 2px 6px rgba(0,0,0,0.35); transform: translateY(-3px); pointer-events:none; }
 .picker-reset-wrap { display:flex; justify-content:center; margin-top:10px; }
-.small { padding:6px 10px; border-radius:8px; border:0; background:var(--btn-bg); color:var(--btn-fg); cursor:pointer; box-shadow: 0 8px 20px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.08); transition: box-shadow 180ms ease, transform 120ms ease; border: 2px solid rgba(var(--bg-r), var(--bg-g), var(--bg-b), 0.50); }
-.small:hover { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(0,0,0,0.26), inset 0 1px 0 rgba(255,255,255,0.10); }
+.small { padding:6px 10px; border-radius:8px; border:0; background:var(--btn-bg); color:var(--btn-fg); cursor:pointer; box-shadow: 0 8px 20px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.08); transition: box-shadow 180ms ease, transform 120ms ease; border: 2px solid rgba(var(--bg-r), var(--bg-g), var(--bg-b), 0.45); }
+.small:hover { transform: translateY(-2px); }
 
 /* Layout */
 main{ display:block; padding:18px; }
@@ -104,20 +83,20 @@ body.chapters-open #chapters-list{ transform:translateX(0); }
 #chapters-list ul{ list-style:none; padding:0; margin:0 }
 #chapters-list li{ margin:8px 0 }
 #chapters-list a{ color:var(--accent); text-decoration:none; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width: calc(220px - 24px); padding-right:6px; }
-#chapters-list a.undone { color: var(--muted-dark); text-decoration: line-through; pointer-events: none; cursor: default; opacity: 0.75; }
+#chapters-list a.undone { color: var(--muted); text-decoration: line-through; pointer-events: none; cursor: default; opacity: 0.75; }
 
 /* content area centered */
 #content{ max-width: 960px; margin: 18px auto; background:var(--card); padding:24px; border-radius:8px; box-shadow:0 2px 6px rgba(0,0,0,0.06); position:relative; }
 #chapter-title{ font-size:40px; font-weight:700; margin: 0 0 16px; text-align:center; word-break:break-word; }
 
-/* inline images centered & clickable cursor */
+/* images centered & clickable */
 #chapter-body img{ display:block; margin:18px auto; max-width:100%; height:auto; cursor:pointer; }
 
 /* nav buttons */
-.chapter-nav{ display:flex; gap:12px; align-items:center; }
-.nav-btn{ width:56px; height:40px; border-radius:8px; border:0; background:var(--btn-bg); color:var(--btn-fg); font-size:16px; cursor:pointer; box-shadow: 0 8px 20px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.08); transition: box-shadow 200ms ease, transform 120ms ease, opacity 160ms ease; border: 2px solid rgba(var(--bg-r), var(--bg-g), var(--bg-b), 0.50); }
+.nav-buttons{ display:flex; gap:12px; align-items:center; }
+.nav-btn{ width:56px; height:40px; border-radius:8px; border:0; background:var(--btn-bg); color:var(--btn-fg); font-size:16px; cursor:pointer; box-shadow: 0 8px 20px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.08); transition: box-shadow 200ms ease, transform 120ms ease, opacity 160ms ease; border: 2px solid rgba(var(--bg-r), var(--bg-g), var(--bg-b), 0.45); }
 .nav-btn:disabled{ opacity:0.35; pointer-events:none }
-.nav-btn:hover { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(0,0,0,0.26), inset 0 1px 0 rgba(255,255,255,0.10); }
+.nav-btn:hover { transform: translateY(-2px); }
 #bottom-nav{ margin-top:24px; display:flex; justify-content:center; transition: opacity 180ms ease; }
 #top-nav{ position:fixed; left:50%; transform: translateX(-50%) translateY(-6px); z-index:1300; opacity:0; pointer-events:none; display:flex; gap:12px; transition: opacity 260ms ease, transform 260ms ease; }
 #top-nav.visible-top{ opacity:1; transform: translateX(-50%) translateY(0); pointer-events:auto; }
@@ -147,34 +126,18 @@ body.chapters-open #chapters-list{ transform:translateX(0); }
 .edge-scroll-btn.visible { opacity: 1; pointer-events: auto; }
 @media (max-width:700px){ .edge-scroll-btn { display:none; } }
 
-/* ========== BLUR styling (class-based, smooth) ========== */
-.blur-target {
-  transition: filter var(--blur-duration) ease;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-.blur-target.is-blurred {
-  filter: blur(6px);
-}
-.blur-target.is-blurred, .blur-target.is-blurred * {
-  color: var(--accent) !important;
-  transition: color var(--blur-duration) ease !important;
-}
-.blur-target.hover-reveal {
-  filter: none !important;
-}
-.blur-target.hover-reveal, .blur-target.hover-reveal * {
-  color: unset !important;
-  transition: color calc(var(--blur-duration) / 3) ease !important;
-}
+/* BLUR styling (smooth) */
+.blur-target { transition: filter var(--blur-duration) ease; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+.blur-target.is-blurred { filter: blur(6px); }
+.blur-target.is-blurred, .blur-target.is-blurred * { color: var(--accent) !important; transition: color var(--blur-duration) ease !important; }
+.blur-target.hover-reveal { filter: none !important; }
+.blur-target.hover-reveal, .blur-target.hover-reveal * { color: unset !important; transition: color calc(var(--blur-duration) / 3) ease !important; }
 .blur-target.unblurred { filter: none !important; }
 body.blur-visual-off .blur-target { filter: none !important; }
 body.blur-visual-off .blur-target, body.blur-visual-off .blur-target * { color: unset !important; }
 
-/* Gloss styling */
+/* Gloss styling & tooltip tweaks */
 .gloss{ text-decoration:underline dotted; cursor:help; }
-
-/* Tooltip tweaks */
 .tippy-box .tippy-content a, .tippy-box a { color: var(--tooltip-link-color) !important; text-decoration: underline; }
 .tippy-box { z-index: 99999 !important; }
 .tippy-box .tippy-content { padding: 0; box-sizing: border-box; overflow: visible; }
@@ -188,118 +151,72 @@ body.blur-visual-off .blur-target, body.blur-visual-off .blur-target * { color: 
 #image-overlay img.viewer-img { display:block; width:auto; height:auto; max-width: calc(100vw - 40px); max-height: calc(100vh - 60px); user-select:none; -webkit-user-drag:none; transform-origin:center center; transition:none; cursor: zoom-in; }
 #image-overlay img.viewer-img.zoomed { cursor: grab; }
 
-/* ========== GLOW (kept) ========== */
-.glow { position: relative; z-index:1; text-shadow:none !important; }
-.glow { --glow-density:1; --glow-brightness:1; --glow-opacity:1; --g1: calc(6px * var(--glow-density)); --g2: calc(12px * var(--glow-density)); --g3: calc(18px * var(--glow-density)); }
-.glow::after {
-  content: attr(data-glow);
-  position: absolute; left:0; top:0; width:100%; height:100%; white-space: pre-wrap; pointer-events:none; color:transparent; z-index:0; display:block; line-height:inherit; font:inherit; text-align:inherit;
-  --glow-shadow: 0 0 var(--g1) rgba(var(--glow-rgb,255,255,255), calc(0.45 * var(--glow-brightness) * var(--glow-opacity))), 0 0 var(--g2) rgba(var(--glow-rgb,255,255,255), calc(0.22 * var(--glow-brightness) * var(--glow-opacity))), 0 0 var(--g3) rgba(var(--glow-rgb,255,255,255), calc(0.12 * var(--glow-brightness) * var(--glow-opacity)));
-  text-shadow: var(--glow-shadow);
-  transition: text-shadow var(--blur-duration) ease, opacity var(--blur-duration) ease;
-  opacity: 1;
-}
-.blur-target.is-blurred .glow::after,
-.blur-target.is-blurred.glow::after { text-shadow: none !important; opacity: 0 !important; transition: text-shadow var(--blur-duration) ease !important, opacity var(--blur-duration) ease !important; }
-.blur-target.hover-reveal .glow::after,
-.blur-target.hover-reveal.glow::after { text-shadow: var(--glow-shadow) !important; opacity: 1 !important; transition: text-shadow var(--blur-duration) ease !important, opacity var(--blur-duration) ease !important; }
+/* GLOW (keeps previous behavior) */
+.glow { position: relative; z-index: 1; text-shadow: none !important; --glow-density: 1; --glow-brightness: 1; --glow-opacity: 1; --g1: calc(6px * var(--glow-density)); --g2: calc(12px * var(--glow-density)); --g3: calc(18px * var(--glow-density)); }
+.glow::after { content: attr(data-glow); position: absolute; left: 0; top: 0; width: 100%; height: 100%; white-space: pre-wrap; pointer-events: none; color: transparent; z-index: 0; display: block; line-height: inherit; font: inherit; text-align: inherit; --glow-shadow: 0 0 var(--g1) rgba(var(--glow-rgb,255,255,255), calc(0.45 * var(--glow-brightness) * var(--glow-opacity))), 0 0 var(--g2) rgba(var(--glow-rgb,255,255,255), calc(0.22 * var(--glow-brightness) * var(--glow-opacity))), 0 0 var(--g3) rgba(var(--glow-rgb,255,255,255), calc(0.12 * var(--glow-brightness) * var(--glow-opacity))); text-shadow: var(--glow-shadow); transition: text-shadow var(--blur-duration) ease, opacity var(--blur-duration) ease; opacity:1; }
+.blur-target.is-blurred .glow::after, .blur-target.is-blurred.glow::after { text-shadow: none !important; opacity: 0 !important; transition: text-shadow var(--blur-duration) ease !important, opacity var(--blur-duration) ease !important; }
+.blur-target.hover-reveal .glow::after, .blur-target.hover-reveal.glow::after { text-shadow: var(--glow-shadow) !important; opacity: 1 !important; transition: text-shadow var(--blur-duration) ease !important, opacity var(--blur-duration) ease !important; }
 .blur-target.unblurred .glow::after, .blur-target.unblurred.glow::after { text-shadow: var(--glow-shadow) !important; opacity: 1 !important; transition: text-shadow var(--blur-duration) ease !important, opacity var(--blur-duration) ease !important; }
-/* ========== GLITCH styles (replace previous glitch block with this) ========== */
-/* .glitch renders mirrored pseudo-layers via data-glitch-content populated by JS.
-   JS updates the CSS variables below to control intensity/duration/offset.
-   While element is blurred (parent .blur-target.is-blurred), pseudo-layers are hidden.
-*/
 
+/* ---------- Glitch CSS (new) ---------- */
 .glitch {
-  position: relative;
-  display: inline-block;
-  color: inherit;
-  line-height: inherit;
+  position: relative; display: inline-block; color: inherit;
+  --glitch-base: 0.5; --glitch-scale: 1; --g: calc(var(--glitch-base) * var(--glitch-scale)); --glitch-opacity: 1;
   transition: color var(--blur-duration) ease;
-  will-change: transform;
+  z-index: 1;
 }
-
-/* mirror layers (top & bottom slices) */
-.glitch::before,
-.glitch::after {
-  content: attr(data-glitch-content);
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: 100%;
-  pointer-events: none;
-  z-index: 0;
+.glitch[data-glitch]::before,
+.glitch[data-glitch]::after {
+  content: attr(data-glitch);
   white-space: pre-wrap;
-  overflow-wrap: break-word;
   display: block;
-  transform-origin: left center;
-  opacity: 1;
-  mix-blend-mode: normal;
-  /* default variables (overridden by JS) */
-  --g-offset-x: 2px;
-  --g-offset-y: 0px;
-  --g-offset-x-b: -12px;
-  --g-offset-y-b: 2px;
-  --g-skew-top: -8deg;
-  --g-skew-bot: 14deg;
-  --g-opacity: 0.9;
-  --g-duration: 1000ms;
+  position: absolute;
+  left: 0; top: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; line-height: inherit; font: inherit; text-align: inherit;
+}
+.glitch::before,
+.glitch::after { z-index: 0; mix-blend-mode: screen; opacity: var(--glitch-opacity); transition: opacity var(--blur-duration) ease, transform var(--blur-duration) ease; will-change: transform, opacity; }
+.glitch::before { color: rgba(255,60,120,0.9); transform-origin:left center; text-shadow:none; animation: glitchA calc(1.2s / (0.4 + var(--g))) infinite linear; clip-path: inset(0 0 0 0); }
+.glitch::after  { color: rgba(110,240,255,0.9); transform-origin:left center; text-shadow:none; animation: glitchB calc(1.0s / (0.35 + var(--g))) infinite linear; clip-path: inset(0 0 0 0); }
+.glitch { animation: glitchBase calc(2.4s / (0.3 + var(--g))) infinite linear; }
+
+@keyframes glitchA {
+  0%   { transform: translate(0,0) skewX(0); clip-path: inset(0 0 0 0); }
+  8%   { transform: translate(calc(1px * var(--g)), calc(-1px * var(--g))) skewX(-0.6deg); clip-path: inset(0 15% 0 0); }
+  16%  { transform: translate(calc(-2px * var(--g)), calc(1.2px * var(--g))) skewX(0.6deg); clip-path: inset(60% 0 0 0); }
+  24%  { transform: translate(calc(0.5px * var(--g)), calc(-0.3px * var(--g))) skewX(-0.2deg); clip-path: inset(0 0 40% 0); }
+  100% { transform: translate(0,0) skewX(0); clip-path: inset(0 0 0 0); }
+}
+@keyframes glitchB {
+  0%   { transform: translate(0,0) skewX(0); clip-path: inset(0 0 0 0); }
+  6%   { transform: translate(calc(-1px * var(--g)), calc(1px * var(--g))) skewX(0.4deg); clip-path: inset(20% 0 0 0); }
+  18%  { transform: translate(calc(2px * var(--g)), calc(-1.5px * var(--g))) skewX(-0.4deg); clip-path: inset(0 0 55% 0); }
+  30%  { transform: translate(calc(-0.6px * var(--g)), calc(0.4px * var(--g))) skewX(0.2deg); clip-path: inset(0 40% 0 0); }
+  100% { transform: translate(0,0) skewX(0); clip-path: inset(0 0 0 0); }
+}
+@keyframes glitchBase {
+  0%   { transform: translateX(0); }
+  50%  { transform: translateX(calc(0.2px * var(--g))); }
+  100% { transform: translateX(0); }
 }
 
-/* top slice */
-.glitch::before {
-  clip-path: inset(0 0 60% 0);
-  color: rgba(255,80,80,var(--g-opacity));
-  transform: translate(var(--g-offset-x), var(--g-offset-y)) skewX(var(--g-skew-top));
-  animation: glitchTop var(--g-duration) linear infinite;
-}
-
-/* bottom slice */
-.glitch::after {
-  clip-path: inset(40% 0 0 0);
-  color: rgba(120,180,255,var(--g-opacity));
-  transform: translate(var(--g-offset-x-b), var(--g-offset-y-b)) skewX(var(--g-skew-bot));
-  animation: glitchBot var(--g-duration) linear infinite;
-}
-
-/* subtle main element shift to create layered feel */
-.glitch.shift { transform: translateX(calc(var(--g-main-x, 0px))); }
-
-/* keyframes (small, non-janky shifts that look like glitching) */
-@keyframes glitchTop {
-  0%   { transform: translate(var(--g-offset-x), var(--g-offset-y)) skewX(var(--g-skew-top)); }
-  8%   { transform: translate(calc(var(--g-offset-x) * -1), calc(var(--g-offset-y) * -1)) skewX(calc(var(--g-skew-top) * 0.6)); }
-  20%  { transform: translate(var(--g-offset-x), 0px) skewX(var(--g-skew-top)); }
-  100% { transform: translate(0px, 0px) skewX(0deg); }
-}
-@keyframes glitchBot {
-  0%   { transform: translate(var(--g-offset-x-b), var(--g-offset-y-b)) skewX(var(--g-skew-bot)); }
-  10%  { transform: translate(calc(var(--g-offset-x-b) * -1), calc(var(--g-offset-y-b) * -1)) skewX(calc(var(--g-skew-bot) * 0.6)); }
-  30%  { transform: translate(var(--g-offset-x-b), 0px) skewX(var(--g-skew-bot)); }
-  100% { transform: translate(0px, 0px) skewX(0deg); }
-}
-
-/* When the element is blurred, hide the pseudo layers smoothly */
+/* hide glitch visuals when blurred */
 .blur-target.is-blurred .glitch::before,
-.blur-target.is-blurred .glitch::after {
+.blur-target.is-blurred .glitch::after,
+.blur-target.is-blurred .glitch {
   opacity: 0 !important;
+  transition: opacity var(--blur-duration) ease !important, transform var(--blur-duration) ease !important;
   pointer-events: none;
-  transition: opacity var(--blur-duration) ease !important;
+}
+.blur-target.hover-reveal .glitch,
+.blur-target.unblurred .glitch { opacity: 1 !important; }
+body.blur-visual-off .glitch,
+body.blur-visual-off .glitch::before,
+body.blur-visual-off .glitch::after { opacity: 0 !important; }
+
+/* accessibility */
+@media (prefers-reduced-motion: reduce) {
+  .glitch, .glitch::before, .glitch::after { animation: none !important; transform: none !important; }
 }
 
-/* When hover-reveal or unblurred, show them */
-.blur-target.hover-reveal .glitch::before,
-.blur-target.hover-reveal .glitch::after,
-.blur-target.unblurred .glitch::before,
-.blur-target.unblurred .glitch::after {
-  opacity: 1 !important;
-  transition: opacity var(--blur-duration) ease !important;
-}
-
-/* small adjustments for responsiveness */
-@media (max-width:1100px){ #content{ max-width:760px; padding:20px; } }
-@media (max-width:700px){
-  #content{ max-width: calc(100% - 20px); margin: 12px auto; }
-  #chapters-list{ display:none; }
-  #top-nav{ right:10px; left:auto; transform:none; }
-}
+/* utilities */
+.visually-hidden { position: absolute !important; height: 1px; width: 1px; overflow: hidden; clip: rect(1px,1px,1px,1px); white-space: nowrap; }
