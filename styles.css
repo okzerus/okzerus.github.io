@@ -221,7 +221,7 @@ body.blur-visual-off .blur-target, body.blur-visual-off .blur-target * { color: 
 /* utilities */
 .visually-hidden { position: absolute !important; height: 1px; width: 1px; overflow: hidden; clip: rect(1px,1px,1px,1px); white-space: nowrap; }
 
-/* ===================== GLOW STYLES (kept from before) ===================== */
+/* ===================== GLOW STYLES (moved to ::after, fixed selectors) ===================== */
 
 .glow {
   position: relative;
@@ -276,87 +276,4 @@ body.blur-visual-off .blur-target, body.blur-visual-off .blur-target * { color: 
   text-shadow: var(--glow-shadow) !important;
   opacity: 1 !important;
   transition: text-shadow var(--blur-duration) ease !important, opacity var(--blur-duration) ease !important;
-}
-
-/* ===================== GLITCH STYLES (new) ===================== */
-
-/* Basic layout: the real text is kept as the element's content. Two pseudo-elements (::before, ::after)
-   render sliced layers offset and clipped to produce the glitch effect.
-*/
-.glitch {
-  position: relative;
-  display: inline-block;
-  z-index: 1;
-  /* ensure pseudo elements use the same font metrics */
-  -webkit-font-smoothing: inherit;
-  font-smoothing: inherit;
-}
-
-/* Both layers copy the visible text */
-.glitch::before,
-.glitch::after {
-  content: attr(data-glitch);
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: 100%;
-  height: 100%;
-  font: inherit;
-  line-height: inherit;
-  white-space: pre-wrap;
-  pointer-events: none;
-  z-index: 0;
-  /* default variables */
-  --glitch-x: 0px;
-  --glitch-y: 0px;
-  --glitch-clip: inset(0 0 0 0);
-  color: rgb(var(--glitch-rgb, 255,255,255));
-  opacity: 1;
-  mix-blend-mode: normal;
-  transition: opacity 0ms linear;
-}
-
-/* The two layers differ slightly graphically */
-.glitch::before {
-  transform: translate(var(--glitch-x-1, 0px), var(--glitch-y-1, 0px));
-  clip-path: var(--glitch-clip-1, inset(0 0 0 0));
-  filter: none;
-  text-shadow: 0 0 0 rgba(0,0,0,0);
-}
-.glitch::after {
-  transform: translate(var(--glitch-x-2, 0px), var(--glitch-y-2, 0px));
-  clip-path: var(--glitch-clip-2, inset(0 0 0 0));
-  /* give a subtle hue/brightness offset */
-  filter: saturate(1.08) contrast(1.02);
-  opacity: 0.95;
-}
-
-/* Hide glitch layers when the element (or parent blur-target) is blurred */
-.blur-target.is-blurred .glitch::before,
-.blur-target.is-blurred .glitch::after,
-.glitch.is-under-blur::before,
-.glitch.is-under-blur::after {
-  opacity: 0 !important;
-}
-
-/* When element is explicitly unblurred, allow glitch layers to show */
-.blur-target.unblurred .glitch::before,
-.blur-target.unblurred .glitch::after {
-  opacity: 1 !important;
-}
-
-/* If hover reveal is used, ensure glitch shows during hover reveal as well */
-.blur-target.hover-reveal .glitch::before,
-.blur-target.hover-reveal .glitch::after {
-  opacity: 1 !important;
-}
-
-/* Make sure normal text color is above pseudo elements so that unblurred text is readable */
-.glitch { z-index: 2; }
-.glitch::before, .glitch::after { z-index: 1; }
-
-/* allow explicit disabling: .glitch[aria-hidden="true"] will hide the visual layers */
-.glitch[aria-hidden="true"]::before,
-.glitch[aria-hidden="true"]::after {
-  opacity: 0 !important;
 }
