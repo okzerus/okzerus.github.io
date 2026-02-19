@@ -430,99 +430,119 @@ document.addEventListener('DOMContentLoaded', () => {
     updateEdgeScrollVisibility();
   }
 
-  /* ---------- GLITCH SUPPORT ---------- */
+ /* ---------- GLITCH SUPPORT (replacement) ---------- */
 
-  // Configuration
-  const GLITCH_MAX_OFFSET = 26;      // px — maximum horizontal offset for heavy glitch
-  const GLITCH_TOP_SCALE = 0.75;     // fraction applied to top layer
-  const GLITCH_BOTTOM_SCALE = 1.0;   // bottom layer multiplier
-  const GLITCH_MIN_DURATION = 700;   // ms
-  const GLITCH_MAX_DURATION = 1400;  // ms
+// Configuration (tweakable)
+const GLITCH_MAX_OFFSET = 28;        // px, max horizontal offset
+const GLITCH_MAX_OFFSET_VERT = 6;    // px, vertical offset max
+const GLITCH_MIN_DURATION = 700;     // ms
+const GLITCH_MAX_DURATION = 1400;    // ms
+const GLITCH_MIN_OPACITY = 0.6;      // pseudo-layer opacity at 0 intensity
+const GLITCH_MAX_OPACITY = 1.0;      // at max intensity
 
-  // Initialize glitch nodes inside current chapter (called after chapter HTML placed)
-  function initGlitchForChapter() {
-    if (!chapterBodyEl) return;
-    // ensure each glitch element has the mirrored text attr used by CSS
-    const gls = Array.from(chapterBodyEl.querySelectorAll('.glitch'));
-    gls.forEach(el => {
-      const txt = el.textContent || '';
-      el.setAttribute('data-glitch-content', txt.replace(/^\n+|\n+$/g, ''));
-      el.style.setProperty('--g1-x', '2px');
-      el.style.setProperty('--g1-y', '0px');
-      el.style.setProperty('--g2-x', '13px');
-      el.style.setProperty('--g2-skew', '-13deg');
-      el.style.setProperty('--gb-x', '-22px');
-      el.style.setProperty('--gb-y', '5px');
-      el.style.setProperty('--gb-skew', '21deg');
-      el.style.setProperty('--g-opacity', '0.85');
-      el.style.setProperty('--g-duration', `${GLITCH_MIN_DURATION}ms`);
-      el.dataset._glitchInited = '1';
-    });
-    updateGlitchIntensityAll();
+// Initialize glitch nodes inside current chapter (called after chapter HTML placed)
+function initGlitchForChapter() {
+  if (!chapterBodyEl) return;
+  const nodes = Array.from(chapterBodyEl.querySelectorAll('.glitch'));
+  nodes.forEach(el => {
+    const txt = (el.textContent || '').replace(/^\n+|\n+$/g, '');
+    el.setAttribute('data-glitch-content', txt);
+    // set sane initial CSS variables
+    el.style.setProperty('--g-offset-x', '2px');
+    el.style.setProperty('--g-offset-y', '0px');
+    el.style.setProperty('--g-offset-x-b', '-12px');
+    el.style.setProperty('--g-offset-y-b', '2px');
+    el.style.setProperty('--g-skew-top', '-8deg');
+    el.style.setProperty('--g-skew-bot', '14deg');
+    el.style.setProperty('--g-duration', `${GLITCH_MIN_DURATION}ms`);
+    el.style.setProperty('--g-opacity', `${GLITCH_MIN_OPACITY}`);
+    el.style.setProperty('--g-main-x', `0px`);
+    el.dataset._glitchInited = '1';
+  });
+  // initial update so values are correct right away
+  updateGlitchIntensityAll();
+}
+
+// compute distance factor (0 at center, 1 at far edge)
+function computeDistanceFactor(el) {
+  if (!el) return 1;
+  const rect = el.getBoundingClientRect();
+  const elCenter = rect.top + rect.height / 2;
+  const viewportCenter = window.innerHeight / 2;
+  const dist = Math.abs(elCenter - viewportCenter);
+  const denom = (window.innerHeight / 2) || 1;
+  let f = dist / denom;
+  if (f < 0) f = 0;
+  if (f > 1) f = 1;
+  return f;
+}
+
+// update CSS variables for a single element
+function updateGlitchForElement(el) {
+  if (!el || !el.dataset._glitchInited) return;
+
+  // forced fixed behaviour?
+  const fixedFlag = String(el.getAttribute('data-glitch-fixed')) === 'true';
+  const fixedAttr = parseFloat(el.getAttribute('data-glitch-intensity'));
+  let intensity;
+
+  if (fixedFlag) {
+    intensity = Number.isFinite(fixedAttr) ? Math.min(Math.max(fixedAttr, 0), 1) : 0.6;
+  } else if (!Number.isFinite(fixedAttr) || Number.isNaN(fixedAttr)) {
+    // pure distance-based
+    intensity = computeDistanceFactor(el);
+  } else {
+    // treat attribute as a minimum (user wants at least this intensity)
+    const df = computeDistanceFactor(el);
+    intensity = Math.max(df, Math.min(Math.max(fixedAttr, 0), 1));
   }
 
-  // distance factor 0..1
-  function computeDistanceFactor(el) {
-    const rect = el.getBoundingClientRect();
-    const elCenter = rect.top + rect.height / 2;
-    const viewportCenter = window.innerHeight / 2;
-    const dist = Math.abs(elCenter - viewportCenter);
-    const denom = (window.innerHeight / 2) || 1;
-    let f = dist / denom;
-    if (f < 0) f = 0;
-    if (f > 1) f = 1;
-    return f;
-  }
+  // Map intensity to offsets/duration/opacities
+  const offX = Math.round(2 + intensity * GLITCH_MAX_OFFSET);           // top layer x
+  const offY = Math.round(intensity * GLITCH_MAX_OFFSET_VERT);         // top layer y
+  const offXb = Math.round(-1 * (4 + intensity * (GLITCH_MAX_OFFSET - 4))); // bottom layer x (negative)
+  const offYb = Math.round(Math.max(0, Math.round(intensity * (GLITCH_MAX_OFFSET_VERT))));
+  const skewTop = Math.round(-4 - intensity * 12); // negative skew deg
+  const skewBot = Math.round(6 + intensity * 18);  // positive skew deg
+  const duration = Math.round(GLITCH_MIN_DURATION + intensity * (GLITCH_MAX_DURATION - GLITCH_MIN_DURATION));
+  const opacity = Math.min(GLITCH_MAX_OPACITY, GLITCH_MIN_OPACITY + intensity * (GLITCH_MAX_OPACITY - GLITCH_MIN_OPACITY));
+  const mainShift = Math.round(intensity * 3); // small main element shift
 
-  // Update CSS vars for one element
-  function updateGlitchForElement(el) {
-    if (!el || !el.dataset._glitchInited) return;
-    const fixed = el.getAttribute('data-glitch-fixed');
-    const fixedIntensityAttr = parseFloat(el.getAttribute('data-glitch-intensity'));
-    let intensity;
-    if (fixed === 'true') {
-      intensity = Number.isFinite(fixedIntensityAttr) ? Math.min(Math.max(fixedIntensityAttr, 0), 1) : 0.6;
-    } else if (!Number.isFinite(fixedIntensityAttr) || Number.isNaN(fixedIntensityAttr)) {
-      const df = computeDistanceFactor(el);
-      intensity = df;
-    } else {
-      const df = computeDistanceFactor(el);
-      intensity = Math.max(df, Math.min(Math.max(fixedIntensityAttr, 0), 1));
-    }
+  // Apply to element as CSS vars
+  el.style.setProperty('--g-offset-x', `${offX}px`);
+  el.style.setProperty('--g-offset-y', `${offY}px`);
+  el.style.setProperty('--g-offset-x-b', `${offXb}px`);
+  el.style.setProperty('--g-offset-y-b', `${offYb}px`);
+  el.style.setProperty('--g-skew-top', `${skewTop}deg`);
+  el.style.setProperty('--g-skew-bot', `${skewBot}deg`);
+  el.style.setProperty('--g-duration', `${duration}ms`);
+  el.style.setProperty('--g-opacity', `${opacity}`);
+  el.style.setProperty('--g-main-x', `${mainShift}px`);
+}
 
-    const mainOffset = Math.round(2 + intensity * GLITCH_MAX_OFFSET);
-    const topOffset = Math.round(mainOffset * GLITCH_TOP_SCALE);
-    const bottomOffset = Math.round(mainOffset * GLITCH_BOTTOM_SCALE);
-    const topSkew = -6 - intensity * 15;
-    const bottomSkew = 6 + intensity * 20;
-    const duration = Math.round(GLITCH_MIN_DURATION + intensity * (GLITCH_MAX_DURATION - GLITCH_MIN_DURATION));
-
-    el.style.setProperty('--g1-x', `${Math.max(1, topOffset)}px`);
-    el.style.setProperty('--g1-y', `${Math.round(-1 * (intensity * 2))}px`);
-    el.style.setProperty('--g2-x', `${Math.max(2, Math.round(topOffset * 1.6))}px`);
-    el.style.setProperty('--g2-skew', `${topSkew}deg`);
-    el.style.setProperty('--gb-x', `${Math.round(-1 * bottomOffset)}px`);
-    el.style.setProperty('--gb-y', `${Math.round(bottomOffset * 0.25)}px`);
-    el.style.setProperty('--gb-skew', `${bottomSkew}deg`);
-    el.style.setProperty('--g-opacity', `${0.9 - intensity * 0.35}`);
-    el.style.setProperty('--g-duration', `${duration}ms`);
-    el.style.setProperty('--g-main-x', `${Math.round(intensity * 2)}px`);
-  }
-
-  // Update all glitch elements (throttled)
-  let glitchScheduled = false;
-  function updateGlitchIntensityAll() {
-    if (glitchScheduled) return;
-    glitchScheduled = true;
-    requestAnimationFrame(() => {
+// update all .glitch elements (rAF-throttled)
+let _glitchScheduled = false;
+function updateGlitchIntensityAll() {
+  if (_glitchScheduled) return;
+  _glitchScheduled = true;
+  requestAnimationFrame(() => {
+    try {
+      if (!chapterBodyEl) { _glitchScheduled = false; return; }
       const els = Array.from(chapterBodyEl.querySelectorAll('.glitch'));
-      els.forEach(el => updateGlitchForElement(el));
-      glitchScheduled = false;
-    });
-  }
+      for (const el of els) {
+        updateGlitchForElement(el);
+      }
+    } finally {
+      _glitchScheduled = false;
+    }
+  });
+}
 
-  window.addEventListener('scroll', updateGlitchIntensityAll, { passive: true });
-  window.addEventListener('resize', updateGlitchIntensityAll);
+// bind listeners (scroll/resize) — replace any previous bindings to these functions
+window.removeEventListener('scroll', updateGlitchIntensityAll);
+window.removeEventListener('resize', updateGlitchIntensityAll);
+window.addEventListener('scroll', updateGlitchIntensityAll, { passive: true });
+window.addEventListener('resize', updateGlitchIntensityAll);
 
   /* ---------- Unblur on scroll ---------- */
   let scrollScheduled = false;
