@@ -1,5 +1,5 @@
-// script.js - full replacement (initBlurTargetsForChapter defined before loadChapter to avoid TDZ errors)
-// Overwrite your existing script.js with this file and hard-refresh the page.
+// script.js - full app with glitch support (fixed: initBlurTargetsForChapter reinserted)
+// Full replacement — drop this file in place of your current script.js and hard-refresh.
 
 document.addEventListener('DOMContentLoaded', () => {
   /* ---------------------- DOM refs ---------------------- */
@@ -40,7 +40,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const resolvedUrlCache = new Map();
   const preloadedImgCache = new Map();
 
-  // Edge button state early to avoid TDZ
+  // edge button reference and positional state (declared early to avoid TDZ)
   let edgeBtn = null;
   let lastEdgePos = null;
   let edgePosScheduled = false;
@@ -49,7 +49,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const BLUR_THRESHOLD_Y_RATIO = 0.5; // middle of viewport
   const BLUR_VISUAL_KEY = 'blur-visual-enabled';
 
-  /* ---------- small helpers ---------- */
+  /* ---------- small helpers (color conversions) ---------- */
   function hexToRgb(hex) {
     hex = (hex || '').replace('#', '');
     if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
@@ -103,7 +103,7 @@ document.addEventListener('DOMContentLoaded', () => {
     return 0.2126 * srgb[0] + 0.7152 * srgb[1] + 0.0722 * srgb[2];
   }
 
-  /* ---------- color picker helpers (kept) ---------- */
+  /* ---------- color picker helpers ---------- */
   const DEFAULT_BG_HEX = '#0b0f13';
   const CARD_LIGHTNESS_DELTA = 0.03333333333333333;
   const CONTRAST_LUMINANCE_THRESHOLD = 0.50;
@@ -139,7 +139,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  /* ---------- HSV helpers ---------- */
+  /* small HSV helpers for the custom picker */
   function hsvToRgb(h, s, v) {
     h = (h % 360 + 360) % 360;
     const c = v * s;
@@ -210,7 +210,7 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('touchend', (e) => { handlers.end && handlers.end(e.changedTouches && e.changedTouches[0]); }, { passive: false });
   }
 
-  // Color popup wiring
+  /* ---------- Color popup wiring ---------- */
   function handleHuePointer(e) {
     if (!hueSlider) return;
     const rect = hueSlider.getBoundingClientRect();
@@ -255,7 +255,7 @@ document.addEventListener('DOMContentLoaded', () => {
     applyHsvState(); requestAnimationFrame(updatePickerUI);
   })();
 
-  /* ---------- blur / glow / read tracking (initBlurTargetsForChapter defined here) ---------- */
+  /* ---------- blur / glow / read tracking ---------- */
   function readStorageKeyFor(filename) { return 'read:' + filename; }
   function loadReadIndicesFor(filename) {
     try {
@@ -281,10 +281,17 @@ document.addEventListener('DOMContentLoaded', () => {
     try { localStorage.setItem(BLUR_VISUAL_KEY, enabled ? 'true' : 'false'); } catch (e) {}
     if (enabled) document.body.classList.remove('blur-visual-off'); else document.body.classList.add('blur-visual-off');
     if (!enabled) {
-      document.querySelectorAll('.blur-target.is-blurred').forEach(el => { el.classList.remove('is-blurred'); });
+      // visually remove blur (do not mark read)
+      document.querySelectorAll('.blur-target.is-blurred').forEach(el => {
+        el.classList.remove('is-blurred');
+      });
     } else {
-      document.querySelectorAll('.blur-target:not(.unblurred)').forEach(el => { el.classList.add('is-blurred'); });
+      // reapply visual blur to unread
+      document.querySelectorAll('.blur-target:not(.unblurred)').forEach(el => {
+        el.classList.add('is-blurred');
+      });
     }
+    // update edge button whenever visual blur toggles
     updateEdgeScrollVisibility();
   }
 
@@ -330,54 +337,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!Number.isNaN(bright) && bright > 0) el.style.setProperty('--glow-brightness', String(bright));
         else el.style.setProperty('--glow-brightness', '1');
 
+        // copy text into data-glow for ::after renderer
         const txt = el.textContent || '';
         el.setAttribute('data-glow', txt.replace(/^\n+|\n+$/g, ''));
+
         el.style.textShadow = 'none';
       } catch (e) {}
     });
-  }
-
-  // initBlurTargetsForChapter - added early so loadChapter can call it safely
-  function initBlurTargetsForChapter(filename, blurEnabled = true) {
-    if (!chapterBodyEl) return;
-    captureGlowInfo();
-
-    // cleanup previous
-    chapterBodyEl.querySelectorAll('.blur-target').forEach(old => {
-      old.classList.remove('is-blurred', 'hover-reveal', 'unblurred', 'blur-target');
-    });
-
-    const targets = collectTargets();
-    const readSet = loadReadIndicesFor(filename);
-
-    targets.forEach((el, idx) => {
-      try {
-        el.dataset.blurIndex = idx;
-        el.classList.add('blur-target');
-
-        if (!blurEnabled) {
-          el.classList.add('unblurred');
-          el.classList.remove('is-blurred');
-          return;
-        }
-
-        if (el.classList.contains('unblurred') || readSet.has(idx)) {
-          el.classList.add('unblurred');
-          el.classList.remove('is-blurred');
-        } else {
-          if (isVisualBlurEnabled()) el.classList.add('is-blurred');
-          else el.classList.remove('is-blurred');
-        }
-
-        el.addEventListener('mouseenter', () => { if (!el.classList.contains('unblurred')) revealTemp(el); });
-        el.addEventListener('mouseleave', () => { if (!el.classList.contains('unblurred')) hideTemp(el); });
-        el.addEventListener('touchstart', () => { if (!el.classList.contains('unblurred')) revealTemp(el); }, {passive:true});
-        el.addEventListener('touchend', () => { if (!el.classList.contains('unblurred')) hideTemp(el); }, {passive:true});
-      } catch (e) {}
-    });
-
-    updateEdgeScrollVisibility();
-    try { updateGlitchIntensityAll(); } catch (e) {}
   }
 
   function applyBlurToTarget(el) {
@@ -401,8 +367,8 @@ document.addEventListener('DOMContentLoaded', () => {
         saveReadIndicesFor(lastChapterFile, set);
       }
     }
+    // update edge button because a blurred item changed state
     updateEdgeScrollVisibility();
-    try { updateGlitchIntensityAll(); } catch (e) {}
   }
 
   function revealTemp(el) {
@@ -416,15 +382,67 @@ document.addEventListener('DOMContentLoaded', () => {
     el.classList.remove('hover-reveal');
   }
 
+  /* ---------- IMPORTANT: initBlurTargetsForChapter (restores missing function) ---------- */
+  function initBlurTargetsForChapter(filename, blurEnabled = true) {
+    if (!chapterBodyEl) return;
+
+    // capture glow info first (so glow vars are present)
+    captureGlowInfo();
+
+    // cleanup previous targets
+    chapterBodyEl.querySelectorAll('.blur-target').forEach(old => {
+      old.classList.remove('is-blurred', 'hover-reveal', 'unblurred');
+      old.classList.remove('blur-target');
+    });
+
+    const targets = collectTargets();
+    const readSet = loadReadIndicesFor(filename);
+
+    targets.forEach((el, idx) => {
+      el.dataset.blurIndex = idx;
+      el.classList.add('blur-target');
+
+      if (!blurEnabled) {
+        el.classList.add('unblurred');
+        el.classList.remove('is-blurred');
+        return;
+      }
+
+      if (el.classList.contains('unblurred') || readSet.has(idx)) {
+        el.classList.add('unblurred');
+        el.classList.remove('is-blurred');
+      } else {
+        if (isVisualBlurEnabled()) {
+          el.classList.add('is-blurred');
+        } else {
+          el.classList.remove('is-blurred');
+        }
+      }
+
+      // hover reveal handlers
+      el.addEventListener('mouseenter', () => { if (!el.classList.contains('unblurred')) revealTemp(el); });
+      el.addEventListener('mouseleave', () => { if (!el.classList.contains('unblurred')) hideTemp(el); });
+      el.addEventListener('touchstart', () => { if (!el.classList.contains('unblurred')) revealTemp(el); }, {passive:true});
+      el.addEventListener('touchend', () => { if (!el.classList.contains('unblurred')) hideTemp(el); }, {passive:true});
+    });
+
+    // once targets are initialized, update edge button visibility
+    updateEdgeScrollVisibility();
+  }
+
   /* ---------- GLITCH SUPPORT ---------- */
-  const GLITCH_MAX_OFFSET = 26;      // px
-  const GLITCH_TOP_SCALE = 0.75;
-  const GLITCH_BOTTOM_SCALE = 1.0;
+
+  // Configuration
+  const GLITCH_MAX_OFFSET = 26;      // px — maximum horizontal offset for heavy glitch
+  const GLITCH_TOP_SCALE = 0.75;     // fraction applied to top layer
+  const GLITCH_BOTTOM_SCALE = 1.0;   // bottom layer multiplier
   const GLITCH_MIN_DURATION = 700;   // ms
   const GLITCH_MAX_DURATION = 1400;  // ms
 
+  // Initialize glitch nodes inside current chapter (called after chapter HTML placed)
   function initGlitchForChapter() {
     if (!chapterBodyEl) return;
+    // ensure each glitch element has the mirrored text attr used by CSS
     const gls = Array.from(chapterBodyEl.querySelectorAll('.glitch'));
     gls.forEach(el => {
       const txt = el.textContent || '';
@@ -443,6 +461,7 @@ document.addEventListener('DOMContentLoaded', () => {
     updateGlitchIntensityAll();
   }
 
+  // distance factor 0..1
   function computeDistanceFactor(el) {
     const rect = el.getBoundingClientRect();
     const elCenter = rect.top + rect.height / 2;
@@ -450,10 +469,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const dist = Math.abs(elCenter - viewportCenter);
     const denom = (window.innerHeight / 2) || 1;
     let f = dist / denom;
-    if (f < 0) f = 0; if (f > 1) f = 1;
+    if (f < 0) f = 0;
+    if (f > 1) f = 1;
     return f;
   }
 
+  // Update CSS vars for one element
   function updateGlitchForElement(el) {
     if (!el || !el.dataset._glitchInited) return;
     const fixed = el.getAttribute('data-glitch-fixed');
@@ -488,6 +509,7 @@ document.addEventListener('DOMContentLoaded', () => {
     el.style.setProperty('--g-main-x', `${Math.round(intensity * 2)}px`);
   }
 
+  // Update all glitch elements (throttled)
   let glitchScheduled = false;
   function updateGlitchIntensityAll() {
     if (glitchScheduled) return;
@@ -498,6 +520,7 @@ document.addEventListener('DOMContentLoaded', () => {
       glitchScheduled = false;
     });
   }
+
   window.addEventListener('scroll', updateGlitchIntensityAll, { passive: true });
   window.addEventListener('resize', updateGlitchIntensityAll);
 
@@ -536,7 +559,7 @@ document.addEventListener('DOMContentLoaded', () => {
       scrollScheduled = false;
     });
   }, { passive: true });
-  window.addEventListener('resize', () => { checkAndUnblurVisibleTargets(); });
+  window.addEventListener('resize', () => { checkAndUnblurVisibleTargets(); scheduleEdgePosUpdate(); });
 
   /* ---------- tooltip images resolve & preload ---------- */
   function testImageUrl(url, timeout = 3000) {
@@ -935,361 +958,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  /* ---------- tooltip + image preload + viewer (kept) ---------- */
-  function testImageUrl(url, timeout = 3000) {
-    return new Promise(resolve => {
-      const img = new Image();
-      let done = false;
-      const onLoad = () => { if (done) return; done = true; cleanup(); resolve(true); };
-      const onErr = () => { if (done) return; done = true; cleanup(); resolve(false); };
-      const cleanup = () => { img.onload = img.onerror = null; clearTimeout(timer); };
-      img.onload = onLoad; img.onerror = onErr; img.src = url;
-      const timer = setTimeout(() => { if (done) return; done = true; cleanup(); resolve(false); }, timeout);
-    });
-  }
-
-  async function resolveTooltipImage(srcCandidate) {
-    if (!srcCandidate) return null;
-    if (resolvedUrlCache.has(srcCandidate)) return resolvedUrlCache.get(srcCandidate);
-
-    if (/^https?:\/\//i.test(srcCandidate) || srcCandidate.startsWith('/')) {
-      if (await testImageUrl(srcCandidate)) { resolvedUrlCache.set(srcCandidate, srcCandidate); return srcCandidate; }
-    }
-
-    const bases = [];
-    bases.push(window.location.href);
-    bases.push(window.location.origin + window.location.pathname);
-    if (lastChapterFile) {
-      bases.push(window.location.origin + '/' + lastChapterFile);
-      const parts = lastChapterFile.split('/');
-      parts.pop();
-      const parent = parts.join('/');
-      if (parent) bases.push(window.location.origin + '/' + parent + '/');
-    }
-    bases.push(window.location.origin + '/');
-
-    const candidates = [];
-    for (const base of bases) { try { const u = new URL(srcCandidate, base); candidates.push(u.href); } catch (e) {} }
-    const seen = new Set();
-    const unique = candidates.filter(c => { if (seen.has(c)) return false; seen.add(c); return true; });
-
-    for (const u of unique) {
-      if (await testImageUrl(u)) { resolvedUrlCache.set(srcCandidate, u); return u; }
-    }
-    resolvedUrlCache.set(srcCandidate, null);
-    return null;
-  }
-
-  async function preloadTooltipImages() {
-    if (!chapterBodyEl) return;
-    const glossEls = Array.from(chapterBodyEl.querySelectorAll('.gloss'));
-    if (!glossEls.length) return;
-    for (const el of glossEls) {
-      const dataImg = el.getAttribute('data-img');
-      if (!dataImg) continue;
-      if (resolvedUrlCache.has(dataImg) && resolvedUrlCache.get(dataImg) === null) continue;
-      try {
-        const resolved = await resolveTooltipImage(dataImg);
-        if (resolved) {
-          if (preloadedImgCache.has(resolved)) continue;
-          const pimg = new Image(); pimg.crossOrigin = 'anonymous'; pimg.decoding = 'async';
-          preloadedImgCache.set(resolved, pimg);
-          pimg.onload = () => {};
-          pimg.onerror = () => { preloadedImgCache.delete(resolved); };
-          pimg.src = resolved;
-        }
-      } catch (err) {}
-    }
-  }
-
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState !== 'visible') return;
-    if (!chapterBodyEl) return;
-    const glossEls = Array.from(chapterBodyEl.querySelectorAll('.gloss'));
-    glossEls.forEach(async (el) => {
-      const dataImg = el.getAttribute('data-img'); if (!dataImg) return;
-      const resolved = resolvedUrlCache.has(dataImg) ? resolvedUrlCache.get(dataImg) : await resolveTooltipImage(dataImg);
-      if (resolved && (!preloadedImgCache.has(resolved) || !preloadedImgCache.get(resolved).complete)) {
-        try {
-          const pimg = new Image(); pimg.crossOrigin = 'anonymous'; pimg.decoding = 'async';
-          preloadedImgCache.set(resolved, pimg);
-          pimg.onload = () => {};
-          pimg.onerror = () => { preloadedImgCache.delete(resolved); };
-          pimg.src = resolved;
-        } catch (e) {}
-      }
-    });
-  });
-
-  function initGlossTippy() {
-    if (!window.tippy) return;
-    document.querySelectorAll('.gloss').forEach(el => { try { if (el._tippy) el._tippy.destroy(); } catch (e) {} });
-
-    tippy('.gloss', {
-      allowHTML: true, interactive: true, delay: [60, 80], maxWidth: 520, placement: 'top', offset: [0, 8],
-      appendTo: () => document.body,
-      popperOptions: {
-        strategy: 'fixed',
-        modifiers: [
-          { name: 'computeStyles', options: { adaptive: false } },
-          { name: 'preventOverflow', options: { padding: 8, altAxis: true } },
-          { name: 'flip', options: { fallbackPlacements: ['bottom', 'right', 'left'] } }
-        ]
-      },
-      content: 'Loading...',
-      onShow: async (instance) => {
-        const reference = instance.reference;
-        let contentHTML = reference.getAttribute('data-tippy-content') || reference.getAttribute('data-tip') || reference.getAttribute('title') || reference.innerHTML || '';
-        if (reference.getAttribute('title')) reference.removeAttribute('title');
-        const dataImg = reference.getAttribute('data-img');
-        const imgAlt = reference.getAttribute('data-img-alt') || '';
-        const wrapper = document.createElement('div');
-        let resolved = null;
-        if (dataImg) {
-          if (resolvedUrlCache.has(dataImg)) resolved = resolvedUrlCache.get(dataImg);
-          else resolved = await resolveTooltipImage(dataImg);
-        }
-        if (resolved) {
-          if (!preloadedImgCache.has(resolved) || !preloadedImgCache.get(resolved).complete) {
-            try {
-              const pimg = new Image(); pimg.crossOrigin = 'anonymous'; pimg.decoding = 'async';
-              preloadedImgCache.set(resolved, pimg);
-              pimg.onload = () => {};
-              pimg.onerror = () => { preloadedImgCache.delete(resolved); };
-              pimg.src = resolved;
-            } catch (e) {}
-          }
-          const imgEl = document.createElement('img');
-          imgEl.className = 'tooltip-img'; imgEl.src = resolved; imgEl.alt = imgAlt; imgEl.loading = 'eager'; imgEl.style.cursor='pointer';
-          imgEl.addEventListener('click', (ev) => { ev.stopPropagation(); try { openImageViewer(resolved, imgAlt); } catch (e) {} try { instance.hide(); } catch (e) {} });
-          imgEl.addEventListener('load', () => { try { if (instance.popperInstance && typeof instance.popperInstance.update === 'function') instance.popperInstance.update(); else if (typeof instance.update === 'function') instance.update(); } catch (e) {} });
-          wrapper.appendChild(imgEl);
-        }
-        const contentDiv = document.createElement('div'); contentDiv.className = 'tooltip-body'; contentDiv.innerHTML = contentHTML; wrapper.appendChild(contentDiv);
-        try { instance.setContent(wrapper); } catch (e) { instance.setContent(wrapper.outerHTML); }
-      }
-    });
-  }
-
-  /* ---------- nav tippies ---------- */
-  function refreshNavTippies() {
-    if (!window.tippy) return;
-    [bottomPrev, bottomNext, topPrev, topNext].forEach(btn => { if (!btn) return; try { if (btn._tippy) btn._tippy.destroy(); } catch (e) {} });
-    if (bottomPrev) tippy(bottomPrev, { content: () => bottomPrev.dataset.title || '', placement: 'top', delay: [80, 40], offset: [0, 8], appendTo: () => document.body });
-    if (bottomNext) tippy(bottomNext, { content: () => bottomNext.dataset.title || '', placement: 'top', delay: [80, 40], offset: [0, 8], appendTo: () => document.body });
-    if (topPrev) tippy(topPrev, { content: () => topPrev.dataset.title || '', placement: 'bottom', delay: [80, 40], offset: [0, 8], appendTo: () => document.body });
-    if (topNext) tippy(topNext, { content: () => topNext.dataset.title || '', placement: 'bottom', delay: [80, 40], offset: [0, 8], appendTo: () => document.body });
-  }
-
-  /* ---------- chapters aside open/close (kept) ---------- */
-  let chaptersOpen = false;
-  function openChapters() { if (chaptersOpen) return; chaptersOpen = true; document.body.classList.add('chapters-open'); }
-  function closeChapters() { if (!chaptersOpen) return; chaptersOpen = false; document.body.classList.remove('chapters-open'); }
-  document.addEventListener('mousemove', (e) => { if (window.innerWidth <= 700) return; if (e.clientX <= 12) openChapters(); });
-  if (chaptersAside) {
-    chaptersAside.addEventListener('mouseenter', openChapters);
-    chaptersAside.addEventListener('mouseleave', (ev) => { if (ev.clientX <= 12) return; closeChapters(); });
-  }
-  document.addEventListener('click', (e) => { if (!chaptersOpen) return; if (chaptersAside && chaptersAside.contains(e.target)) return; if (e.clientX <= 12) return; closeChapters(); });
-
-  /* ---------- top-nav positioning & show/hide (kept) ---------- */
-  function positionTopNav() {
-    if (!topNav || !headerEl) return;
-    const hRect = headerEl.getBoundingClientRect();
-    const topNavRect = topNav.getBoundingClientRect();
-    const top = Math.max(6, hRect.top + (hRect.height / 2) - (topNavRect.height / 2));
-    topNav.style.top = `${top}px`;
-  }
-  let lastScroll = window.scrollY;
-  let hideTimer = null;
-  function showTopNav() { if (!topNav) return; topNav.classList.add('visible-top'); topNav.setAttribute('aria-hidden','false'); clearTimeout(hideTimer); hideTimer = null; }
-  function hideTopNav() { if (!topNav) return; topNav.classList.remove('visible-top'); topNav.setAttribute('aria-hidden','true'); if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; } }
-  function onScrollTopNav() {
-    const cur = window.scrollY;
-    const up = cur < lastScroll;
-    const atTop = cur <= 10;
-    if (bottomNavIsVisible()) hideTopNav();
-    else if (atTop || up) showTopNav();
-    else {
-      if (!hideTimer) hideTimer = setTimeout(() => { if (!bottomNavIsVisible()) hideTopNav(); hideTimer = null; }, 1000);
-    }
-    lastScroll = cur;
-  }
-  window.addEventListener('scroll', () => { requestAnimationFrame(onScrollTopNav); }, { passive: true });
-  window.addEventListener('resize', () => { positionTopNav(); onScrollTopNav(); });
-
-  /* ---------- edge scroll button (kept) ---------- */
-  function createEdgeScrollButton() {
-    if (edgeBtn) return;
-    edgeBtn = document.createElement('button');
-    edgeBtn.className = 'edge-scroll-btn';
-    edgeBtn.id = 'edge-scroll-btn';
-    edgeBtn.setAttribute('aria-label', 'Перейти к следующему скрытому фрагменту');
-    edgeBtn.innerHTML = '▼';
-    document.body.appendChild(edgeBtn);
-    edgeBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const next = findNextBlurTargetElement();
-      if (!next) return;
-      // remove visual blur to let CSS animate fade
-      next.classList.remove('is-blurred');
-      scrollToTargetElement(next);
-      updateEdgeScrollVisibility();
-      try { updateGlitchForElement(next); } catch (err) {}
-    });
-    updateEdgeScrollPosition();
-  }
-
-  function updateEdgeScrollPosition() {
-    if (!edgeBtn) return;
-    const content = document.getElementById('content');
-    if (!content) return;
-    const rect = content.getBoundingClientRect();
-    if (rect.width < 120 || rect.right <= 0) {
-      edgeBtn.style.opacity = '0';
-      edgeBtn.style.pointerEvents = 'none';
-      return;
-    }
-    const btnW = edgeBtn.offsetWidth || 34;
-    const leftPx = Math.round(rect.right + window.scrollX - (btnW / 2));
-    if (lastEdgePos === leftPx) return;
-    edgeBtn.style.left = `${leftPx}px`;
-    lastEdgePos = leftPx;
-  }
-
-  function findNextBlurTargetElement() {
-    if (!chapterBodyEl) return null;
-    const nodes = Array.from(chapterBodyEl.querySelectorAll('.blur-target:not(.unblurred)'));
-    if (!nodes.length) return null;
-    const MIN_HEIGHT_PX = 18;
-    function isMeaningfulElement(el) {
-      if (el.tagName && el.tagName.toLowerCase() === 'img') return true;
-      if (el.querySelector && el.querySelector('img')) return true;
-      if (el.textContent && el.textContent.trim().length > 0) return true;
-      const r = el.getBoundingClientRect();
-      if (r.height >= MIN_HEIGHT_PX) return true;
-      return false;
-    }
-    const curScroll = window.scrollY || 0;
-    const candidates = [];
-    nodes.forEach(el => {
-      try {
-        if (!isMeaningfulElement(el)) return;
-        const rect = el.getBoundingClientRect();
-        const center = rect.top + window.scrollY + (rect.height / 2);
-        candidates.push({ el, center });
-      } catch (e) {}
-    });
-    if (!candidates.length) return null;
-    candidates.sort((a, b) => a.center - b.center);
-    const EPS = 2;
-    for (const c of candidates) {
-      if (c.center > curScroll + EPS) return c.el;
-    }
-    return null;
-  }
-
-  function scrollToTargetElement(el) {
-    if (!el) return;
-    function doScroll() {
-      try {
-        const rect = el.getBoundingClientRect();
-        const elCenterY = rect.top + window.scrollY + (rect.height / 2);
-        const maxScroll = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
-        let target = Math.round(elCenterY - (window.innerHeight / 2));
-        if (target < 0) target = 0;
-        if (target > maxScroll) target = maxScroll;
-        window.scrollTo({ top: target, behavior: 'smooth' });
-      } catch (e) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
-    }
-    requestAnimationFrame(() => requestAnimationFrame(doScroll));
-  }
-
-  function updateEdgeScrollVisibility() {
-    createEdgeScrollButton();
-    if (!edgeBtn) return;
-    if (!isVisualBlurEnabled()) { edgeBtn.classList.remove('visible'); return; }
-    let chapterBlurEnabled = true;
-    try {
-      const c = chapters[currentIndex];
-      if (c && c.blur === false) chapterBlurEnabled = false;
-    } catch (e) {}
-    if (!chapterBlurEnabled) { edgeBtn.classList.remove('visible'); return; }
-    const next = findNextBlurTargetElement();
-    if (next) {
-      edgeBtn.classList.add('visible');
-      updateEdgeScrollPosition();
-    } else {
-      edgeBtn.classList.remove('visible');
-    }
-  }
-
-  window.addEventListener('scroll', () => { requestAnimationFrame(updateEdgeScrollPosition); }, { passive: true });
-  window.addEventListener('resize', () => { requestAnimationFrame(updateEdgeScrollPosition); }, { passive: true });
-
-  createEdgeScrollButton();
-
-  /* ---------- preload & viewer binding ---------- */
-  function bindImagesToViewer() {
-    const imgs = chapterBodyEl.querySelectorAll('img');
-    imgs.forEach(img => {
-      img.style.cursor = 'pointer';
-      if (!img._viewerBound) {
-        img.addEventListener('click', (e) => {
-          const src = img.getAttribute('src') || img.getAttribute('data-src') || '';
-          if (!src) return;
-          openImageViewer(src, img.getAttribute('alt') || '');
-        });
-        img._viewerBound = true;
-      }
-    });
-  }
-
-  // image viewer elements (simple)
-  if (!document.getElementById('image-overlay')) {
-    const overlay = document.createElement('div');
-    overlay.id = 'image-overlay';
-    overlay.innerHTML = `<div class="viewer" role="dialog" aria-modal="true"><img class="viewer-img" src="" alt=""></div>`;
-    document.body.appendChild(overlay);
-  }
-  const overlayEl = document.getElementById('image-overlay');
-  const overlayImgEl = overlayEl.querySelector('.viewer-img');
-
-  let isZoomed = false, pointerDown = false, pointerStart = { x: 0, y: 0 }, imgPos = { x: 0, y: 0 }, dragMoved = false, suppressClick = false;
-
-  function openImageViewer(src, alt = '') {
-    overlayImgEl.src = src; overlayImgEl.alt = alt || '';
-    const marginPx = 40;
-    overlayImgEl.style.maxWidth = `calc(100vw - ${marginPx}px)`; overlayImgEl.style.maxHeight = `calc(100vh - ${Math.round(marginPx * 1.5)}px)`;
-    overlayEl.classList.add('visible'); isZoomed = false; imgPos = { x: 0, y: 0 }; overlayImgEl.style.transform = `translate(0px, 0px) scale(1)`; overlayImgEl.classList.remove('zoomed'); overlayEl.style.cursor = 'default'; document.body.style.overflow = 'hidden';
-  }
-  function closeImageViewer() { overlayEl.classList.remove('visible'); overlayImgEl.src = ''; isZoomed = false; pointerDown = false; dragMoved = false; suppressClick = false; document.body.style.overflow = ''; overlayImgEl.style.maxWidth = ''; overlayImgEl.style.maxHeight = ''; }
-
-  overlayImgEl.addEventListener('click', (ev) => {
-    if (suppressClick) { suppressClick = false; return; }
-    isZoomed = !isZoomed;
-    if (!isZoomed) imgPos = { x: 0, y: 0 };
-    overlayImgEl.style.transform = `translate(${imgPos.x}px, ${imgPos.y}px) scale(${isZoomed ? 2 : 1})`;
-  });
-  overlayImgEl.addEventListener('mousedown', (ev) => {
-    if (!isZoomed) return; ev.preventDefault(); pointerDown = true; dragMoved = false; pointerStart = { x: ev.clientX, y: ev.clientY }; overlayImgEl.style.cursor = 'grabbing';
-  });
-  window.addEventListener('mousemove', (ev) => {
-    if (!pointerDown || !isZoomed) return;
-    const dx = ev.clientX - pointerStart.x; const dy = ev.clientY - pointerStart.y;
-    if (!dragMoved && (Math.abs(dx) + Math.abs(dy) >= 4)) dragMoved = true;
-    if (dragMoved) { pointerStart = { x: ev.clientX, y: ev.clientY }; imgPos.x += dx; imgPos.y += dy; overlayImgEl.style.transform = `translate(${imgPos.x}px, ${imgPos.y}px) scale(2)`; }
-  });
-  window.addEventListener('mouseup', (ev) => {
-    if (pointerDown && dragMoved) { suppressClick = true; setTimeout(() => { suppressClick = false; }, 0); }
-    pointerDown = false; overlayImgEl.style.cursor = isZoomed ? 'grab' : 'zoom-in';
-  });
-  overlayEl.addEventListener('click', (ev) => { if (ev.target === overlayEl) closeImageViewer(); });
-  window.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && overlayEl.classList.contains('visible')) closeImageViewer(); });
-
-  /* ---------- load a single chapter (calls initBlurTargetsForChapter safely) ---------- */
+  /* ---------- load a single chapter ---------- */
   async function loadChapter(filename, title) {
     chapterTitleEl.textContent = title || '';
     chapterBodyEl.textContent = 'Загрузка главы...';
@@ -1308,8 +977,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (chObj && chObj.blur === false) blurEnabledForChapter = false;
       } catch (e) {}
 
-      // initialize blur targets (also captures glow info)
+      // initialize blur targets
       initBlurTargetsForChapter(filename, blurEnabledForChapter);
+
+      // capture glow info (already called by initBlurTargetsForChapter, but safe to call again)
+      captureGlowInfo();
 
       // preload tooltip images and init tippy
       preloadTooltipImages();
@@ -1318,7 +990,7 @@ document.addEventListener('DOMContentLoaded', () => {
       // initialize glitch elements
       initGlitchForChapter();
 
-      // bind images to viewer
+      // bind images to viewer (no node replacement)
       bindImagesToViewer();
 
       updateNavButtons();
@@ -1353,7 +1025,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  /* ---------- blur toggle wiring ---------- */
+  /* ---------- blur toggle button ---------- */
   if (blurToggle) {
     const enabled = isVisualBlurEnabled();
     setVisualBlurEnabled(enabled);
@@ -1364,7 +1036,143 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  /* ---------- load chapters list and start ---------- */
+  /* ------------------- EDGE SCROLL BUTTON (fixed and flush with content) ------------------- */
+  // Create the button and wire it up
+  function createEdgeScrollButton() {
+    if (edgeBtn) return;
+    edgeBtn = document.createElement('button');
+    edgeBtn.className = 'edge-scroll-btn';
+    edgeBtn.id = 'edge-scroll-btn';
+    edgeBtn.setAttribute('aria-label', 'Перейти к следующему скрытому фрагменту');
+    edgeBtn.innerHTML = '▼';
+    // attach to body (fixed). We'll position it so it visually continues the content area.
+    document.body.appendChild(edgeBtn);
+    edgeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const next = findNextBlurTargetElement();
+      if (!next) return;
+      // Trigger smooth fade by removing 'is-blurred' (CSS transition will animate)
+      next.classList.remove('is-blurred');
+      // scroll to the target center
+      scrollToTargetElement(next);
+      updateEdgeScrollVisibility();
+      // update glitch visuals immediately for that element
+      updateGlitchForElement(next);
+    });
+    // initial position
+    updateEdgeScrollPosition();
+  }
+
+  // position the edge button so its left edge sits exactly on content's right edge minus half the button width
+  function updateEdgeScrollPosition() {
+    if (!edgeBtn) return;
+    const content = document.getElementById('content');
+    if (!content) return;
+    const rect = content.getBoundingClientRect();
+    // If content is offscreen (very narrow or hidden), hide the button visually
+    if (rect.width < 120 || rect.right <= 0) {
+      edgeBtn.style.opacity = '0';
+      edgeBtn.style.pointerEvents = 'none';
+      return;
+    }
+    // compute left so button sits halfway over the content edge (protruding to the right)
+    const btnW = edgeBtn.offsetWidth || parseInt(getComputedStyle(document.documentElement).getPropertyValue('--edge-btn-w')) || 34;
+    const leftPx = Math.round(rect.right + window.scrollX - (btnW / 2));
+    // avoid unnecessary writes
+    if (lastEdgePos === leftPx) return;
+    edgeBtn.style.left = `${leftPx}px`;
+    // vertical center is handled by CSS top:50%/translateY(-50%)
+    lastEdgePos = leftPx;
+  }
+
+  // find the next blurred target element below the current viewport (center-based, skip tiny spacers)
+  function findNextBlurTargetElement() {
+    if (!chapterBodyEl) return null;
+    const nodes = Array.from(chapterBodyEl.querySelectorAll('.blur-target:not(.unblurred)'));
+    if (!nodes.length) return null;
+    const MIN_HEIGHT_PX = 18;
+    function isMeaningfulElement(el) {
+      if (el.tagName && el.tagName.toLowerCase() === 'img') return true;
+      if (el.querySelector && el.querySelector('img')) return true;
+      if (el.textContent && el.textContent.trim().length > 0) return true;
+      const r = el.getBoundingClientRect();
+      if (r.height >= MIN_HEIGHT_PX) return true;
+      return false;
+    }
+    const curScroll = window.scrollY || 0;
+    const candidates = [];
+    nodes.forEach(el => {
+      try {
+        if (!isMeaningfulElement(el)) return;
+        const rect = el.getBoundingClientRect();
+        const center = rect.top + window.scrollY + (rect.height / 2);
+        candidates.push({ el, center });
+      } catch (e) {}
+    });
+    if (!candidates.length) return null;
+    candidates.sort((a, b) => a.center - b.center);
+    const EPS = 2;
+    for (const c of candidates) {
+      if (c.center > curScroll + EPS) return c.el;
+    }
+    return null;
+  }
+
+  // scroll so that the element center is at viewport center
+  function scrollToTargetElement(el) {
+    if (!el) return;
+    function doScroll() {
+      try {
+        const rect = el.getBoundingClientRect();
+        const elCenterY = rect.top + window.scrollY + (rect.height / 2);
+        const maxScroll = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+        let target = Math.round(elCenterY - (window.innerHeight / 2));
+        if (target < 0) target = 0;
+        if (target > maxScroll) target = maxScroll;
+        window.scrollTo({ top: target, behavior: 'smooth' });
+      } catch (e) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+    requestAnimationFrame(() => requestAnimationFrame(doScroll));
+  }
+
+  // update edge button visibility
+  function updateEdgeScrollVisibility() {
+    createEdgeScrollButton();
+    if (!edgeBtn) return;
+    if (!isVisualBlurEnabled()) { edgeBtn.classList.remove('visible'); return; }
+    let chapterBlurEnabled = true;
+    try {
+      const c = chapters[currentIndex];
+      if (c && c.blur === false) chapterBlurEnabled = false;
+    } catch (e) {}
+    if (!chapterBlurEnabled) { edgeBtn.classList.remove('visible'); return; }
+    const next = findNextBlurTargetElement();
+    if (next) {
+      edgeBtn.classList.add('visible');
+      updateEdgeScrollPosition();
+    } else {
+      edgeBtn.classList.remove('visible');
+    }
+  }
+
+  // keep button positioned on scroll/resize (throttle with rAF)
+  function scheduleEdgePosUpdate() {
+    if (edgePosScheduled) return;
+    edgePosScheduled = true;
+    requestAnimationFrame(() => {
+      updateEdgeScrollPosition();
+      edgePosScheduled = false;
+    });
+  }
+  window.addEventListener('scroll', scheduleEdgePosUpdate, { passive: true });
+  window.addEventListener('resize', scheduleEdgePosUpdate);
+
+  /* ------------------- initial create of edge button ------------------- */
+  createEdgeScrollButton();
+
+  /* ---------- start ---------- */
   loadChapters();
   updateNavButtons();
   setTimeout(() => { positionTopNav(); if (window.scrollY <= 10 && !bottomNavIsVisible()) showTopNavImmediate(); }, 120);
