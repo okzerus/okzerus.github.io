@@ -1,5 +1,5 @@
-// script.js - full app (nav, chapters, blur, glow, tooltips, image viewer, color picker, edge scroll button)
-// Full replacement: fixes TDZ errors by declaring edge-related state early.
+// script.js - full app with glitch support
+// Keeps previous features intact: chapters loading, color picker, blur, tooltips, image viewer, edge button, saving state.
 
 document.addEventListener('DOMContentLoaded', () => {
   /* ---------------------- DOM refs ---------------------- */
@@ -281,17 +281,10 @@ document.addEventListener('DOMContentLoaded', () => {
     try { localStorage.setItem(BLUR_VISUAL_KEY, enabled ? 'true' : 'false'); } catch (e) {}
     if (enabled) document.body.classList.remove('blur-visual-off'); else document.body.classList.add('blur-visual-off');
     if (!enabled) {
-      // visually remove blur (do not mark read)
-      document.querySelectorAll('.blur-target.is-blurred').forEach(el => {
-        el.classList.remove('is-blurred');
-      });
+      document.querySelectorAll('.blur-target.is-blurred').forEach(el => { el.classList.remove('is-blurred'); });
     } else {
-      // reapply visual blur to unread
-      document.querySelectorAll('.blur-target:not(.unblurred)').forEach(el => {
-        el.classList.add('is-blurred');
-      });
+      document.querySelectorAll('.blur-target:not(.unblurred)').forEach(el => { el.classList.add('is-blurred'); });
     }
-    // update edge button whenever visual blur toggles
     updateEdgeScrollVisibility();
   }
 
@@ -337,10 +330,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!Number.isNaN(bright) && bright > 0) el.style.setProperty('--glow-brightness', String(bright));
         else el.style.setProperty('--glow-brightness', '1');
 
-        // copy text into data-glow for ::after renderer
         const txt = el.textContent || '';
         el.setAttribute('data-glow', txt.replace(/^\n+|\n+$/g, ''));
-
         el.style.textShadow = 'none';
       } catch (e) {}
     });
@@ -367,7 +358,6 @@ document.addEventListener('DOMContentLoaded', () => {
         saveReadIndicesFor(lastChapterFile, set);
       }
     }
-    // update edge button because a blurred item changed state
     updateEdgeScrollVisibility();
   }
 
@@ -382,53 +372,122 @@ document.addEventListener('DOMContentLoaded', () => {
     el.classList.remove('hover-reveal');
   }
 
-  function initBlurTargetsForChapter(filename, blurEnabled = true) {
+  /* ---------- GLITCH SUPPORT ---------- */
+
+  // Configuration (tweak if you want)
+  const GLITCH_MAX_OFFSET = 26;      // px — maximum horizontal offset for heavy glitch
+  const GLITCH_TOP_SCALE = 0.75;     // fraction applied to top layer
+  const GLITCH_BOTTOM_SCALE = 1.0;   // bottom layer multiplier
+  const GLITCH_MIN_DURATION = 700;   // ms
+  const GLITCH_MAX_DURATION = 1400;  // ms
+
+  // Initialize glitch nodes inside current chapter (called after chapter HTML placed)
+  function initGlitchForChapter() {
     if (!chapterBodyEl) return;
-
-    // capture glow info first
-    captureGlowInfo();
-
-    // cleanup existing
-    chapterBodyEl.querySelectorAll('.blur-target').forEach(old => {
-      old.classList.remove('is-blurred', 'hover-reveal');
-      old.classList.remove('blur-target');
+    // ensure each glitch element has the mirrored text attr used by CSS
+    const gls = Array.from(chapterBodyEl.querySelectorAll('.glitch'));
+    gls.forEach(el => {
+      // store the exact displayed text for pseudo-elements
+      const txt = el.textContent || '';
+      // we prefer a data attribute so it renders with ::before/::after content
+      el.setAttribute('data-glitch-content', txt.replace(/^\n+|\n+$/g, ''));
+      // default CSS vars to safe values
+      el.style.setProperty('--g1-x', '2px');
+      el.style.setProperty('--g1-y', '0px');
+      el.style.setProperty('--g2-x', '13px');
+      el.style.setProperty('--g2-skew', '-13deg');
+      el.style.setProperty('--gb-x', '-22px');
+      el.style.setProperty('--gb-y', '5px');
+      el.style.setProperty('--gb-skew', '21deg');
+      el.style.setProperty('--g-opacity', '0.85');
+      el.style.setProperty('--g-duration', `${GLITCH_MIN_DURATION}ms`);
+      // also mark as initialized
+      el.dataset._glitchInited = '1';
     });
-
-    const targets = collectTargets();
-    const readSet = loadReadIndicesFor(filename);
-
-    targets.forEach((el, idx) => {
-      el.dataset.blurIndex = idx;
-      el.classList.add('blur-target');
-
-      if (!blurEnabled) {
-        el.classList.add('unblurred');
-        el.classList.remove('is-blurred');
-        return;
-      }
-
-      if (el.classList.contains('unblurred') || readSet.has(idx)) {
-        el.classList.add('unblurred');
-        el.classList.remove('is-blurred');
-      } else {
-        if (isVisualBlurEnabled()) {
-          el.classList.add('is-blurred');
-        } else {
-          el.classList.remove('is-blurred');
-        }
-      }
-
-      el.addEventListener('mouseenter', () => { if (!el.classList.contains('unblurred')) revealTemp(el); });
-      el.addEventListener('mouseleave', () => { if (!el.classList.contains('unblurred')) hideTemp(el); });
-      el.addEventListener('touchstart', () => { if (!el.classList.contains('unblurred')) revealTemp(el); }, {passive:true});
-      el.addEventListener('touchend', () => { if (!el.classList.contains('unblurred')) hideTemp(el); }, {passive:true});
-    });
-
-    // once targets are initialized, update edge button visibility
-    updateEdgeScrollVisibility();
+    // initial update
+    updateGlitchIntensityAll();
   }
 
-  /* ---------- Unblur on scroll ---------- */
+  // Helper: compute distance factor for element from viewport center (0..1)
+  function computeDistanceFactor(el) {
+    const rect = el.getBoundingClientRect();
+    const elCenter = rect.top + rect.height / 2;
+    const viewportCenter = window.innerHeight / 2;
+    const dist = Math.abs(elCenter - viewportCenter);
+    // normalize by half viewport height so center -> 0, far edge -> ~1
+    const denom = (window.innerHeight / 2) || 1;
+    let f = dist / denom;
+    if (f < 0) f = 0;
+    if (f > 1) f = 1;
+    return f;
+  }
+
+  // Update CSS variables for a single element, based on distanceFactor or fixed attribute
+  function updateGlitchForElement(el) {
+    if (!el || !el.dataset._glitchInited) return;
+    // If element has attribute data-glitch-fixed="true", ignore distance
+    const fixed = el.getAttribute('data-glitch-fixed');
+    const fixedIntensityAttr = parseFloat(el.getAttribute('data-glitch-intensity'));
+    let intensity;
+    if (fixed === 'true') {
+      // if attribute present but invalid, clamp to 0..1
+      intensity = Number.isFinite(fixedIntensityAttr) ? Math.min(Math.max(fixedIntensityAttr, 0), 1) : 0.6;
+    } else if (!Number.isFinite(fixedIntensityAttr) || Number.isNaN(fixedIntensityAttr)) {
+      // compute intensity from distance
+      const df = computeDistanceFactor(el); // 0..1 (0 center, 1 edge)
+      // invert mapping: further => more glitch
+      intensity = df;
+    } else {
+      // combine fixed value with distance (user wanted "set intensity that will be ignored by how far away"?)
+      // the user wanted ability to set intensity that will be ignored by distance. We treat presence of data-glitch-intensity
+      // without data-glitch-fixed as a *cap*: final intensity = max(distance, provided)
+      const df = computeDistanceFactor(el);
+      intensity = Math.max(df, Math.min(Math.max(fixedIntensityAttr, 0), 1));
+    }
+
+    // Map intensity to offsets/duration
+    const mainOffset = Math.round(2 + intensity * GLITCH_MAX_OFFSET); // base shift
+    const topOffset = Math.round(mainOffset * GLITCH_TOP_SCALE);
+    const bottomOffset = Math.round(mainOffset * GLITCH_BOTTOM_SCALE);
+    const topSkew = -6 - intensity * 15;   // degrees negative
+    const bottomSkew = 6 + intensity * 20; // degrees positive
+    const duration = Math.round(GLITCH_MIN_DURATION + intensity * (GLITCH_MAX_DURATION - GLITCH_MIN_DURATION));
+
+    // apply CSS vars
+    el.style.setProperty('--g1-x', `${Math.max(1, topOffset)}px`);
+    el.style.setProperty('--g1-y', `${Math.round(-1 * (intensity * 2))}px`);
+    el.style.setProperty('--g2-x', `${Math.max(2, Math.round(topOffset * 1.6))}px`);
+    el.style.setProperty('--g2-skew', `${topSkew}deg`);
+    el.style.setProperty('--gb-x', `${Math.round(-1 * bottomOffset)}px`);
+    el.style.setProperty('--gb-y', `${Math.round(bottomOffset * 0.25)}px`);
+    el.style.setProperty('--gb-skew', `${bottomSkew}deg`);
+    el.style.setProperty('--g-opacity', `${0.9 - intensity * 0.35}`);
+    el.style.setProperty('--g-duration', `${duration}ms`);
+    // optionally shift the element a bit for subtle effect
+    el.style.setProperty('--g-main-x', `${Math.round(intensity * 2)}px`);
+  }
+
+  // Update all glitch elements (throttled via rAF)
+  let glitchScheduled = false;
+  function updateGlitchIntensityAll() {
+    if (glitchScheduled) return;
+    glitchScheduled = true;
+    requestAnimationFrame(() => {
+      const els = Array.from(chapterBodyEl.querySelectorAll('.glitch'));
+      els.forEach(el => {
+        // If the element is currently visually blurred, do not show glitch layers (CSS handles opacity),
+        // but still update variables so when it unblurs animation matches.
+        updateGlitchForElement(el);
+      });
+      glitchScheduled = false;
+    });
+  }
+
+  // Run on scroll/resize
+  window.addEventListener('scroll', updateGlitchIntensityAll, { passive: true });
+  window.addEventListener('resize', updateGlitchIntensityAll);
+
+  /* ---------- Unblur on scroll (keeps previous behavior) ---------- */
   let scrollScheduled = false;
   function checkAndUnblurVisibleTargets() {
     if (!chapterBodyEl) return;
@@ -453,6 +512,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // update edge button each time we check
     updateEdgeScrollVisibility();
+    // also update glitch intensities because positions may have changed while scrolling
+    updateGlitchIntensityAll();
   }
 
   window.addEventListener('scroll', () => {
@@ -463,7 +524,7 @@ document.addEventListener('DOMContentLoaded', () => {
       scrollScheduled = false;
     });
   }, { passive: true });
-  window.addEventListener('resize', () => { checkAndUnblurVisibleTargets(); scheduleEdgePosUpdate(); });
+  window.addEventListener('resize', () => { checkAndUnblurVisibleTargets(); });
 
   /* ---------- tooltip images resolve & preload ---------- */
   function testImageUrl(url, timeout = 3000) {
@@ -881,14 +942,18 @@ document.addEventListener('DOMContentLoaded', () => {
         if (chObj && chObj.blur === false) blurEnabledForChapter = false;
       } catch (e) {}
 
-      // initialize blur targets now (capture glow info internally)
+      // initialize blur targets (also captures glow info)
+      captureGlowInfo();
       initBlurTargetsForChapter(filename, blurEnabledForChapter);
 
       // preload tooltip images and init tippy
       preloadTooltipImages();
       initGlossTippy();
 
-      // bind images to viewer (no node replacement)
+      // initialize glitch elements
+      initGlitchForChapter();
+
+      // bind images to viewer
       bindImagesToViewer();
 
       updateNavButtons();
@@ -946,128 +1011,92 @@ document.addEventListener('DOMContentLoaded', () => {
     // attach to body (fixed). We'll position it so it visually continues the content area.
     document.body.appendChild(edgeBtn);
     edgeBtn.addEventListener('click', (e) => {
-  e.stopPropagation();
-  const next = findNextBlurTargetElement();
-  if (!next) return;
-
-  // Trigger the CSS transition by removing the 'is-blurred' class.
-  // This lets the existing `transition: filter var(--blur-duration) ease;`
-  // animate the blur-out smoothly.
-  next.classList.remove('is-blurred');
-
-  // Do NOT add .hover-reveal (that uses !important and causes instant reveal).
-  // Keep the element NOT permanently marked as read; real marking happens
-  // when the reader actually scrolls to it.
-
-  // Smooth-scroll to the item.
-  scrollToTargetElement(next);
-
-  // Update edge button visibility immediately (in case no more blurred items).
-  updateEdgeScrollVisibility();
-});
+      e.stopPropagation();
+      const next = findNextBlurTargetElement();
+      if (!next) return;
+      // trigger smooth fade by removing 'is-blurred' (CSS transition will animate)
+      next.classList.remove('is-blurred');
+      // scroll to center of that element
+      scrollToTargetElement(next);
+      updateEdgeScrollVisibility();
+      // also update glitch visuals right away
+      updateGlitchForElement(next);
+    });
     // initial position
     updateEdgeScrollPosition();
   }
 
-  // position the edge button so its left edge sits exactly on content's right edge minus half the button width,
-  // making it visually protrude to the right. This keeps it fixed on screen while scrolling.
+  // position the edge button so it sits flush to the content right edge
   function updateEdgeScrollPosition() {
     if (!edgeBtn) return;
     const content = document.getElementById('content');
     if (!content) return;
     const rect = content.getBoundingClientRect();
-    // If content is offscreen (very narrow or hidden), hide the button visually
     if (rect.width < 120 || rect.right <= 0) {
       edgeBtn.style.opacity = '0';
       edgeBtn.style.pointerEvents = 'none';
       return;
     }
-    // compute left so button sits halfway over the content edge (protruding to the right)
     const btnW = edgeBtn.offsetWidth || parseInt(getComputedStyle(document.documentElement).getPropertyValue('--edge-btn-w')) || 34;
     const leftPx = Math.round(rect.right + window.scrollX - (btnW / 2));
-    // avoid unnecessary writes
     if (lastEdgePos === leftPx) return;
     edgeBtn.style.left = `${leftPx}px`;
-    // vertical center is handled by CSS top:50%/translateY(-50%)
     lastEdgePos = leftPx;
   }
 
-// --- Replace your current findNextBlurTargetElement() with this ---
-function findNextBlurTargetElement() {
-  if (!chapterBodyEl) return null;
-
-  // gather candidates (only non-unblurred blur-targets)
-  const nodes = Array.from(chapterBodyEl.querySelectorAll('.blur-target:not(.unblurred)'));
-  if (!nodes.length) return null;
-
-  const MIN_HEIGHT_PX = 18; // threshold to ignore tiny spacer elements (tweak if needed)
-
-  function isMeaningfulElement(el) {
-    // images are always meaningful
-    if (el.tagName && el.tagName.toLowerCase() === 'img') return true;
-
-    // if element has an image inside - meaningful
-    if (el.querySelector && el.querySelector('img')) return true;
-
-    // if there's visible text content (non-empty after trimming) - meaningful
-    if (el.textContent && el.textContent.trim().length > 0) return true;
-
-    // finally check computed height, ignore tiny spacers
-    const r = el.getBoundingClientRect();
-    if (r.height >= MIN_HEIGHT_PX) return true;
-
-    return false;
-  }
-
-  // compute centers for meaningful elements only
-  const curScroll = window.scrollY || 0;
-  const candidates = [];
-  nodes.forEach(el => {
-    try {
-      if (!isMeaningfulElement(el)) return;
-      const rect = el.getBoundingClientRect();
-      const center = rect.top + window.scrollY + (rect.height / 2);
-      candidates.push({ el, center });
-    } catch (e) {}
-  });
-
-  if (!candidates.length) return null;
-  candidates.sort((a, b) => a.center - b.center);
-
-  // small epsilon so we don't pick something we are basically already at
-  const EPS = 2;
-  for (const c of candidates) {
-    if (c.center > curScroll + EPS) return c.el;
-  }
-  return null;
-}
-
-// --- Replace your current scrollToTargetElement() with this ---
-function scrollToTargetElement(el) {
-  if (!el) return;
-
-  // Ensure layout stabilizes then compute exact center and scroll there.
-  function doScroll() {
-    try {
-      const rect = el.getBoundingClientRect();
-      const elCenterY = rect.top + window.scrollY + (rect.height / 2);
-      const maxScroll = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
-      let target = Math.round(elCenterY - (window.innerHeight / 2));
-      if (target < 0) target = 0;
-      if (target > maxScroll) target = maxScroll;
-      window.scrollTo({ top: target, behavior: 'smooth' });
-    } catch (e) {
-      // fallback: simple scroll to element top if something goes wrong
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  // find the next blurred target element below the current viewport (center-based & skips tiny spacer elements)
+  function findNextBlurTargetElement() {
+    if (!chapterBodyEl) return null;
+    const nodes = Array.from(chapterBodyEl.querySelectorAll('.blur-target:not(.unblurred)'));
+    if (!nodes.length) return null;
+    const MIN_HEIGHT_PX = 18;
+    function isMeaningfulElement(el) {
+      if (el.tagName && el.tagName.toLowerCase() === 'img') return true;
+      if (el.querySelector && el.querySelector('img')) return true;
+      if (el.textContent && el.textContent.trim().length > 0) return true;
+      const r = el.getBoundingClientRect();
+      if (r.height >= MIN_HEIGHT_PX) return true;
+      return false;
     }
+    const curScroll = window.scrollY || 0;
+    const candidates = [];
+    nodes.forEach(el => {
+      try {
+        if (!isMeaningfulElement(el)) return;
+        const rect = el.getBoundingClientRect();
+        const center = rect.top + window.scrollY + (rect.height / 2);
+        candidates.push({ el, center });
+      } catch (e) {}
+    });
+    if (!candidates.length) return null;
+    candidates.sort((a, b) => a.center - b.center);
+    const EPS = 2;
+    for (const c of candidates) {
+      if (c.center > curScroll + EPS) return c.el;
+    }
+    return null;
   }
 
-  // double rAF to be robust against immediate DOM/CSS changes
-  requestAnimationFrame(() => requestAnimationFrame(doScroll));
-}
+  // scroll so that the element center is at viewport center
+  function scrollToTargetElement(el) {
+    if (!el) return;
+    function doScroll() {
+      try {
+        const rect = el.getBoundingClientRect();
+        const elCenterY = rect.top + window.scrollY + (rect.height / 2);
+        const maxScroll = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+        let target = Math.round(elCenterY - (window.innerHeight / 2));
+        if (target < 0) target = 0;
+        if (target > maxScroll) target = maxScroll;
+        window.scrollTo({ top: target, behavior: 'smooth' });
+      } catch (e) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+    requestAnimationFrame(() => requestAnimationFrame(doScroll));
+  }
 
-
-  // update edge button visibility: show only when blur is enabled and there are next blurred items
+  // update edge button visibility
   function updateEdgeScrollVisibility() {
     createEdgeScrollButton();
     if (!edgeBtn) return;
@@ -1078,11 +1107,9 @@ function scrollToTargetElement(el) {
       if (c && c.blur === false) chapterBlurEnabled = false;
     } catch (e) {}
     if (!chapterBlurEnabled) { edgeBtn.classList.remove('visible'); return; }
-    // find next blurred target
     const next = findNextBlurTargetElement();
     if (next) {
       edgeBtn.classList.add('visible');
-      // ensure it sits flush with the content
       updateEdgeScrollPosition();
     } else {
       edgeBtn.classList.remove('visible');
