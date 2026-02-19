@@ -1,5 +1,5 @@
-// script.js - full app with glitch support
-// Keeps previous features intact: chapters loading, color picker, blur, tooltips, image viewer, edge button, saving state.
+// script.js - full app with glitch support (fixed: added initBlurTargetsForChapter)
+// Replace your existing script.js entirely with this file.
 
 document.addEventListener('DOMContentLoaded', () => {
   /* ---------------------- DOM refs ---------------------- */
@@ -337,6 +337,61 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  /* ---------- INIT BLUR TARGETS (added - fixes the error) ---------- */
+  // Initializes blur-target elements for a loaded chapter, restores read state, wires hover/touch events.
+  function initBlurTargetsForChapter(filename, blurEnabled = true) {
+    if (!chapterBodyEl) return;
+    // capture glow info first (so glow visuals are prepared)
+    captureGlowInfo();
+
+    // Clean up any leftover classes/handlers from previous chapter
+    chapterBodyEl.querySelectorAll('.blur-target').forEach(old => {
+      old.classList.remove('is-blurred', 'hover-reveal', 'unblurred', 'blur-target');
+      // do not attempt to remove dataset._glitchInited - glitches may be reinitialized later
+    });
+
+    // collect logical targets (top-level blocks and images inside them)
+    const targets = collectTargets();
+    const readSet = loadReadIndicesFor(filename);
+
+    targets.forEach((el, idx) => {
+      try {
+        el.dataset.blurIndex = idx;
+        el.classList.add('blur-target');
+
+        // if blur is completely disabled for this chapter, mark all unblurred
+        if (!blurEnabled) {
+          el.classList.add('unblurred');
+          el.classList.remove('is-blurred');
+          return;
+        }
+
+        // restore per-item read state (unblurred if previously read)
+        if (el.classList.contains('unblurred') || readSet.has(idx)) {
+          el.classList.add('unblurred');
+          el.classList.remove('is-blurred');
+        } else {
+          if (isVisualBlurEnabled()) el.classList.add('is-blurred');
+          else el.classList.remove('is-blurred');
+        }
+
+        // hover/touch handlers reveal temporarily (visual only)
+        el.addEventListener('mouseenter', () => { if (!el.classList.contains('unblurred')) revealTemp(el); });
+        el.addEventListener('mouseleave', () => { if (!el.classList.contains('unblurred')) hideTemp(el); });
+        el.addEventListener('touchstart', () => { if (!el.classList.contains('unblurred')) revealTemp(el); }, {passive:true});
+        el.addEventListener('touchend', () => { if (!el.classList.contains('unblurred')) hideTemp(el); }, {passive:true});
+      } catch (e) {
+        // ignore per-element errors
+      }
+    });
+
+    // After initializing blur-targets, update edge button and glitch visuals.
+    updateEdgeScrollVisibility();
+    // Update glitch intensities for new chapter (if any)
+    try { updateGlitchIntensityAll(); } catch (e) {}
+  }
+
+  /* ---------- Blur helpers already present ---------- */
   function applyBlurToTarget(el) {
     if (!el) return;
     el.classList.add('blur-target');
@@ -358,7 +413,9 @@ document.addEventListener('DOMContentLoaded', () => {
         saveReadIndicesFor(lastChapterFile, set);
       }
     }
+    // update edge button and glitches
     updateEdgeScrollVisibility();
+    try { updateGlitchIntensityAll(); } catch (e) {}
   }
 
   function revealTemp(el) {
@@ -373,25 +430,18 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   /* ---------- GLITCH SUPPORT ---------- */
-
-  // Configuration (tweak if you want)
-  const GLITCH_MAX_OFFSET = 26;      // px — maximum horizontal offset for heavy glitch
-  const GLITCH_TOP_SCALE = 0.75;     // fraction applied to top layer
-  const GLITCH_BOTTOM_SCALE = 1.0;   // bottom layer multiplier
+  const GLITCH_MAX_OFFSET = 26;      // px
+  const GLITCH_TOP_SCALE = 0.75;
+  const GLITCH_BOTTOM_SCALE = 1.0;
   const GLITCH_MIN_DURATION = 700;   // ms
   const GLITCH_MAX_DURATION = 1400;  // ms
 
-  // Initialize glitch nodes inside current chapter (called after chapter HTML placed)
   function initGlitchForChapter() {
     if (!chapterBodyEl) return;
-    // ensure each glitch element has the mirrored text attr used by CSS
     const gls = Array.from(chapterBodyEl.querySelectorAll('.glitch'));
     gls.forEach(el => {
-      // store the exact displayed text for pseudo-elements
       const txt = el.textContent || '';
-      // we prefer a data attribute so it renders with ::before/::after content
       el.setAttribute('data-glitch-content', txt.replace(/^\n+|\n+$/g, ''));
-      // default CSS vars to safe values
       el.style.setProperty('--g1-x', '2px');
       el.style.setProperty('--g1-y', '0px');
       el.style.setProperty('--g2-x', '13px');
@@ -401,59 +451,44 @@ document.addEventListener('DOMContentLoaded', () => {
       el.style.setProperty('--gb-skew', '21deg');
       el.style.setProperty('--g-opacity', '0.85');
       el.style.setProperty('--g-duration', `${GLITCH_MIN_DURATION}ms`);
-      // also mark as initialized
       el.dataset._glitchInited = '1';
     });
-    // initial update
     updateGlitchIntensityAll();
   }
 
-  // Helper: compute distance factor for element from viewport center (0..1)
   function computeDistanceFactor(el) {
     const rect = el.getBoundingClientRect();
     const elCenter = rect.top + rect.height / 2;
     const viewportCenter = window.innerHeight / 2;
     const dist = Math.abs(elCenter - viewportCenter);
-    // normalize by half viewport height so center -> 0, far edge -> ~1
     const denom = (window.innerHeight / 2) || 1;
     let f = dist / denom;
-    if (f < 0) f = 0;
-    if (f > 1) f = 1;
+    if (f < 0) f = 0; if (f > 1) f = 1;
     return f;
   }
 
-  // Update CSS variables for a single element, based on distanceFactor or fixed attribute
   function updateGlitchForElement(el) {
     if (!el || !el.dataset._glitchInited) return;
-    // If element has attribute data-glitch-fixed="true", ignore distance
     const fixed = el.getAttribute('data-glitch-fixed');
     const fixedIntensityAttr = parseFloat(el.getAttribute('data-glitch-intensity'));
     let intensity;
     if (fixed === 'true') {
-      // if attribute present but invalid, clamp to 0..1
       intensity = Number.isFinite(fixedIntensityAttr) ? Math.min(Math.max(fixedIntensityAttr, 0), 1) : 0.6;
     } else if (!Number.isFinite(fixedIntensityAttr) || Number.isNaN(fixedIntensityAttr)) {
-      // compute intensity from distance
-      const df = computeDistanceFactor(el); // 0..1 (0 center, 1 edge)
-      // invert mapping: further => more glitch
+      const df = computeDistanceFactor(el);
       intensity = df;
     } else {
-      // combine fixed value with distance (user wanted "set intensity that will be ignored by how far away"?)
-      // the user wanted ability to set intensity that will be ignored by distance. We treat presence of data-glitch-intensity
-      // without data-glitch-fixed as a *cap*: final intensity = max(distance, provided)
       const df = computeDistanceFactor(el);
       intensity = Math.max(df, Math.min(Math.max(fixedIntensityAttr, 0), 1));
     }
 
-    // Map intensity to offsets/duration
-    const mainOffset = Math.round(2 + intensity * GLITCH_MAX_OFFSET); // base shift
+    const mainOffset = Math.round(2 + intensity * GLITCH_MAX_OFFSET);
     const topOffset = Math.round(mainOffset * GLITCH_TOP_SCALE);
     const bottomOffset = Math.round(mainOffset * GLITCH_BOTTOM_SCALE);
-    const topSkew = -6 - intensity * 15;   // degrees negative
-    const bottomSkew = 6 + intensity * 20; // degrees positive
+    const topSkew = -6 - intensity * 15;
+    const bottomSkew = 6 + intensity * 20;
     const duration = Math.round(GLITCH_MIN_DURATION + intensity * (GLITCH_MAX_DURATION - GLITCH_MIN_DURATION));
 
-    // apply CSS vars
     el.style.setProperty('--g1-x', `${Math.max(1, topOffset)}px`);
     el.style.setProperty('--g1-y', `${Math.round(-1 * (intensity * 2))}px`);
     el.style.setProperty('--g2-x', `${Math.max(2, Math.round(topOffset * 1.6))}px`);
@@ -463,31 +498,23 @@ document.addEventListener('DOMContentLoaded', () => {
     el.style.setProperty('--gb-skew', `${bottomSkew}deg`);
     el.style.setProperty('--g-opacity', `${0.9 - intensity * 0.35}`);
     el.style.setProperty('--g-duration', `${duration}ms`);
-    // optionally shift the element a bit for subtle effect
     el.style.setProperty('--g-main-x', `${Math.round(intensity * 2)}px`);
   }
 
-  // Update all glitch elements (throttled via rAF)
   let glitchScheduled = false;
   function updateGlitchIntensityAll() {
     if (glitchScheduled) return;
     glitchScheduled = true;
     requestAnimationFrame(() => {
       const els = Array.from(chapterBodyEl.querySelectorAll('.glitch'));
-      els.forEach(el => {
-        // If the element is currently visually blurred, do not show glitch layers (CSS handles opacity),
-        // but still update variables so when it unblurs animation matches.
-        updateGlitchForElement(el);
-      });
+      els.forEach(el => updateGlitchForElement(el));
       glitchScheduled = false;
     });
   }
-
-  // Run on scroll/resize
   window.addEventListener('scroll', updateGlitchIntensityAll, { passive: true });
   window.addEventListener('resize', updateGlitchIntensityAll);
 
-  /* ---------- Unblur on scroll (keeps previous behavior) ---------- */
+  /* ---------- Unblur on scroll ---------- */
   let scrollScheduled = false;
   function checkAndUnblurVisibleTargets() {
     if (!chapterBodyEl) return;
@@ -510,9 +537,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (trigger) removeBlurFromTarget(el, true);
     });
 
-    // update edge button each time we check
     updateEdgeScrollVisibility();
-    // also update glitch intensities because positions may have changed while scrolling
     updateGlitchIntensityAll();
   }
 
@@ -943,7 +968,6 @@ document.addEventListener('DOMContentLoaded', () => {
       } catch (e) {}
 
       // initialize blur targets (also captures glow info)
-      captureGlowInfo();
       initBlurTargetsForChapter(filename, blurEnabledForChapter);
 
       // preload tooltip images and init tippy
@@ -1000,7 +1024,6 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   /* ------------------- EDGE SCROLL BUTTON (fixed and flush with content) ------------------- */
-  // Create the button and wire it up
   function createEdgeScrollButton() {
     if (edgeBtn) return;
     edgeBtn = document.createElement('button');
@@ -1008,25 +1031,19 @@ document.addEventListener('DOMContentLoaded', () => {
     edgeBtn.id = 'edge-scroll-btn';
     edgeBtn.setAttribute('aria-label', 'Перейти к следующему скрытому фрагменту');
     edgeBtn.innerHTML = '▼';
-    // attach to body (fixed). We'll position it so it visually continues the content area.
     document.body.appendChild(edgeBtn);
     edgeBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       const next = findNextBlurTargetElement();
       if (!next) return;
-      // trigger smooth fade by removing 'is-blurred' (CSS transition will animate)
       next.classList.remove('is-blurred');
-      // scroll to center of that element
       scrollToTargetElement(next);
       updateEdgeScrollVisibility();
-      // also update glitch visuals right away
       updateGlitchForElement(next);
     });
-    // initial position
     updateEdgeScrollPosition();
   }
 
-  // position the edge button so it sits flush to the content right edge
   function updateEdgeScrollPosition() {
     if (!edgeBtn) return;
     const content = document.getElementById('content');
@@ -1044,7 +1061,6 @@ document.addEventListener('DOMContentLoaded', () => {
     lastEdgePos = leftPx;
   }
 
-  // find the next blurred target element below the current viewport (center-based & skips tiny spacer elements)
   function findNextBlurTargetElement() {
     if (!chapterBodyEl) return null;
     const nodes = Array.from(chapterBodyEl.querySelectorAll('.blur-target:not(.unblurred)'));
@@ -1077,7 +1093,6 @@ document.addEventListener('DOMContentLoaded', () => {
     return null;
   }
 
-  // scroll so that the element center is at viewport center
   function scrollToTargetElement(el) {
     if (!el) return;
     function doScroll() {
@@ -1096,7 +1111,6 @@ document.addEventListener('DOMContentLoaded', () => {
     requestAnimationFrame(() => requestAnimationFrame(doScroll));
   }
 
-  // update edge button visibility
   function updateEdgeScrollVisibility() {
     createEdgeScrollButton();
     if (!edgeBtn) return;
@@ -1116,7 +1130,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // keep button positioned on scroll/resize (throttle with rAF)
   function scheduleEdgePosUpdate() {
     if (edgePosScheduled) return;
     edgePosScheduled = true;
@@ -1128,7 +1141,6 @@ document.addEventListener('DOMContentLoaded', () => {
   window.addEventListener('scroll', scheduleEdgePosUpdate, { passive: true });
   window.addEventListener('resize', scheduleEdgePosUpdate);
 
-  /* ------------------- initial create of edge button ------------------- */
   createEdgeScrollButton();
 
   /* ---------- start ---------- */
